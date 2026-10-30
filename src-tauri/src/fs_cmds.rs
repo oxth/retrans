@@ -83,11 +83,14 @@ pub fn list_files(root: String, max_depth: u32) -> Result<Vec<String>> {
     Ok(list_files_impl(Path::new(&root), max_depth)?)
 }
 
+/// Removes a single file. Directories are refused: every caller removes one locale or journal file.
 #[tauri::command]
 pub fn remove_path(path: String) -> Result<()> {
     let p = Path::new(&path);
-    let r = if p.is_dir() { fs::remove_dir_all(p) } else { fs::remove_file(p) };
-    Ok(r?)
+    if p.is_dir() {
+        return Err(FsError { code: "Io", message: format!("refusing to remove a directory: {path}") });
+    }
+    Ok(fs::remove_file(p)?)
 }
 
 #[tauri::command]
@@ -109,6 +112,20 @@ mod tests {
         assert!(!dir.join("sub").join("a.json.paratrans-tmp").exists());
         assert_eq!(list_files_impl(&dir, 1).unwrap(), Vec::<String>::new());
         assert_eq!(list_files_impl(&dir, 2).unwrap(), vec!["sub/a.json"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remove_path_refuses_directories() {
+        let dir = std::env::temp_dir().join(format!("paratrans-rm-{}", std::process::id()));
+        let file = dir.join("a.json");
+        write_atomic(&file, "x").unwrap();
+        let err = remove_path(dir.to_string_lossy().into_owned()).unwrap_err();
+        assert_eq!(err.code, "Io");
+        assert!(err.message.contains("refusing to remove a directory"));
+        assert!(file.exists());
+        remove_path(file.to_string_lossy().into_owned()).unwrap();
+        assert!(!file.exists());
         let _ = fs::remove_dir_all(&dir);
     }
 }
