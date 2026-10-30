@@ -31,11 +31,15 @@ export function StartScreen() {
   };
 
   const chooseFolder = async () => {
-    const p = await pickFolder({ directory: true });
-    if (typeof p !== "string") return;
-    const root = p.replace(/\\/g, "/");
-    const detected = await detect(root);
-    if (detected) setPending({ root, detected });
+    try {
+      const p = await pickFolder({ directory: true });
+      if (typeof p !== "string") return;
+      const root = p.replace(/\\/g, "/");
+      const detected = await detect(root);
+      if (detected) setPending({ root, detected });
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const openRecent = async (r: RecentProject) => {

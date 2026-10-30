@@ -18,9 +18,10 @@ export interface AppState {
   version: number;
   conflicts: Conflict[];
   recovery: PendingRecovery | null;
+  error: string | null;
   openProject(root: string, d: DetectResult, opts: ProjectOptions): Promise<void>;
   closeProject(): Promise<void>;
-  restoreRecovery(): void;
+  restoreRecovery(): Promise<void>;
   discardRecovery(): Promise<void>;
 }
 
@@ -44,15 +45,21 @@ async function readState(fs: Fs, root: string): Promise<string | null> {
   }
 }
 
+let openGen = 0;
+const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 export const useApp = create<AppState>((set, get) => ({
   fs: tauriFs,
   session: null,
   version: 0,
   conflicts: [],
   recovery: null,
+  error: null,
 
   async openProject(root, d, opts) {
     const { fs } = get();
+    const my = ++openGen;
+    const stale = () => my !== openGen;
     await teardown();
     // Project settings in .paratrans/state.json override the detected/picked values.
     const st = parseState(await readState(fs, root), opts);
@@ -61,32 +68,64 @@ export const useApp = create<AppState>((set, get) => ({
       localesPath: st.project.localesPath ?? opts.localesPath,
     };
     const session = await ProjectSession.open(fs, root, d, effective);
+    if (stale()) return;
     const name = root.split("/").filter(Boolean).pop() ?? root;
-    await addRecent({ root, name, format: d.format });
-
-    const path = journalPath(await appDataDir(), root);
-    const journal = await readJournal(fs, path);
+    try {
+      await addRecent({ root, name, format: d.format });
+    } catch {
+      /* best effort */
+    }
+    let recovery: PendingRecovery | null = null;
+    try {
+      const path = journalPath(await appDataDir(), root);
+      const journal = await readJournal(fs, path);
+      if (journal) recovery = { journal, path };
+    } catch {
+      /* best effort */
+    }
+    if (stale()) return;
 
     unsubscribe = session.subscribe(() => set((s) => ({ version: s.version + 1 })));
-    set({ session, conflicts: [], recovery: journal ? { journal, path } : null, version: 0 });
+    set({ session, conflicts: [], recovery, error: null, version: 0 });
 
-    stopWatch = await watchDir(root, () => {
-      void session.reloadFromDisk().then((c) => {
-        if (c.length && get().session === session) set((s) => ({ conflicts: [...s.conflicts, ...c] }));
+    try {
+      const stop = await watchDir(root, () => {
+        if (get().session !== session) return;
+        session.reloadFromDisk().then(
+          (c) => {
+            if (c.length && get().session === session) set((s) => ({ conflicts: [...s.conflicts, ...c] }));
+          },
+          (e) => {
+            if (get().session === session) set({ error: `Reload failed: ${msg(e)}` });
+          },
+        );
       });
-    });
+      if (stale()) {
+        await stop().catch(() => {});
+        return;
+      }
+      stopWatch = stop;
+    } catch (e) {
+      if (!stale()) set({ error: `File watching unavailable: ${msg(e)}` });
+    }
   },
 
   async closeProject() {
+    openGen++;
     await teardown();
-    set({ session: null, conflicts: [], recovery: null, version: 0 });
+    set({ session: null, conflicts: [], recovery: null, error: null, version: 0 });
   },
 
-  restoreRecovery() {
-    const { session, recovery } = get();
+  async restoreRecovery() {
+    const { session, recovery, fs } = get();
     if (!session || !recovery) return;
-    const c = session.applyJournal(recovery.journal);
-    set((s) => ({ recovery: null, conflicts: [...s.conflicts, ...c] }));
+    try {
+      const c = session.applyJournal(recovery.journal);
+      set((s) => ({ recovery: null, conflicts: [...s.conflicts, ...c] }));
+    } catch (e) {
+      set({ recovery: null, error: `Could not restore unsaved changes: ${msg(e)}` });
+      await clearJournal(fs, recovery.path).catch(() => {});
+    }
   },
 
   async discardRecovery() {

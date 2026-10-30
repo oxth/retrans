@@ -7,10 +7,18 @@ export const COMMON_LOCALES: string[] = [
   "yo", "ig", "so", "mg", "ps", "ku", "tg", "ky", "tk", "lb", "be", "la", "eo", "jv", "su", "ceb",
 ];
 
+let names: Intl.DisplayNames | null | undefined;
+
 export function localeLabel(code: string): string {
+  if (names === undefined) {
+    try {
+      names = new Intl.DisplayNames([navigator.language || "en"], { type: "language" });
+    } catch {
+      names = null;
+    }
+  }
   try {
-    const names = new Intl.DisplayNames([navigator.language || "en"], { type: "language" });
-    return names.of(code) ?? code;
+    return names?.of(code) ?? code;
   } catch {
     return code;
   }

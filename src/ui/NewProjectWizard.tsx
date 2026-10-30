@@ -25,8 +25,12 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
   const canNext = step !== "languages" || base.length === 1;
 
   const choose = async () => {
-    const p = await pickFolder({ directory: true });
-    if (typeof p === "string") setFolder(p.replace(/\\/g, "/"));
+    try {
+      const p = await pickFolder({ directory: true });
+      if (typeof p === "string") setFolder(p.replace(/\\/g, "/"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const create = async () => {
@@ -66,7 +70,7 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
             <div className="space-y-4">
               <div>
                 <p className="mb-1 text-sm font-medium">Base language</p>
-                <LocalePicker label="Search base language" selected={base} onChange={setBase} />
+                <LocalePicker label="Search base language" selected={base} onChange={(b) => { setBase(b); setTargets((t) => t.filter((x) => !b.includes(x))); }} />
               </div>
               <div>
                 <p className="mb-1 text-sm font-medium">Target languages</p>
