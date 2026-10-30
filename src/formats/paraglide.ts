@@ -175,13 +175,7 @@ export const paraglideAdapter: FormatAdapter = {
   async onLocalesChanged(fs, root, locales) {
     const p = joinPath(root, SETTINGS_PATH);
     const text = await fs.readText(p);
-    // Keep an inline `"locales": [...]` on one line; otherwise fall back to the structural edit.
-    const inline = /("locales"\s*:\s*)\[[^\]\n]*\]/.exec(text);
-    const next = inline
-      ? text.slice(0, inline.index) +
-        inline[1] + "[" + locales.map((l) => JSON.stringify(l)).join(", ") + "]" +
-        text.slice(inline.index + inline[0].length)
-      : setAt(text, ["locales"], locales, detectStyle(text));
+    const next = setAt(text, ["locales"], locales, detectStyle(text));
     if (next !== text) await fs.writeTextAtomic(p, next);
     return {};
   },

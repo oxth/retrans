@@ -111,4 +111,21 @@ describe("compact and trailing whitespace", () => {
   it("removeAt keeps absent final newline", () => {
     expect(removeAt('{\n  "a": 1,\n  "b": 2\n}', ["b"], nf)).toBe('{\n  "a": 1\n}');
   });
+
+  it("setAt replaces a one-line array compactly, matching separators", () => {
+    const st = DEFAULT_STYLE;
+    expect(setAt('{"l":["en","th"],"x":1}', ["l"], ["en", "th", "de"], { ...st, finalNewline: false })).toBe('{"l":["en","th","de"],"x":1}');
+    expect(setAt('{\n  "l": ["en", "th"]\n}\n', ["l"], ["en", "th", "de"], st)).toBe(
+      '{\n  "l": ["en", "th", "de"]\n}\n',
+    );
+  });
+
+  it("setAt replacing a string on a pretty-printed file changes exactly one line", () => {
+    const text = '{\n  "a": {\n    "b": "1",\n    "c": "2"\n  },\n  "d": "3"\n}\n';
+    const out = setAt(text, ["a", "b"], "z", detectStyle(text));
+    const a = text.split("\n");
+    const b = out.split("\n");
+    expect(b.length).toBe(a.length);
+    expect(a.filter((l, i) => l !== b[i])).toEqual(['    "b": "1",']);
+  });
 });

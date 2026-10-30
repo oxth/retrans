@@ -90,8 +90,37 @@ function compactInsert(text: string, path: string[], value: unknown): string | u
   return text.slice(0, at) + comma + member + text.slice(at);
 }
 
+/** Replace an existing one-line value in place, reusing that node's separator style. */
+function compactReplace(text: string, path: string[], value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const tree = parseTree(text);
+  const node = tree && findNodeAtLocation(tree, path);
+  if (!node) return undefined;
+  const span = text.slice(node.offset, node.offset + node.length);
+  if (/[\r\n]/.test(span)) return undefined;
+  let comma = ", ";
+  let colon = ": ";
+  const kids = node.children ?? [];
+  if (node.type === "array" && kids.length > 1) {
+    comma = text.slice(kids[0].offset + kids[0].length, kids[1].offset);
+  } else if (node.type === "object" && kids.length > 0) {
+    const f = kids[0].children;
+    if (f && f.length === 2) colon = text.slice(f[0].offset + f[0].length, f[1].offset);
+    if (kids.length > 1) comma = text.slice(kids[0].offset + kids[0].length, kids[1].offset);
+  }
+  const ser = (v: unknown): string => {
+    if (Array.isArray(v)) return "[" + v.map(ser).join(comma) + "]";
+    if (v !== null && typeof v === "object") {
+      return "{" + Object.entries(v).map(([k, x]) => JSON.stringify(k) + colon + ser(x)).join(comma) + "}";
+    }
+    return JSON.stringify(v);
+  };
+  return text.slice(0, node.offset) + ser(value) + text.slice(node.offset + node.length);
+}
+
 export function setAt(text: string, path: string[], value: unknown, style: JsonStyle): string {
-  const out = compactInsert(text, path, value) ?? edit(text, path, value, style);
+  const out =
+    compactInsert(text, path, value) ?? compactReplace(text, path, value) ?? edit(text, path, value, style);
   if (out === text) return text;
   return applyStyleEnd(out, style, text);
 }

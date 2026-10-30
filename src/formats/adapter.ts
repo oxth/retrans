@@ -7,7 +7,7 @@ export interface DetectResult {
   baseLocale: string | null; // null -> the UI asks the user to pick
   locales: string[];
   namespaces: string[];
-  localesPath: string; // relative to root, e.g. "public/locales"; "" for Paraglide
+  localesPath: string; // relative to root, e.g. "public/locales"; for Paraglide the pathPattern, e.g. "messages/{locale}.json"
   keyCount: number;
 }
 

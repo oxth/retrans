@@ -95,4 +95,23 @@ describe("paraglide", () => {
     );
     expect(await adapter.detect(new MemoryFs({ "/project/a": "x" }), R)).toBeNull();
   });
+
+  it("onLocalesChanged edits only the top-level locales even if a nested one comes first", async () => {
+    const t = '{\n\t"x": { "locales": ["a"] },\n\t"baseLocale": "en",\n\t"locales": ["en","th"]\n}\n';
+    const fs = new MemoryFs({ "/project/project.inlang/settings.json": t });
+    await adapter.onLocalesChanged(fs, R, ["en", "th", "de"]);
+    expect(await fs.readText("/project/project.inlang/settings.json")).toBe(
+      t.replace('["en","th"]', '["en","th","de"]'),
+    );
+  });
+
+  it("array pathPattern uses the first entry", async () => {
+    const s = JSON.stringify({
+      baseLocale: "en",
+      locales: ["en"],
+      "plugin.inlang.messageFormat": { pathPattern: ["./a/{locale}.json", "./b/{locale}.json"] },
+    });
+    const r = await adapter.detect(new MemoryFs({ "/project/project.inlang/settings.json": s }), R);
+    expect(r!.localesPath).toBe("a/{locale}.json");
+  });
 });
