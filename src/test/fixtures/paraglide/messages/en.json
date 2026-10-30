@@ -1,0 +1,11 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"greeting": "Hello {username}! Welcome to {placename}.",
+	"nesting": { "level1": { "level2": { "level3": "This is a nested message." } } },
+	"download": [
+		{ "match": {
+			"platform=android, userGender=male": "{username} has to download the app on his phone.",
+			"platform=*, userGender=*": "The person has to download the app."
+		} }
+	]
+}
