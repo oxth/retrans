@@ -78,12 +78,14 @@ export function AppShell() {
           const prev = cur?.kind === "text" ? cur.text : "";
           if (text !== prev) s.setText(id, locale, text === "" ? null : text);
         }
-        setEditing(null);
+        // Only close if this cell is still the one being edited (blur/unmount flushes may arrive after a switch).
+        setEditing((cur) => (cur && cur.id === id && cur.locale === locale ? null : cur));
       },
       next: (id, locale) => {
         const { session: s, rows: r, visible: v } = live.current;
         const n = s ? nextMissing(s, r, { id, locale }, v) : null;
         setEditing(n);
+        return !!n;
       },
       review: (id, locale) => live.current.session?.markReviewed(id, locale),
     }),

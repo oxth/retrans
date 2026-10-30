@@ -5,7 +5,7 @@
  * viewport. We also stub ResizeObserver (absent in jsdom). The tests then run against a real
  * ProjectSession over MemoryFs fixtures; only the layout primitives are faked.
  */
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { resolve } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -179,5 +179,61 @@ describe("editing", () => {
     await userEvent.type(editor(), "q{Enter}");
     expect(await screen.findByText(/file is read-only/)).toBeInTheDocument();
     expect(editor()).toBeInTheDocument();
+  });
+
+  it("typing then clicking another cell saves the first", async () => {
+    const s = await open(nested());
+    await userEvent.click(cell("common::only_en", "th"));
+    await userEvent.type(editor(), "kept");
+    await userEvent.click(cell("common::title", "th"));
+    expect(s.value("common::only_en", "th")).toEqual({ kind: "text", text: "kept" });
+    expect(editor().closest("[data-row]")!.getAttribute("data-row")).toBe("common::title");
+  });
+
+  it("typing then blur saves", async () => {
+    const s = await open(nested());
+    await userEvent.click(cell("common::only_en", "th"));
+    await userEvent.type(editor(), "blurred");
+    fireEvent.blur(editor());
+    expect(s.value("common::only_en", "th")).toEqual({ kind: "text", text: "blurred" });
+  });
+
+  it("typing then Esc does not save (and returns focus to the cell)", async () => {
+    const s = await open(nested());
+    await userEvent.click(cell("common::only_en", "th"));
+    await userEvent.type(editor(), "nope{Escape}");
+    expect(s.value("common::only_en", "th")).toBeUndefined();
+    await waitFor(() => expect(document.activeElement).toBe(cell("common::only_en", "th")));
+  });
+
+  it("editing row filtered out by search still saves", async () => {
+    const s = await open(nested());
+    await userEvent.click(cell("common::only_en", "th"));
+    await userEvent.type(editor(), "survives");
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "nav.home" } });
+    await waitFor(() => expect(document.querySelector('[data-row="common::only_en"]')).toBeNull());
+    expect(s.value("common::only_en", "th")).toEqual({ kind: "text", text: "survives" });
+  });
+
+  it("Enter during IME composition does not commit", async () => {
+    const s = await open(nested());
+    await userEvent.click(cell("common::only_en", "th"));
+    await userEvent.type(editor(), "ก");
+    fireEvent.keyDown(editor(), { key: "Enter", keyCode: 229 });
+    expect(s.value("common::only_en", "th")).toBeUndefined();
+    fireEvent.compositionStart(editor());
+    fireEvent.keyDown(editor(), { key: "Enter", keyCode: 13 });
+    expect(s.value("common::only_en", "th")).toBeUndefined();
+    fireEvent.compositionEnd(editor());
+    fireEvent.keyDown(editor(), { key: "Enter", keyCode: 13 });
+    expect(s.value("common::only_en", "th")).toEqual({ kind: "text", text: "ก" });
+  });
+
+  it("Shift+Tab commits and closes", async () => {
+    const s = await open(nested());
+    await userEvent.click(cell("common::only_en", "th"));
+    await userEvent.type(editor(), "z{Shift>}{Tab}{/Shift}");
+    expect(s.value("common::only_en", "th")).toEqual({ kind: "text", text: "z" });
+    expect(screen.queryByRole("textbox", { name: /^Edit / })).toBeNull();
   });
 });

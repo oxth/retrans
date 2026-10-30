@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect, useRef } from "react";
 import { isApplicable } from "../core/plurals";
 import type { ProjectSession } from "../core/session";
 import type { KeyId } from "../core/model";
@@ -12,7 +12,8 @@ export interface EditActions {
   /** May throw; the editor shows the message inline. */
   commit: (id: KeyId, locale: string, text: string) => void;
   cancel: () => void;
-  next: (id: KeyId, locale: string) => void;
+  /** Opens the next missing cell; returns false (and closes the editor) when there is none. */
+  next: (id: KeyId, locale: string) => boolean;
   review: (id: KeyId, locale: string) => void;
 }
 
@@ -29,6 +30,15 @@ export interface CellProps {
 
 /** Reads from the session; memoized on (id, locale, version, editing) so unrelated edits do not re-render every cell. */
 export const Cell = memo(function Cell({ session, id, locale, showCode, editing, actions }: CellProps) {
+  const el = useRef<HTMLDivElement>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (editing) refocus.current = false;
+    else if (refocus.current) {
+      refocus.current = false;
+      el.current?.focus();
+    }
+  });
   const isBase = locale === session.data.baseLocale;
   const code = showCode ? <span className="w-8 shrink-0 font-bold uppercase text-gray-500">{locale}</span> : null;
 
@@ -55,8 +65,13 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
           complex={complex}
           onCommit={(t) => actions.commit(id, locale, t)}
           onCancel={actions.cancel}
-          onNextMissing={() => actions.next(id, locale)}
-          onMarkReviewed={isBase ? undefined : () => actions.review(id, locale)}
+          onNextMissing={() => {
+            if (!actions.next(id, locale)) refocus.current = true;
+          }}
+          onMarkReviewed={isBase ? undefined : () => session.value(id, locale) && actions.review(id, locale)}
+          onRefocus={() => {
+            refocus.current = true;
+          }}
         />
       </div>
     );
@@ -78,6 +93,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
       <div
         className="flex cursor-text items-center gap-2 rounded bg-red-50 px-1.5 py-1 italic text-red-600"
         data-cell="missing"
+        ref={el}
         data-locale={locale}
         tabIndex={0}
         onClick={() => actions.start(id, locale)}
@@ -95,6 +111,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     <div
       className="flex cursor-text items-start gap-2 rounded px-1.5 py-1"
       data-cell="value"
+      ref={el}
       data-locale={locale}
       tabIndex={0}
       onClick={() => actions.start(id, locale)}
