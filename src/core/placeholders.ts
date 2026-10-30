@@ -4,7 +4,7 @@ export function extractPlaceholders(format: Format, text: string): string[] {
   const out: string[] = [];
   if (format === "next-i18next") {
     for (const m of text.matchAll(/\$t\([^)]*\)/g)) out.push(m[0]);
-    for (const m of text.matchAll(/\{\{\s*([^,}\s]+)[^}]*\}\}/g)) out.push(m[1].trim());
+    for (const m of text.matchAll(/\{\{\s*-?\s*([^,}\s]+)[^}]*\}\}/g)) out.push(m[1].trim());
   } else {
     for (const m of text.matchAll(/\{\s*([A-Za-z_][\w]*)\s*\}/g)) out.push(m[1]);
   }

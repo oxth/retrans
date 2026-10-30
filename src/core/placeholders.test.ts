@@ -12,4 +12,7 @@ describe("placeholders", () => {
     expect(comparePlaceholders("paraglide", "Hi {name}", "Hi {amount}")).toEqual({ missing: ["name"], extra: ["amount"] });
     expect(comparePlaceholders("paraglide", "{a} {a}", "{a}")).toEqual({ missing: ["a"], extra: [] });
   });
+  it("unescaped {{- name}}", () => {
+    expect(extractPlaceholders("next-i18next", "{{- name}} {{-other}}")).toEqual(["name", "other"]);
+  });
 });

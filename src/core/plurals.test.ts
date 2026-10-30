@@ -46,4 +46,21 @@ describe("plurals", () => {
     expect(d.keyOrder.length).toBe(4);
     expect(expandPluralKeys(mk("paraglide", ["items_one", "items_other"]))).toEqual(mk("paraglide", ["items_one", "items_other"]).keyOrder);
   });
+  it("isApplicable is fast at scale and cache follows keyOrder identity", () => {
+    const keys: string[] = [];
+    for (let i = 0; i < 2500; i++) keys.push(`k${i}`);
+    for (let i = 0; i < 1250; i++) keys.push(`p${i}_one`, `p${i}_other`);
+    const locales = Array.from({ length: 10 }, (_, i) => (i % 2 ? "en" : "th"));
+    const d = mk("next-i18next", keys, locales);
+    const t0 = performance.now();
+    for (const id of d.keyOrder) for (const l of locales) isApplicable(d, id, l);
+    expect(performance.now() - t0).toBeLessThan(100);
+    const d2 = mk("next-i18next", ["x_one"]);
+    expect(isApplicable(d2, keyId("", "x_one"), "th")).toBe(true);
+    d2.keyOrder = ["x_one", "x_other"].map((k) => keyId("", k));
+    expect(isApplicable(d2, keyId("", "x_one"), "th")).toBe(false);
+  });
+  it("pluralCategories result is frozen", () => {
+    expect(Object.isFrozen(pluralCategories("en"))).toBe(true);
+  });
 });

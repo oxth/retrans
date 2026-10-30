@@ -10,8 +10,8 @@ export function splitPlural(key: string): { base: string; category: string } | n
   return { base: key.slice(0, i), category };
 }
 
-const catCache = new Map<string, string[]>();
-export function pluralCategories(locale: string): string[] {
+const catCache = new Map<string, readonly string[]>();
+export function pluralCategories(locale: string): readonly string[] {
   let r = catCache.get(locale);
   if (!r) {
     let cats: string[];
@@ -20,7 +20,7 @@ export function pluralCategories(locale: string): string[] {
     } catch {
       cats = ["one", "other"];
     }
-    r = PLURAL_CATEGORIES.filter((c) => cats.includes(c));
+    r = Object.freeze(PLURAL_CATEGORIES.filter((c) => cats.includes(c)));
     catCache.set(locale, r);
   }
   return r;
@@ -43,12 +43,22 @@ function pluralGroups(data: ProjectData): Map<string, { ns: string; base: string
   return groups;
 }
 
+const otherKeysCache = new WeakMap<KeyId[], Set<KeyId>>();
+function otherKeys(order: KeyId[]): Set<KeyId> {
+  let s = otherKeysCache.get(order);
+  if (!s) {
+    s = new Set(order.filter((id) => id.endsWith("_other")));
+    otherKeysCache.set(order, s);
+  }
+  return s;
+}
+
 export function isApplicable(data: ProjectData, id: KeyId, locale: string): boolean {
   if (data.format === "paraglide") return true;
   const { ns, key } = parseKeyId(id);
   const sp = splitPlural(key);
   if (!sp) return true;
-  const hasOther = key === `${sp.base}_other` || data.keyOrder.includes(keyId(ns, `${sp.base}_other`));
+  const hasOther = otherKeys(data.keyOrder).has(keyId(ns, `${sp.base}_other`));
   if (!hasOther) return true;
   return pluralCategories(locale).includes(sp.category);
 }
