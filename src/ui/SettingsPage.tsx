@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import type { ProjectSession } from "../core/session";
 import { getDefaultViewMode, setDefaultViewMode } from "../platform/prefs";
-import { btnPrimary, inputCls } from "./Dialog";
+import { btnGhost, btnPrimary, inputCls } from "./Dialog";
+import { useApp } from "./store";
 
 export function SettingsPage({ session }: { session: ProjectSession }) {
   const [mode, setMode] = useState<"list" | "table">("list");
-  const [path, setPath] = useState(session.state.project.localesPath ?? session.opts.localesPath ?? "");
+  const detectedPath = useApp((s) => s.detected?.localesPath) ?? session.opts.localesPath;
+  const override = session.state.project.localesPath;
+  const [path, setPath] = useState(override ?? session.opts.localesPath ?? "");
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,12 +51,28 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
           <button
             className={btnPrimary}
             onClick={() => {
-              session.setProjectSetting({ localesPath: path.trim() || undefined });
-              setNote("Will be written to .paratrans/state.json on the next save.");
+              const p = path.trim();
+              // Only a path that differs from the detected one is an override.
+              const next = p && p !== detectedPath ? p : undefined;
+              session.setProjectSetting({ localesPath: next });
+              if (!next) setPath(detectedPath);
+              setNote(next || override ? "Will be written to .paratrans/state.json on the next save." : "Using the detected path.");
             }}
           >
             Save setting
           </button>
+          {override !== undefined && (
+            <button
+              className={btnGhost}
+              onClick={() => {
+                session.setProjectSetting({ localesPath: undefined });
+                setPath(detectedPath);
+                setNote(`Reset to the detected path (${detectedPath}).`);
+              }}
+            >
+              Reset to detected
+            </button>
+          )}
           <span className="text-xs text-gray-500">Takes effect when you reopen the project.</span>
         </div>
       </div>

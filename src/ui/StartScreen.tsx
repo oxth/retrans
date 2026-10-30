@@ -5,12 +5,12 @@ import { detectProject } from "../formats/detect";
 import { getRecent, type RecentProject } from "../platform/prefs";
 import { NewProjectWizard } from "./NewProjectWizard";
 import { OpenProjectDialog } from "./OpenProjectDialog";
-import { useApp } from "./store";
+import { savedBaseLocale, useApp } from "./store";
 
 export function StartScreen() {
   const { fs, openProject } = useApp();
   const [recent, setRecent] = useState<RecentProject[]>([]);
-  const [pending, setPending] = useState<{ root: string; detected: DetectResult } | null>(null);
+  const [pending, setPending] = useState<{ root: string; detected: DetectResult; savedBase?: string | null } | null>(null);
   const [wizard, setWizard] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -36,7 +36,7 @@ export function StartScreen() {
       if (typeof p !== "string") return;
       const root = p.replace(/\\/g, "/");
       const detected = await detect(root);
-      if (detected) setPending({ root, detected });
+      if (detected) setPending({ root, detected, savedBase: await savedBaseLocale(fs, root, detected) });
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     }
@@ -45,9 +45,10 @@ export function StartScreen() {
   const openRecent = async (r: RecentProject) => {
     const d = await detect(r.root);
     if (!d) return;
-    if (d.baseLocale === null) return setPending({ root: r.root, detected: d });
+    const base = d.baseLocale ?? (await savedBaseLocale(fs, r.root, d));
+    if (base === null) return setPending({ root: r.root, detected: d });
     try {
-      await openProject(r.root, d, { baseLocale: d.baseLocale, localesPath: d.localesPath });
+      await openProject(r.root, d, { baseLocale: base, localesPath: d.localesPath });
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     }

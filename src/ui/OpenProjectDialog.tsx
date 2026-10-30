@@ -5,12 +5,14 @@ import { useApp } from "./store";
 interface Props {
   root: string;
   detected: DetectResult;
+  /** Base language remembered in .paratrans/state.json when detection can't tell. */
+  savedBase?: string | null;
   onCancel(): void;
 }
 
-export function OpenProjectDialog({ root, detected, onCancel }: Props) {
+export function OpenProjectDialog({ root, detected, savedBase, onCancel }: Props) {
   const openProject = useApp((s) => s.openProject);
-  const [base, setBase] = useState(detected.baseLocale ?? "");
+  const [base, setBase] = useState(detected.baseLocale ?? savedBase ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

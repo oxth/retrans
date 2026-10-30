@@ -16,6 +16,8 @@ export interface PendingRecovery { journal: Journal; path: string }
 export interface AppState {
   fs: Fs;
   session: ProjectSession | null;
+  /** What detection found for the open project (before state.json overrides). */
+  detected: DetectResult | null;
   version: number;
   conflicts: Conflict[];
   recovery: PendingRecovery | null;
@@ -76,12 +78,25 @@ async function readState(fs: Fs, root: string): Promise<string | null> {
   }
 }
 
+/** The base language persisted for a project whose detection can't tell (null if none/invalid). */
+export async function savedBaseLocale(fs: Fs, root: string, d: DetectResult): Promise<string | null> {
+  let text: string | null;
+  try {
+    text = await readState(fs, root);
+  } catch {
+    return null;
+  }
+  const b = parseState(text).state.project.baseLocale;
+  return b && d.locales.includes(b) ? b : null;
+}
+
 let openGen = 0;
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export const useApp = create<AppState>((set, get) => ({
   fs: tauriFs,
   session: null,
+  detected: null,
   version: 0,
   conflicts: [],
   recovery: null,
@@ -93,14 +108,20 @@ export const useApp = create<AppState>((set, get) => ({
     const my = ++openGen;
     const stale = () => my !== openGen;
     await teardown();
-    // Project settings in .paratrans/state.json override the detected/picked values.
-    const st = parseState(await readState(fs, root), opts);
+    // .paratrans/state.json may override the locales path (Settings). The base language comes from
+    // `opts` (detected, or picked/persisted when detection returned null) and is never overridden.
+    const { state: st } = parseState(await readState(fs, root));
     const effective: ProjectOptions = {
-      baseLocale: st.project.baseLocale,
+      baseLocale: opts.baseLocale,
       localesPath: st.project.localesPath ?? opts.localesPath,
     };
     const session = await ProjectSession.open(fs, root, d, effective);
     if (stale()) return;
+    if (d.baseLocale === null && st.project.baseLocale !== opts.baseLocale) {
+      // Ask once (spec §7.1): remember the user's pick.
+      await session.pinBaseLocale(opts.baseLocale).catch((e) => console.warn("could not record base language", e));
+      if (stale()) return;
+    }
     const name = root.split("/").filter(Boolean).pop() ?? root;
     try {
       await addRecent({ root, name, format: d.format });
@@ -122,7 +143,7 @@ export const useApp = create<AppState>((set, get) => ({
       set((s) => ({ version: s.version + 1 }));
       if (session.isDirty()) scheduleJournal(session, fs);
     });
-    set({ session, conflicts: [], recovery, error: null, version: 0, closePrompt: null });
+    set({ session, detected: d, conflicts: [], recovery, error: null, version: 0, closePrompt: null });
 
     try {
       const stop = await watchDir(root, () => {
@@ -149,7 +170,7 @@ export const useApp = create<AppState>((set, get) => ({
   async closeProject() {
     openGen++;
     await teardown();
-    set({ session: null, conflicts: [], recovery: null, error: null, version: 0, closePrompt: null });
+    set({ session: null, detected: null, conflicts: [], recovery: null, error: null, version: 0, closePrompt: null });
   },
 
   async restoreRecovery() {
@@ -190,7 +211,12 @@ export const useApp = create<AppState>((set, get) => ({
         }
       }
       if (!current()) return false;
-      if (session.isDirty()) return false;
+      if (session.isDirty()) {
+        if (session.stateMalformed) {
+          set({ error: `Review statuses weren't saved: ${STATE_PATH} can't be parsed. Fix it (e.g. resolve merge markers) and save again.` });
+        }
+        return false;
+      }
       cancelJournal();
       if (journalFile) await clearJournal(fs, journalFile).catch((e) => console.warn("journal clear failed", e));
       return true;
