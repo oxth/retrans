@@ -51,7 +51,7 @@ describe("StartScreen", () => {
     expect(dlg).toHaveTextContent(/\d+ keys/);
     expect(useApp.getState().session).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Open" }));
-    expect(await screen.findByText(/Translations coming in the next task/)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Close project" })).toBeInTheDocument();
   });
 
   it("asks for the base language when detect returns baseLocale null", async () => {
@@ -67,7 +67,7 @@ describe("StartScreen", () => {
     await userEvent.selectOptions(screen.getByLabelText(/base language/i), "th");
     expect(open).toBeEnabled();
     await userEvent.click(open);
-    await screen.findByText(/Translations coming in the next task/);
+    await screen.findByRole("button", { name: "Close project" });
     expect(useApp.getState().session!.data.baseLocale).toBe("th");
   });
 
@@ -91,7 +91,7 @@ describe("StartScreen", () => {
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     await userEvent.click(screen.getByRole("button", { name: /Choose folder/ }));
     await userEvent.click(await screen.findByRole("button", { name: "Create project" }));
-    await screen.findByText(/Translations coming in the next task/);
+    await screen.findByRole("button", { name: "Close project" });
     expect(await fs.exists("/new/public/locales/th")).toBe(true);
     expect(useApp.getState().session!.data.locales).toEqual(["en", "th"]);
   });
@@ -101,7 +101,7 @@ describe("StartScreen", () => {
     await addRecent({ root: "/project", name: "project", format: "next-i18next" });
     await setup(fs);
     await userEvent.click(await screen.findByRole("button", { name: /^project\// }));
-    await screen.findByText(/Translations coming in the next task/);
+    await screen.findByRole("button", { name: "Close project" });
     expect(useApp.getState().session).not.toBeNull();
   });
 

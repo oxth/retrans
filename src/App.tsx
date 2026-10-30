@@ -1,5 +1,6 @@
 import { StartScreen } from "./ui/StartScreen";
-import { useApp, useSessionVersion } from "./ui/store";
+import { AppShell } from "./ui/AppShell";
+import { useApp } from "./ui/store";
 
 function RecoveryPrompt() {
   const { recovery, restoreRecovery, discardRecovery } = useApp();
@@ -18,23 +19,14 @@ function RecoveryPrompt() {
   );
 }
 
-// Task 13 replaces this with the real translation screen.
-function ProjectPlaceholder() {
-  useSessionVersion();
-  const { session, closeProject } = useApp();
-  if (!session) return null;
-  const name = session.data.root.split("/").filter(Boolean).pop();
-  return (
-    <main className="p-8">
-      <h1 className="text-xl font-semibold">{name}</h1>
-      <p className="mt-2 text-gray-500">Translations coming in the next task</p>
-      <button onClick={() => void closeProject()} className="mt-4 rounded-md border border-gray-300 px-3 py-1.5 text-sm">Close project</button>
-      <RecoveryPrompt />
-    </main>
-  );
-}
-
 export default function App() {
   const session = useApp((s) => s.session);
-  return session ? <ProjectPlaceholder /> : <StartScreen />;
+  return session ? (
+    <>
+      <AppShell />
+      <RecoveryPrompt />
+    </>
+  ) : (
+    <StartScreen />
+  );
 }
