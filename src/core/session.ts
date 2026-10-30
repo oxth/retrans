@@ -1,17 +1,21 @@
 import type { DetectResult, FileError, FormatAdapter, LoadedFile, ProjectOptions } from "../formats/adapter";
 import { localesSnippet, nextI18nextAdapter } from "../formats/next-i18next";
 import { paraglideAdapter } from "../formats/paraglide";
-import { type Fs, FsError, joinPath } from "../platform/fs";
+import { type Fs, FsError, joinPath, normalizePath } from "../platform/fs";
 import { hashValue } from "./hash";
 import {
   type CellMeta, type CellMap, type KeyId, keyId, type MessageValue, parseKeyId,
   type ProjectData, valuesEqual, type Warning,
 } from "./model";
+import type { Conflict } from "./merge";
+import { mergeStateEntries } from "./merge";
 import { comparePlaceholders } from "./placeholders";
 import { expandPluralKeys, isApplicable, pluralCategories, splitPlural } from "./plurals";
 import {
   applyChanges, type CellChange, checkCollision, isValidLocale, KeyError, newFile, validateKey,
 } from "./session-helpers";
+import type { Journal } from "./recovery";
+import { planReload } from "./session-reload";
 import { parseState, reconcile, serializeState, STATE_PATH, type StateFile } from "./state-file";
 import { cellMeta, recordCleared, recordEdit, recordReviewed, renameInState } from "./status";
 
@@ -53,6 +57,8 @@ export class ProjectSession {
   state: StateFile;
   files: LoadedFile[];
   errors: FileError[];
+  /** Cells edited both locally and on disk, from the last reloadFromDisk(); see resolveConflict. */
+  conflicts: Conflict[] = [];
   version = 0;
 
   private readonly root: string;
@@ -380,6 +386,98 @@ export class ProjectSession {
     }
     this.emit();
     return res;
+  }
+
+  // ---- external changes & recovery ---------------------------------------------------------
+
+  /**
+   * Merge what's on disk now into the session (three-way: base = snapshot at last load/save,
+   * theirs = disk now, mine = current values). Runs in the save queue. Conflicting cells keep
+   * "mine" until resolveConflict. state.json: an entry changed on disk replaces the local one only
+   * for cells whose local entry still equals the last loaded/saved one (untouched locally).
+   */
+  reloadFromDisk(): Promise<Conflict[]> {
+    const run = this.saving.then(() => this.reloadNow());
+    this.saving = run.catch(() => undefined);
+    return run;
+  }
+
+  private async reloadNow(): Promise<Conflict[]> {
+    const load = await this.adapter.load(this.fs, this.root, this.opts);
+    const stateText = await readOrNull(this.fs, joinPath(this.root, STATE_PATH));
+    // Everything below is synchronous, so edits made during the awaits are included as "mine".
+    const plan = planReload({ data: this.data, disk: this.disk, creates: this.creates, removed: this.removed, load });
+    for (const p of plan.adopted) this.creates.delete(p);
+    for (const f of load.files) if (this.removed.has(f.relPath)) this.removed.set(f.relPath, f);
+    this.files = plan.files;
+    this.errors = load.errors.filter((e) => plan.files.some((f) => f.relPath === e.relPath));
+    this.disk = copyCells(plan.theirs);
+    this.data.values = plan.merged;
+    this.data.locales = plan.locales;
+    this.data.namespaces = plan.namespaces;
+    this.setKeyOrder(plan.keyOrder);
+
+    const diskState = parseState(stateText, this.state.project);
+    mergeStateEntries(this.state, JSON.parse(this.stateBaseline) as StateFile, diskState);
+    this.stateBaseline = serializeState(reconcile(diskState, this.data));
+    this.stateTouched = true;
+
+    this.conflicts = plan.conflicts;
+    this.emit();
+    return plan.conflicts;
+  }
+
+  /** "theirs" adopts the on-disk value (undefined = cleared) and its status; "mine" keeps current. */
+  resolveConflict(c: Conflict, pick: "mine" | "theirs"): void {
+    this.conflicts = this.conflicts.filter((x) => x.id !== c.id || x.locale !== c.locale);
+    if (pick === "theirs") {
+      this.put(c.id, c.locale, c.theirs);
+      if (c.theirs && !keySet(this.data.keyOrder).has(c.id)) this.setKeyOrder([...this.data.keyOrder, c.id]);
+      const disk = (JSON.parse(this.stateBaseline) as StateFile).entries[c.id]?.[c.locale];
+      if (disk) (this.state.entries[c.id] ??= {})[c.locale] = { ...disk };
+      else if (this.state.entries[c.id]) {
+        delete this.state.entries[c.id][c.locale];
+        if (Object.keys(this.state.entries[c.id]).length === 0) delete this.state.entries[c.id];
+      }
+      this.stateTouched = true;
+    }
+    this.emit();
+  }
+
+  /** Unsaved edits, for the crash-recovery journal. */
+  toJournal(): Journal {
+    return {
+      root: this.root,
+      savedAt: new Date().toISOString(),
+      locales: [...this.data.locales],
+      namespaces: [...this.data.namespaces],
+      cells: this.dirtyCells().map(({ id, locale }) => [id, locale, structuredClone(this.value(id, locale)) ?? null]),
+      state: structuredClone(this.state),
+    };
+  }
+
+  /** Re-applies a journal: missing languages/namespaces (as pending creates), then cells, then status. */
+  applyJournal(j: Journal): void {
+    if (normalizePath(j.root) !== normalizePath(this.root)) {
+      throw new Error(`Journal root ${j.root} does not match project root ${this.root}`);
+    }
+    for (const l of j.locales) if (!this.data.locales.includes(l)) this.addLanguage(l);
+    if (this.data.format === "next-i18next") {
+      for (const ns of j.namespaces) if (!this.data.namespaces.includes(ns)) this.addNamespace(ns);
+    }
+    const known = keySet(this.data.keyOrder);
+    const added = new Set<KeyId>();
+    for (const [id, locale, v] of j.cells) {
+      if (!this.data.locales.includes(locale)) continue;
+      const relPath = this.adapter.filePath(this.opts, locale, parseKeyId(id).ns);
+      if (this.files.find((f) => f.relPath === relPath)?.readOnly) continue;
+      this.put(id, locale, v ? structuredClone(v) : undefined);
+      if (v && !known.has(id)) added.add(id);
+    }
+    if (added.size) this.setKeyOrder([...this.data.keyOrder, ...added]);
+    this.state.entries = structuredClone(j.state.entries);
+    this.stateTouched = true;
+    this.emit();
   }
 
   // ---- internals -------------------------------------------------------------------------

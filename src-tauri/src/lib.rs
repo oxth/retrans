@@ -1,4 +1,5 @@
 mod fs_cmds;
+mod watch;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -12,6 +13,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        .manage(watch::WatchState::default())
         .invoke_handler(tauri::generate_handler![
             greet,
             fs_cmds::read_text,
@@ -19,7 +21,9 @@ pub fn run() {
             fs_cmds::path_exists,
             fs_cmds::list_files,
             fs_cmds::remove_path,
-            fs_cmds::mkdirp
+            fs_cmds::mkdirp,
+            watch::watch_dir,
+            watch::unwatch_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
