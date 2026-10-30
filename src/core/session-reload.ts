@@ -63,11 +63,12 @@ export function planReload(inp: ReloadInput): ReloadPlan {
   const pending = [...creates].filter(([p]) => !onDisk.has(p)).map(([, c]) => c);
 
   const hasValueIn = (l: string) => [...merged.values()].some((c) => c.has(l));
-  const freshLocales = load.data.locales.filter((l) => !removedLocales.has(l));
+  const base = data.baseLocale;
+  const freshLocales = load.data.locales.filter((l) => l !== base && !removedLocales.has(l));
   const extra = data.locales.filter(
-    (l) => !freshLocales.includes(l) && (pending.some((c) => c.locale === l) || hasValueIn(l)),
+    (l) => l !== base && !freshLocales.includes(l) && (pending.some((c) => c.locale === l) || hasValueIn(l)),
   );
-  const [base, ...rest] = [...freshLocales, ...extra];
+  const rest = [...freshLocales, ...extra];
   const locales = [base, ...(data.format === "paraglide" ? rest : rest.sort())];
 
   const nsSet = new Set([...load.data.namespaces, ...pending.map((c) => c.ns)]);

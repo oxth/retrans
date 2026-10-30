@@ -53,6 +53,42 @@ describe("recovery journal", () => {
     await clearJournal(fs, path); // missing is fine
   });
 
+  it("applyJournal merges with disk changes made after the journal was written", async () => {
+    const fs = loadFixtureDir(resolve(__dirname, "../test/fixtures/next-nested"));
+    const s = await open(fs);
+    s.setText(c("title"), "th", "ของฉัน");
+    s.setText(c("nav.home"), "th", "บ้านของฉัน");
+    s.markReviewed(c("title"), "th");
+    const j = s.toJournal();
+    // after the crash, a teammate's change lands: one other cell, one same cell (differently)
+    await fs.writeTextAtomic(
+      `${R}/public/locales/th/common.json`,
+      JSON.stringify({ title: "สวัสดี", nav: { home: "บ้านของเขา", about: "เกี่ยวกับ" }, orphan: "เศษ" }, null, 2) + "\n",
+    );
+    const s2 = await open(fs);
+    const conflicts = s2.applyJournal(j);
+    expect(conflicts).toEqual([
+      { id: c("nav.home"), locale: "th", mine: { kind: "text", text: "บ้านของฉัน" }, theirs: { kind: "text", text: "บ้านของเขา" } },
+    ]);
+    expect(s2.conflicts).toEqual(conflicts);
+    expect(s2.value(c("title"), "th")).toEqual({ kind: "text", text: "ของฉัน" });
+    expect(s2.value(c("nav.home"), "th")).toEqual({ kind: "text", text: "บ้านของฉัน" });
+    expect(s2.value(c("nav.about"), "th")).toEqual({ kind: "text", text: "เกี่ยวกับ" });
+    expect(s2.meta(c("title"), "th").status).toBe("reviewed");
+  });
+
+  it("applyJournal only replaces status entries the journal touched", async () => {
+    const fs = loadFixtureDir(resolve(__dirname, "../test/fixtures/next-nested"));
+    const s = await open(fs);
+    s.markReviewed(c("nav.home"), "th");
+    const j = s.toJournal();
+    const s2 = await open(fs);
+    s2.markReviewed(c("title"), "th"); // stands in for a status change on disk since the journal
+    expect(s2.applyJournal(j)).toEqual([]);
+    expect(s2.meta(c("title"), "th").status).toBe("reviewed");
+    expect(s2.meta(c("nav.home"), "th").status).toBe("reviewed");
+  });
+
   it("applyJournal refuses a journal for another root", async () => {
     const fs = loadFixtureDir(resolve(__dirname, "../test/fixtures/next-nested"));
     const s = await open(fs);

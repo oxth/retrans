@@ -9,7 +9,10 @@ export interface Journal {
   savedAt: string;
   locales: string[];
   namespaces: string[];
-  cells: Array<[KeyId, string, MessageValue | null]>; // null = cleared
+  /** [id, locale, mine, disk value when the journal was written]; null = absent/cleared. */
+  cells: Array<[KeyId, string, MessageValue | null, MessageValue | null]>;
+  /** Cells whose status entry differed from the last saved state when the journal was written. */
+  stateCells: Array<[KeyId, string]>;
   state: StateFile;
 }
 
@@ -29,7 +32,9 @@ function isJournal(v: unknown): v is Journal {
     isObj(v) && typeof v.root === "string" && typeof v.savedAt === "string" &&
     isStrings(v.locales) && isStrings(v.namespaces) &&
     Array.isArray(v.cells) &&
-    v.cells.every((c) => Array.isArray(c) && c.length === 3 && typeof c[0] === "string" && typeof c[1] === "string") &&
+    v.cells.every((c) => Array.isArray(c) && c.length === 4 && typeof c[0] === "string" && typeof c[1] === "string") &&
+    Array.isArray(v.stateCells) &&
+    v.stateCells.every((c) => Array.isArray(c) && c.length === 2 && typeof c[0] === "string" && typeof c[1] === "string") &&
     isObj(v.state) && isObj(v.state.entries) && isObj(v.state.project)
   );
 }

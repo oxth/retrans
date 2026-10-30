@@ -8,7 +8,7 @@ import {
   type ProjectData, valuesEqual, type Warning,
 } from "./model";
 import type { Conflict } from "./merge";
-import { mergeStateEntries } from "./merge";
+import { entryEqual, mergeStateEntries } from "./merge";
 import { comparePlaceholders } from "./placeholders";
 import { expandPluralKeys, isApplicable, pluralCategories, splitPlural } from "./plurals";
 import {
@@ -65,6 +65,7 @@ export class ProjectSession {
   private disk: CellMap; // values as loaded / last saved
   private stateBaseline: string; // serialized reconciled state as loaded / last saved
   private stateTouched = false;
+  private stateDiskText: string | null; // raw state.json as loaded / last written (stale check)
   private creates = new Map<string, { locale: string; ns: string }>(); // relPath -> pending create
   private removed = new Map<string, LoadedFile>(); // relPath -> pending delete
   private localesChanged = false;
@@ -75,6 +76,7 @@ export class ProjectSession {
   private constructor(
     fs: Fs, root: string, adapter: FormatAdapter, opts: ProjectOptions,
     load: { data: ProjectData; files: LoadedFile[]; errors: FileError[] }, state: StateFile,
+    stateText: string | null,
   ) {
     this.fs = fs;
     this.root = root;
@@ -86,6 +88,7 @@ export class ProjectSession {
     this.state = state;
     this.disk = copyCells(load.data.values);
     this.stateBaseline = serializeState(reconcile(state, load.data));
+    this.stateDiskText = stateText;
   }
 
   static async open(fs: Fs, root: string, d: DetectResult, opts: ProjectOptions): Promise<ProjectSession> {
@@ -93,7 +96,7 @@ export class ProjectSession {
     const load = await adapter.load(fs, root, opts);
     const stateText = await readOrNull(fs, joinPath(root, STATE_PATH));
     const state = parseState(stateText, { baseLocale: opts.baseLocale, localesPath: opts.localesPath });
-    return new ProjectSession(fs, root, adapter, opts, load, state);
+    return new ProjectSession(fs, root, adapter, opts, load, state, stateText);
   }
 
   // ---- reading ---------------------------------------------------------------------------
@@ -380,9 +383,17 @@ export class ProjectSession {
     const serialized = serializeState(reconcile(this.state, this.data));
     this.stateTouched = false;
     if (serialized !== this.stateBaseline) {
-      await this.fs.writeTextAtomic(joinPath(this.root, STATE_PATH), serialized);
-      res.written.push(STATE_PATH);
-      this.stateBaseline = serialized;
+      const statePath = joinPath(this.root, STATE_PATH);
+      if ((await readOrNull(this.fs, statePath)) !== this.stateDiskText) {
+        // Changed on disk (e.g. a pull): don't clobber it; reloadFromDisk merges, then save again.
+        res.stale.push(STATE_PATH);
+        this.stateTouched = true;
+      } else {
+        await this.fs.writeTextAtomic(statePath, serialized);
+        res.written.push(STATE_PATH);
+        this.stateBaseline = serialized;
+        this.stateDiskText = serialized;
+      }
     }
     this.emit();
     return res;
@@ -420,6 +431,7 @@ export class ProjectSession {
     const diskState = parseState(stateText, this.state.project);
     mergeStateEntries(this.state, JSON.parse(this.stateBaseline) as StateFile, diskState);
     this.stateBaseline = serializeState(reconcile(diskState, this.data));
+    this.stateDiskText = stateText;
     this.stateTouched = true;
 
     this.conflicts = plan.conflicts;
@@ -444,20 +456,38 @@ export class ProjectSession {
     this.emit();
   }
 
-  /** Unsaved edits, for the crash-recovery journal. */
+  /** Unsaved edits, for the crash-recovery journal. Each cell carries its disk value at the time. */
   toJournal(): Journal {
+    const baseline = (JSON.parse(this.stateBaseline) as StateFile).entries;
+    const stateCells: Array<[KeyId, string]> = [];
+    for (const id of new Set([...Object.keys(baseline), ...Object.keys(this.state.entries)])) {
+      const locales = new Set([...Object.keys(baseline[id] ?? {}), ...Object.keys(this.state.entries[id] ?? {})]);
+      for (const l of locales) {
+        if (!entryEqual(this.state.entries[id]?.[l], baseline[id]?.[l])) stateCells.push([id, l]);
+      }
+    }
     return {
       root: this.root,
       savedAt: new Date().toISOString(),
       locales: [...this.data.locales],
       namespaces: [...this.data.namespaces],
-      cells: this.dirtyCells().map(({ id, locale }) => [id, locale, structuredClone(this.value(id, locale)) ?? null]),
+      cells: this.dirtyCells().map(({ id, locale }) => [
+        id, locale,
+        structuredClone(this.value(id, locale)) ?? null,
+        structuredClone(this.disk.get(id)?.get(locale)) ?? null,
+      ]),
+      stateCells,
       state: structuredClone(this.state),
     };
   }
 
-  /** Re-applies a journal: missing languages/namespaces (as pending creates), then cells, then status. */
-  applyJournal(j: Journal): void {
+  /**
+   * Re-applies a journal onto a freshly opened session: missing languages/namespaces (as pending
+   * creates), then cells merged three-way (base = disk value at journal time, theirs = disk now,
+   * mine = journal value; conflicts keep mine until resolveConflict), then status entries for the
+   * cells the journal touched only.
+   */
+  applyJournal(j: Journal): Conflict[] {
     if (normalizePath(j.root) !== normalizePath(this.root)) {
       throw new Error(`Journal root ${j.root} does not match project root ${this.root}`);
     }
@@ -467,17 +497,35 @@ export class ProjectSession {
     }
     const known = keySet(this.data.keyOrder);
     const added = new Set<KeyId>();
-    for (const [id, locale, v] of j.cells) {
+    const conflicts: Conflict[] = [];
+    const touched: Array<[KeyId, string]> = [...j.stateCells];
+    for (const [id, locale, m, b] of j.cells) {
       if (!this.data.locales.includes(locale)) continue;
       const relPath = this.adapter.filePath(this.opts, locale, parseKeyId(id).ns);
       if (this.files.find((f) => f.relPath === relPath)?.readOnly) continue;
-      this.put(id, locale, v ? structuredClone(v) : undefined);
-      if (v && !known.has(id)) added.add(id);
+      const mine = m ?? undefined;
+      const theirs = this.disk.get(id)?.get(locale);
+      if (!valuesEqual(mine, theirs) && !valuesEqual(b ?? undefined, theirs)) {
+        if (valuesEqual(b ?? undefined, mine)) continue; // only disk moved: keep disk
+        conflicts.push({ id, locale, mine, theirs });
+      }
+      this.put(id, locale, mine ? structuredClone(mine) : undefined);
+      if (mine && !known.has(id)) added.add(id);
+      touched.push([id, locale]);
     }
     if (added.size) this.setKeyOrder([...this.data.keyOrder, ...added]);
-    this.state.entries = structuredClone(j.state.entries);
+    for (const [id, l] of touched) {
+      const e = j.state.entries[id]?.[l];
+      if (e) (this.state.entries[id] ??= {})[l] = { ...e };
+      else if (this.state.entries[id]) {
+        delete this.state.entries[id][l];
+        if (Object.keys(this.state.entries[id]).length === 0) delete this.state.entries[id];
+      }
+    }
     this.stateTouched = true;
+    this.conflicts = [...this.conflicts, ...conflicts];
     this.emit();
+    return conflicts;
   }
 
   // ---- internals -------------------------------------------------------------------------

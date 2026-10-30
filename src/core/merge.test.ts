@@ -195,6 +195,31 @@ describe("ProjectSession.reloadFromDisk", () => {
     expect(await fs.readText(`${R}/${NEXT}/th/common.json`)).toBe("{ broken");
   });
 
+  it("save reports state.json stale when it changed on disk; reload then save keeps both statuses", async () => {
+    const { fs, s } = await openFx("next-nested");
+    const h = (await import("./hash")).hashText;
+    s.markReviewed(c("nav.home"), "th");
+    await fs.writeTextAtomic(`${R}/${STATE_PATH}`, JSON.stringify({
+      version: 1,
+      project: { baseLocale: "en", localesPath: NEXT },
+      entries: { [c("title")]: { th: { s: "reviewed", h: h("Hello") } } },
+    }));
+    const pulled = await fs.readText(`${R}/${STATE_PATH}`);
+    const r1 = await s.save();
+    expect(r1.stale).toEqual([STATE_PATH]);
+    expect(await fs.readText(`${R}/${STATE_PATH}`)).toBe(pulled);
+    expect(s.isDirty()).toBe(true);
+    await s.reloadFromDisk();
+    const r2 = await s.save();
+    expect(r2.stale).toEqual([]);
+    expect(r2.written).toEqual([STATE_PATH]);
+    const entries = JSON.parse(await fs.readText(`${R}/${STATE_PATH}`)).entries;
+    expect(entries[c("title")].th.s).toBe("reviewed");
+    expect(entries[c("nav.home")].th.s).toBe("reviewed");
+    fs.writes.length = 0;
+    expect((await s.save()).written).toEqual([]);
+  });
+
   it("state.json changes on disk apply to cells not touched locally", async () => {
     const { fs, s } = await openFx("next-nested");
     s.markReviewed(c("nav.home"), "th"); // local touch
