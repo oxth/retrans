@@ -74,7 +74,7 @@ describe("buildRows", () => {
     });
     const rows = buildRows(p, F({ locales: ["ru"] }));
     const items = rows.filter((r) => r.pluralGroup === "items");
-    expect(items.length).toBeGreaterThanOrEqual(2);
+    expect(items.map((r) => r.pluralCategory)).toEqual(["one", "few", "many", "other"]);
     const first = rows.indexOf(items[0]);
     expect(rows.slice(first, first + items.length)).toEqual(items);
     expect(items.map((r) => r.pluralCategory)).toContain("other");
