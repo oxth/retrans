@@ -43,10 +43,19 @@ export interface AppState {
 const JOURNAL_DELAY_MS = 1000;
 let journalTimer: ReturnType<typeof setTimeout> | null = null;
 let journalFile: string | null = null;
+/** The journal write in flight, if any; clearing waits for it so it can't land afterwards. */
+let journalWrite: Promise<void> | null = null;
 
 function cancelJournal(): void {
   if (journalTimer) clearTimeout(journalTimer);
   journalTimer = null;
+}
+
+/** Cancels a scheduled write, waits for one in flight, then removes the journal. */
+async function dropJournal(fs: Fs, path: string): Promise<void> {
+  cancelJournal();
+  while (journalWrite) await journalWrite;
+  await clearJournal(fs, path);
 }
 
 /** Debounced, best-effort: errors go to the console only. */
@@ -56,7 +65,12 @@ function scheduleJournal(session: ProjectSession, fs: Fs): void {
     journalTimer = null;
     const path = journalFile;
     if (!path || useApp.getState().session !== session || !session.isDirty()) return;
-    writeJournal(fs, path, session.toJournal()).catch((e) => console.warn("journal write failed", e));
+    const w: Promise<void> = writeJournal(fs, path, session.toJournal())
+      .catch((e) => console.warn("journal write failed", e))
+      .finally(() => {
+        if (journalWrite === w) journalWrite = null;
+      });
+    journalWrite = w;
   }, JOURNAL_DELAY_MS);
 }
 
@@ -186,13 +200,13 @@ export const useApp = create<AppState>((set, get) => ({
       set((s) => ({ recovery: null, conflicts: session.refreshConflicts([...s.conflicts, ...c]) }));
     } catch (e) {
       set({ recovery: null, error: `Could not restore unsaved changes: ${msg(e)}` });
-      await clearJournal(fs, recovery.path).catch(() => {});
+      await dropJournal(fs, recovery.path).catch(() => {});
     }
   },
 
   async discardRecovery() {
     const { fs, recovery } = get();
-    if (recovery) await clearJournal(fs, recovery.path);
+    if (recovery) await dropJournal(fs, recovery.path);
     set({ recovery: null });
   },
 
@@ -224,8 +238,8 @@ export const useApp = create<AppState>((set, get) => ({
         }
         return false;
       }
-      cancelJournal();
-      if (journalFile) await clearJournal(fs, journalFile).catch((e) => console.warn("journal clear failed", e));
+      if (journalFile) await dropJournal(fs, journalFile).catch((e) => console.warn("journal clear failed", e));
+      else cancelJournal();
       return true;
     } catch (e) {
       if (current()) set({ error: `Save failed: ${msg(e)}` });
@@ -250,9 +264,9 @@ export const useApp = create<AppState>((set, get) => ({
     if (choice === "save") {
       if (!(await get().save())) return;
     } else {
-      cancelJournal();
       const { fs } = get();
-      if (journalFile) await clearJournal(fs, journalFile).catch((e) => console.warn("journal clear failed", e));
+      if (journalFile) await dropJournal(fs, journalFile).catch((e) => console.warn("journal clear failed", e));
+      else cancelJournal();
     }
     await finishClose(prompt.then, get().closeProject);
   },
