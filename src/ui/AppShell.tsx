@@ -1,6 +1,8 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { buildRows } from "../core/rows";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyId } from "../core/model";
+import { buildRows, nextMissing } from "../core/rows";
 import { getViewMode, setViewMode } from "../platform/prefs";
+import type { EditActions } from "./Cell";
 import { ListView } from "./ListView";
 import { type Page, Sidebar } from "./Sidebar";
 import { useApp, useSessionVersion } from "./store";
@@ -53,6 +55,41 @@ export function AppShell() {
     [session, version, rowFilter],
   );
 
+  const stats = useMemo(() => (session ? session.stats() : new Map<string, { done: number; total: number }>()), [session, version]);
+
+  // Only one editor is open at a time; its position lives here so Tab can move between rows.
+  const [editing, setEditing] = useState<{ id: KeyId; locale: string } | null>(null);
+  const live = useRef({ session, rows, visible });
+  live.current = { session, rows, visible };
+  useEffect(() => setEditing(null), [session]);
+
+  const actions = useMemo<EditActions>(
+    () => ({
+      start: (id, locale) => setEditing({ id, locale }),
+      cancel: () => setEditing(null),
+      commit: (id, locale, text) => {
+        const s = live.current.session;
+        if (!s) return;
+        const cur = s.value(id, locale);
+        if (cur?.kind === "complex") {
+          const raw = JSON.parse(text);
+          if (JSON.stringify(raw) !== JSON.stringify(cur.raw)) s.setComplex(id, locale, raw);
+        } else {
+          const prev = cur?.kind === "text" ? cur.text : "";
+          if (text !== prev) s.setText(id, locale, text === "" ? null : text);
+        }
+        setEditing(null);
+      },
+      next: (id, locale) => {
+        const { session: s, rows: r, visible: v } = live.current;
+        const n = s ? nextMissing(s, r, { id, locale }, v) : null;
+        setEditing(n);
+      },
+      review: (id, locale) => live.current.session?.markReviewed(id, locale),
+    }),
+    [],
+  );
+
   if (!session) return null;
   const toggleLocale = (l: string) =>
     setHidden((h) => {
@@ -63,7 +100,7 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen bg-white text-gray-900">
-      <Sidebar session={session} page={page} onPage={setPage} onClose={() => void closeProject()} />
+      <Sidebar session={session} stats={stats} page={page} onPage={setPage} onClose={() => void closeProject()} />
       <main className="flex min-w-0 flex-1 flex-col">
         {error && (
           <div role="alert" className="flex items-center justify-between gap-3 bg-red-50 px-4 py-2 text-sm text-red-700">
@@ -87,9 +124,9 @@ export function AppShell() {
             />
             <div className="min-h-0 flex-1">
               {viewMode === "list" ? (
-                <ListView session={session} rows={rows} locales={visible} />
+                <ListView session={session} rows={rows} locales={visible} version={version} editing={editing} actions={actions} />
               ) : (
-                <TableView session={session} rows={rows} locales={visible} />
+                <TableView session={session} rows={rows} locales={visible} version={version} editing={editing} actions={actions} />
               )}
             </div>
           </>

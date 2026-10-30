@@ -1,13 +1,14 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef } from "react";
-import type { Row } from "../core/rows";
-import type { ProjectSession } from "../core/session";
+import { useEffect, useRef } from "react";
 import { Cell } from "./Cell";
+import type { ViewProps } from "./ListView";
 
 const KEY_W = 220;
 const COL_W = 260;
+/** Fixed height of the sticky header; the virtualizer needs it as scrollMargin so the visible range is right. */
+const HEADER_H = 32;
 
-export function TableView({ session, rows, locales }: { session: ProjectSession; rows: Row[]; locales: string[] }) {
+export function TableView({ session, rows, locales, version, editing, actions }: ViewProps) {
   const parent = useRef<HTMLDivElement>(null);
   const base = session.data.baseLocale;
   const width = KEY_W + COL_W * (locales.length + 1);
@@ -16,13 +17,24 @@ export function TableView({ session, rows, locales }: { session: ProjectSession;
     getScrollElement: () => parent.current,
     estimateSize: () => 44,
     overscan: 10,
+    scrollMargin: HEADER_H,
+    scrollPaddingStart: HEADER_H,
     getItemKey: (i) => rows[i].id,
   });
+  const editId = editing?.id;
+  const editLocale = editing?.locale;
+  useEffect(() => {
+    if (!editId) return;
+    const i = rows.findIndex((r) => r.id === editId);
+    if (i >= 0) virt.scrollToIndex(i);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId, editLocale]);
   const pin = (left: number) => ({ position: "sticky" as const, left, zIndex: 1 });
   return (
     <div ref={parent} className="h-full overflow-auto text-sm" data-testid="table-scroll">
       <div style={{ width, minWidth: "100%" }}>
-        <div className="sticky top-0 z-10 flex border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-500">
+        <div style={{ height: HEADER_H }}
+          className="sticky top-0 z-10 flex items-center border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-500">
           <div className="shrink-0 bg-gray-50 px-2 py-1.5" style={{ width: KEY_W, ...pin(0), zIndex: 11 }}>Key</div>
           <div className="shrink-0 border-r border-gray-100 bg-gray-50 px-2 py-1.5" style={{ width: COL_W, ...pin(KEY_W), zIndex: 11 }}>
             {base.toUpperCase()} (base)
@@ -43,7 +55,7 @@ export function TableView({ session, rows, locales }: { session: ProjectSession;
                   data-index={vi.index}
                   ref={virt.measureElement}
                   className="absolute left-0 top-0 flex border-b border-gray-100"
-                  style={{ transform: `translateY(${vi.start}px)`, width }}
+                  style={{ transform: `translateY(${vi.start - HEADER_H}px)`, width }}
                   data-row={row.id}
                 >
                   <div className="shrink-0 bg-white px-2 py-1.5" style={{ width: KEY_W, ...pin(0) }}>
@@ -51,11 +63,11 @@ export function TableView({ session, rows, locales }: { session: ProjectSession;
                     {row.ns && <div className="text-[10px] text-gray-400">{row.ns}</div>}
                   </div>
                   <div className="shrink-0 border-r border-gray-100 bg-white" style={{ width: COL_W, ...pin(KEY_W) }}>
-                    <Cell session={session} id={row.id} locale={base} showCode={false} />
+                    <Cell session={session} id={row.id} locale={base} showCode={false} version={version} editing={editId === row.id && editLocale === base} actions={actions} />
                   </div>
                   {locales.map((l) => (
                     <div key={l} className="shrink-0 border-r border-gray-100" style={{ width: COL_W }}>
-                      <Cell session={session} id={row.id} locale={l} showCode={false} />
+                      <Cell session={session} id={row.id} locale={l} showCode={false} version={version} editing={editId === row.id && editLocale === l} actions={actions} />
                     </div>
                   ))}
                 </div>

@@ -8,9 +8,8 @@ const NAV: Array<{ page: Page; label: string }> = [
   { page: "settings", label: "Settings" },
 ];
 
-export function Sidebar({ session, page, onPage, onClose }: { session: ProjectSession; page: Page; onPage: (p: Page) => void; onClose: () => void }) {
+export function Sidebar({ session, stats, page, onPage, onClose }: { session: ProjectSession; stats: Map<string, { done: number; total: number }>; page: Page; onPage: (p: Page) => void; onClose: () => void }) {
   const name = session.data.root.split("/").filter(Boolean).pop() ?? session.data.root;
-  const stats = session.stats();
   const item = (on: boolean) =>
     `block w-full rounded-md px-2 py-1.5 text-left text-sm ${on ? "bg-indigo-100 font-semibold text-indigo-800" : "text-gray-600 hover:bg-gray-100"}`;
   return (
