@@ -233,6 +233,11 @@ async function load(fs: Fs, root: string, opts: ProjectOptions): Promise<LoadRes
   return { data, files, errors };
 }
 
+/** The copyable `locales` line shown instead of editing next-i18next.config.*. */
+export function localesSnippet(locales: string[]): string {
+  return `locales: [${locales.map((l) => `'${l}'`).join(", ")}],`;
+}
+
 export const nextI18nextAdapter: FormatAdapter = {
   format: "next-i18next",
   detect,
@@ -248,6 +253,6 @@ export const nextI18nextAdapter: FormatAdapter = {
     return f ? { style: f.style, shape: f.shape } : { style: DEFAULT_STYLE, shape: "nested" };
   },
   async onLocalesChanged(_fs, _root, locales) {
-    return { configSnippet: `locales: [${locales.map((l) => `'${l}'`).join(", ")}],` };
+    return { configSnippet: localesSnippet(locales) };
   },
 };
