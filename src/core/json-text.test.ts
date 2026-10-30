@@ -28,10 +28,8 @@ describe("json-text", () => {
   });
 
   it("setAt appends new key at end of parent", () => {
-    const out = setAt('{"a":{"x":"1"},"z":"9"}', ["a", "y"], "2", DEFAULT_STYLE);
-    expect(JSON.parse(out)).toEqual({ a: { x: "1", y: "2" }, z: "9" });
-    expect(Object.keys(JSON.parse(out).a)).toEqual(["x", "y"]);
-    expect(out.indexOf('"y"')).toBeGreaterThan(out.indexOf('"x"'));
+    const out = setAt('{"a":{"x":"1"},"z":"9"}', ["a", "y"], "2", detectStyle('{"a":{"x":"1"},"z":"9"}'));
+    expect(out).toBe('{"a":{"x":"1","y":"2"},"z":"9"}');
   });
 
   it("setAt creates missing parent objects", () => {
@@ -94,5 +92,23 @@ describe("removeAt minimal diff", () => {
     expect(removeAt(text, ["b"], st)).toBe('{\n  "a": 1,\n  "c": 3\n}\n');
     expect(removeAt(text, ["c"], st)).toBe('{\n  "a": 1,\n  "b": { "x": 2 }\n}\n');
     expect(removeAt('{\n  "a": 1\n}\n', ["a"], st)).toBe("{}\n");
+  });
+});
+
+describe("compact and trailing whitespace", () => {
+  const nf = { indent: "  ", eol: "\n", finalNewline: false } as const;
+  it("inserts into compact files without reformatting", () => {
+    expect(setAt('{"a":"1"}', ["b"], "2", nf)).toBe('{"a":"1","b":"2"}');
+    expect(setAt('{"a": "1", "c": "3"}', ["b"], "2", nf)).toBe('{"a": "1", "c": "3", "b": "2"}');
+    expect(setAt("{}", ["b"], "2", nf)).toBe('{"b":"2"}');
+    expect(setAt('{"a":"1"}', ["p", "q"], "2", nf)).toBe('{"a":"1","p":{"q":"2"}}');
+  });
+  it("preserves trailing blank lines", () => {
+    const text = '{\n  "a": "1"\n}\n\n';
+    expect(setAt(text, ["a"], "2", detectStyle(text))).toBe('{\n  "a": "2"\n}\n\n');
+    expect(removeAt('{\n  "a": 1,\n  "b": 2\n}\n\n', ["b"], DEFAULT_STYLE)).toBe('{\n  "a": 1\n}\n\n');
+  });
+  it("removeAt keeps absent final newline", () => {
+    expect(removeAt('{\n  "a": 1,\n  "b": 2\n}', ["b"], nf)).toBe('{\n  "a": 1\n}');
   });
 });

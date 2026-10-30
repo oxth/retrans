@@ -42,8 +42,10 @@ function formatting(style: JsonStyle) {
   return { insertSpaces: !tab, tabSize: tab ? 1 : style.indent.length || 2, eol: style.eol };
 }
 
-function applyStyleEnd(text: string, style: JsonStyle): string {
-  const trimmed = text.replace(/(\r?\n)+$/, "");
+function applyStyleEnd(text: string, style: JsonStyle, original: string): string {
+  const origTail = /\s*$/.exec(original)![0];
+  const trimmed = text.replace(/\s+$/, "");
+  if (style.finalNewline && origTail.includes("\n")) return trimmed + origTail;
   return style.finalNewline ? trimmed + style.eol : trimmed;
 }
 
@@ -52,10 +54,46 @@ function edit(text: string, path: string[], value: unknown, style: JsonStyle): s
   return applyEdits(text, edits);
 }
 
+/** Splice a new member into a single-line object, matching its separator style. */
+function compactInsert(text: string, path: string[], value: unknown): string | undefined {
+  const tree = parseTree(text);
+  if (!tree || findNodeAtLocation(tree, path)) return undefined;
+  let k = path.length - 1;
+  let obj = findNodeAtLocation(tree, path.slice(0, k));
+  while (!obj && k > 0) {
+    k--;
+    obj = findNodeAtLocation(tree, path.slice(0, k));
+  }
+  if (!obj || obj.type !== "object") return undefined;
+  if (/[\r\n]/.test(text.slice(obj.offset, obj.offset + obj.length))) return undefined;
+  let nested: unknown = value;
+  for (let i = path.length - 1; i > k; i--) nested = { [path[i]]: nested };
+  const kids = obj.children ?? [];
+  let colon = ":";
+  let comma = ",";
+  const first = kids[0]?.children;
+  if (first && first.length === 2) {
+    colon = text.slice(first[0].offset + first[0].length, first[1].offset);
+  }
+  if (kids.length > 1) {
+    const sep = text.slice(kids[0].offset + kids[0].length, kids[1].offset);
+    comma = sep;
+  } else if (colon.endsWith(" ")) {
+    comma = ", ";
+  }
+  const member = JSON.stringify(path[k]) + colon + JSON.stringify(nested);
+  if (kids.length === 0) {
+    return text.slice(0, obj.offset + 1) + member + text.slice(obj.offset + obj.length - 1);
+  }
+  const last = kids[kids.length - 1];
+  const at = last.offset + last.length;
+  return text.slice(0, at) + comma + member + text.slice(at);
+}
+
 export function setAt(text: string, path: string[], value: unknown, style: JsonStyle): string {
-  const out = edit(text, path, value, style);
+  const out = compactInsert(text, path, value) ?? edit(text, path, value, style);
   if (out === text) return text;
-  return applyStyleEnd(out, style);
+  return applyStyleEnd(out, style, text);
 }
 
 function getAt(root: unknown, path: string[]): unknown {
@@ -109,7 +147,7 @@ export function removeAt(text: string, path: string[], style: JsonStyle): string
       out = removeProperty(out, path.slice(0, i), style);
     } else break;
   }
-  return applyStyleEnd(out, style);
+  return applyStyleEnd(out, style, text);
 }
 
 export function emptyDocument(style: JsonStyle): string {
