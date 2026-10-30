@@ -1,51 +1,40 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { StartScreen } from "./ui/StartScreen";
+import { useApp, useSessionVersion } from "./ui/store";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
+function RecoveryPrompt() {
+  const { recovery, restoreRecovery, discardRecovery } = useApp();
+  if (!recovery) return null;
+  const when = new Date(recovery.journal.savedAt).toLocaleString();
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div role="dialog" aria-label="Restore unsaved changes" className="fixed inset-0 flex items-center justify-center bg-black/30">
+      <div className="w-96 rounded-xl bg-white p-6 shadow-xl">
+        <p className="text-sm">Restore unsaved changes from {when}?</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={() => void discardRecovery()} className="rounded-md px-3 py-1.5 text-sm hover:bg-gray-100">Discard</button>
+          <button onClick={restoreRecovery} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white">Restore</button>
+        </div>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+    </div>
+  );
+}
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+// Task 13 replaces this with the real translation screen.
+function ProjectPlaceholder() {
+  useSessionVersion();
+  const { session, closeProject } = useApp();
+  if (!session) return null;
+  const name = session.data.root.split("/").filter(Boolean).pop();
+  return (
+    <main className="p-8">
+      <h1 className="text-xl font-semibold">{name}</h1>
+      <p className="mt-2 text-gray-500">Translations coming in the next task</p>
+      <button onClick={() => void closeProject()} className="mt-4 rounded-md border border-gray-300 px-3 py-1.5 text-sm">Close project</button>
+      <RecoveryPrompt />
     </main>
   );
 }
 
-export default App;
+export default function App() {
+  const session = useApp((s) => s.session);
+  return session ? <ProjectPlaceholder /> : <StartScreen />;
+}
