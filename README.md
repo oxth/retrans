@@ -48,4 +48,6 @@ The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts
 - [ ] Add, rename and delete a key; add the language `ja`; save. `git diff` in the fixture copy shows only the intended lines.
 - [ ] Edit a translation file in a text editor while the app is open: the app picks up the change, and a conflicting unsaved cell shows the conflict dialog.
 - [ ] Closing the window with unsaved edits shows the close prompt.
+- [ ] While the conflict dialog is open, Save / Cmd+S don't save ("Resolve conflicts before saving").
+- [ ] Put git conflict markers into `.paratrans/state.json`: the load-error banner lists it, saving still writes translations, and the file is left untouched until it's fixed.
 - [ ] Kill the app with unsaved edits, reopen the project, and the restore prompt appears.
