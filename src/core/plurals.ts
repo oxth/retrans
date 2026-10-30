@@ -44,7 +44,7 @@ function pluralGroups(data: ProjectData): Map<string, { ns: string; base: string
 }
 
 const otherKeysCache = new WeakMap<KeyId[], Set<KeyId>>();
-function otherKeys(order: KeyId[]): Set<KeyId> {
+export function otherKeys(order: KeyId[]): Set<KeyId> {
   let s = otherKeysCache.get(order);
   if (!s) {
     s = new Set(order.filter((id) => id.endsWith("_other")));
@@ -67,16 +67,31 @@ export function expandPluralKeys(data: ProjectData): KeyId[] {
   if (data.format !== "next-i18next") return data.keyOrder;
   const needed = new Set<string>();
   for (const l of data.locales) for (const c of pluralCategories(l)) needed.add(c);
-  const inserts = new Map<number, KeyId[]>();
-  for (const g of pluralGroups(data).values()) {
-    const add = PLURAL_CATEGORIES.filter((c) => needed.has(c) && !g.cats.has(c)).map((c) => keyId(g.ns, `${g.base}_${c}`));
-    if (add.length) inserts.set(g.lastIdx, add);
-  }
+  const groups = pluralGroups(data);
+  if (!groups.size) return data.keyOrder;
+  // Each group's variants (existing anywhere + needed) go contiguously at the first variant's position.
+  const firstIdx = new Map<string, number>();
+  data.keyOrder.forEach((id, idx) => {
+    const { ns, key } = parseKeyId(id);
+    const sp = splitPlural(key);
+    if (!sp) return;
+    const gid = keyId(ns, sp.base);
+    if (groups.has(gid) && !firstIdx.has(gid)) firstIdx.set(gid, idx);
+  });
   const out: KeyId[] = [];
   data.keyOrder.forEach((id, idx) => {
-    out.push(id);
-    const add = inserts.get(idx);
-    if (add) out.push(...add);
+    const { ns, key } = parseKeyId(id);
+    const sp = splitPlural(key);
+    const gid = sp ? keyId(ns, sp.base) : null;
+    const g = gid ? groups.get(gid) : undefined;
+    if (!g) {
+      out.push(id);
+      return;
+    }
+    if (firstIdx.get(gid!) !== idx) return;
+    for (const c of PLURAL_CATEGORIES) {
+      if (g.cats.has(c) || needed.has(c)) out.push(keyId(g.ns, `${g.base}_${c}`));
+    }
   });
   return out;
 }

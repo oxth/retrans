@@ -1,5 +1,5 @@
 import { keyId, type KeyId, type MessageValue, parseKeyId, type Status } from "./model";
-import { isApplicable, splitPlural } from "./plurals";
+import { isApplicable, otherKeys, splitPlural } from "./plurals";
 import type { ProjectSession } from "./session";
 
 export interface RowFilter {
@@ -31,8 +31,7 @@ export function buildRows(s: ProjectSession, f: RowFilter): Row[] {
   const needMeta = f.needsReview || f.machine || f.status !== "all";
   const rows: Row[] = [];
 
-  const otherIds = new Set<KeyId>();
-  for (const id of data.keyOrder) if (id.endsWith("_other")) otherIds.add(id);
+  const otherIds = otherKeys(data.keyOrder);
 
   for (const id of data.keyOrder) {
     const { ns, key } = parseKeyId(id);

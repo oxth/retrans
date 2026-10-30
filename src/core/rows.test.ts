@@ -81,6 +81,17 @@ describe("buildRows", () => {
     expect(rows.find((r) => r.key === "a")!.pluralGroup).toBeUndefined();
   });
 
+  it("plural variants only present in a non-base locale stay contiguous in category order", async () => {
+    const p = await open({
+      "en/common.json": { items_one: "1", x: "X", items_other: "n", y: "Y" },
+      "ru/common.json": { items_one: "1", items_few: "f", items_many: "m", items_other: "o" },
+    });
+    const rows = buildRows(p, F({ locales: ["ru"] }));
+    expect(ids(rows)).toEqual(["items_one", "items_few", "items_many", "items_other", "x", "y"]);
+    expect(rows.slice(0, 4).map((r) => r.pluralCategory)).toEqual(["one", "few", "many", "other"]);
+    expect(rows.slice(0, 4).every((r) => r.pluralGroup === "items")).toBe(true);
+  });
+
   it("nextMissing wraps and skips non-applicable cells", async () => {
     const s = await open({
       "en/common.json": { a: "A", items_one: "1", items_other: "n", b: "B" },

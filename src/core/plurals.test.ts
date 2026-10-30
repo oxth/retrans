@@ -42,9 +42,16 @@ describe("plurals", () => {
   it("expandPluralKeys", () => {
     const d = mk("next-i18next", ["a", "items_one", "items_other", "z"]);
     const out = expandPluralKeys(d);
-    expect(out.map((i) => parseKeyId(i).key)).toEqual(["a", "items_one", "items_other", "items_few", "items_many", "z"]);
+    expect(out.map((i) => parseKeyId(i).key)).toEqual(["a", "items_one", "items_few", "items_many", "items_other", "z"]);
     expect(d.keyOrder.length).toBe(4);
     expect(expandPluralKeys(mk("paraglide", ["items_one", "items_other"]))).toEqual(mk("paraglide", ["items_one", "items_other"]).keyOrder);
+  });
+  it("expandPluralKeys keeps a split group contiguous at its first variant, in category order", () => {
+    const d = mk("next-i18next", ["items_one", "x", "items_other", "y", "items_few"], ["en", "ru"]);
+    const before = [...d.keyOrder];
+    const out = expandPluralKeys(d).map((i) => parseKeyId(i).key);
+    expect(out).toEqual(["items_one", "items_few", "items_many", "items_other", "x", "y"]);
+    expect(d.keyOrder).toEqual(before);
   });
   it("isApplicable is fast at scale and cache follows keyOrder identity", () => {
     const keys: string[] = [];
