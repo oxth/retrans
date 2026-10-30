@@ -3,6 +3,7 @@ import { localesSnippet, nextI18nextAdapter } from "../formats/next-i18next";
 import { paraglideAdapter } from "../formats/paraglide";
 import { type Fs, FsError, joinPath, normalizePath } from "../platform/fs";
 import { hashValue } from "./hash";
+import { detectStyle, setAt } from "./json-text";
 import {
   type CellMeta, type CellMap, isTranslated, type KeyId, keyId, type MessageValue, parseKeyId,
   type ProjectData, valuesEqual, type Warning,
@@ -49,6 +50,10 @@ function keySet(order: KeyId[]): Set<KeyId> {
   return s;
 }
 
+function projectEqual(a: StateFile["project"], b: StateFile["project"]): boolean {
+  return a.baseLocale === b.baseLocale && a.localesPath === b.localesPath;
+}
+
 export class ProjectSession {
   readonly fs: Fs;
   readonly adapter: FormatAdapter;
@@ -66,6 +71,8 @@ export class ProjectSession {
   private stateBaseline: string; // serialized reconciled state as loaded / last saved
   private stateTouched = false;
   private stateDiskText: string | null; // raw state.json as loaded / last written (stale check)
+  /** Set while .paratrans/state.json on disk can't be parsed: it is then never written. */
+  private stateError: string | undefined;
   private creates = new Map<string, { locale: string; ns: string }>(); // relPath -> pending create
   private removed = new Map<string, LoadedFile>(); // relPath -> pending delete
   private localesChanged = false;
@@ -76,7 +83,7 @@ export class ProjectSession {
   private constructor(
     fs: Fs, root: string, adapter: FormatAdapter, opts: ProjectOptions,
     load: { data: ProjectData; files: LoadedFile[]; errors: FileError[] }, state: StateFile,
-    stateText: string | null,
+    stateText: string | null, stateError: string | undefined,
   ) {
     this.fs = fs;
     this.root = root;
@@ -84,22 +91,28 @@ export class ProjectSession {
     this.opts = opts;
     this.data = load.data;
     this.files = load.files;
-    this.errors = load.errors;
     this.state = state;
     this.disk = copyCells(load.data.values);
     this.stateBaseline = serializeState(reconcile(state, load.data));
     this.stateDiskText = stateText;
+    this.stateError = stateError;
+    this.errors = this.withStateError(load.errors);
   }
 
   static async open(fs: Fs, root: string, d: DetectResult, opts: ProjectOptions): Promise<ProjectSession> {
     const adapter = d.format === "paraglide" ? paraglideAdapter : nextI18nextAdapter;
     const load = await adapter.load(fs, root, opts);
     const stateText = await readOrNull(fs, joinPath(root, STATE_PATH));
-    const state = parseState(stateText, { baseLocale: opts.baseLocale, localesPath: opts.localesPath });
-    return new ProjectSession(fs, root, adapter, opts, load, state, stateText);
+    const { state, error } = parseState(stateText);
+    return new ProjectSession(fs, root, adapter, opts, load, state, stateText, error);
   }
 
   // ---- reading ---------------------------------------------------------------------------
+
+  /** True while .paratrans/state.json can't be parsed (it is then never written). */
+  get stateMalformed(): boolean {
+    return this.stateError !== undefined;
+  }
 
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);
@@ -294,6 +307,40 @@ export class ProjectSession {
     this.emit();
   }
 
+  /**
+   * Records the base language the user picked (because detection couldn't tell) in
+   * .paratrans/state.json right away, changing only `project.baseLocale` in the file, so the
+   * question is asked once. Runs in the save queue. Skipped while state.json is malformed or
+   * changed on disk since it was read (the in-memory value is then written by the next save).
+   */
+  pinBaseLocale(locale: string): Promise<void> {
+    const run = this.saving.then(() => this.pinBaseLocaleNow(locale));
+    this.saving = run.catch(() => undefined);
+    return run;
+  }
+
+  private async pinBaseLocaleNow(locale: string): Promise<void> {
+    this.state.project.baseLocale = locale;
+    this.stateTouched = true;
+    if (this.stateError) return;
+    const path = joinPath(this.root, STATE_PATH);
+    const disk = await readOrNull(this.fs, path);
+    if (disk !== this.stateDiskText) return;
+    let text: string;
+    if (disk === null) {
+      text = serializeState({ version: 1, project: { baseLocale: locale }, entries: {} });
+    } else {
+      text = setAt(disk, ["project", "baseLocale"], locale, detectStyle(disk));
+      if (text === disk) return;
+    }
+    await this.fs.writeTextAtomic(path, text);
+    this.stateDiskText = text;
+    const baseline = JSON.parse(this.stateBaseline) as StateFile;
+    baseline.project.baseLocale = locale;
+    this.stateBaseline = serializeState(baseline);
+    this.emit();
+  }
+
   /** Project-level setting stored in .paratrans/state.json (e.g. the locales path override). */
   setProjectSetting(patch: { localesPath?: string | undefined }): void {
     if ("localesPath" in patch) {
@@ -391,8 +438,10 @@ export class ProjectSession {
     // this.state stays the live object: status edits made while the write is in flight survive,
     // and stay dirty because they differ from the baseline captured here.
     const serialized = serializeState(reconcile(this.state, this.data));
-    this.stateTouched = false;
-    if (serialized !== this.stateBaseline) {
+    // Unparseable on disk (e.g. merge markers): never overwrite it. Statuses stay in memory (and
+    // dirty) until a reload finds the file valid again.
+    if (!this.stateError) this.stateTouched = false;
+    if (!this.stateError && serialized !== this.stateBaseline) {
       const statePath = joinPath(this.root, STATE_PATH);
       if ((await readOrNull(this.fs, statePath)) !== this.stateDiskText) {
         // Changed on disk (e.g. a pull): don't clobber it; reloadFromDisk merges, then save again.
@@ -431,18 +480,24 @@ export class ProjectSession {
     for (const p of plan.adopted) this.creates.delete(p);
     for (const f of load.files) if (this.removed.has(f.relPath)) this.removed.set(f.relPath, f);
     this.files = plan.files;
-    this.errors = load.errors.filter((e) => plan.files.some((f) => f.relPath === e.relPath));
     this.disk = copyCells(plan.theirs);
     this.data.values = plan.merged;
     this.data.locales = plan.locales;
     this.data.namespaces = plan.namespaces;
     this.setKeyOrder(plan.keyOrder);
 
-    const diskState = parseState(stateText, this.state.project);
-    mergeStateEntries(this.state, JSON.parse(this.stateBaseline) as StateFile, diskState);
-    this.stateBaseline = serializeState(reconcile(diskState, this.data));
+    const { state: diskState, error: stateError } = parseState(stateText);
+    this.stateError = stateError;
+    if (!stateError) {
+      const baseline = JSON.parse(this.stateBaseline) as StateFile;
+      mergeStateEntries(this.state, baseline, diskState);
+      // Project overrides: adopt the disk's unless changed locally since the last load/save.
+      if (projectEqual(this.state.project, baseline.project)) this.state.project = { ...diskState.project };
+      this.stateBaseline = serializeState(reconcile(diskState, this.data));
+    } // else: keep local entries and the last good baseline; merging resumes once it parses again
     this.stateDiskText = stateText;
     this.stateTouched = true;
+    this.errors = this.withStateError(load.errors.filter((e) => plan.files.some((f) => f.relPath === e.relPath)));
 
     this.conflicts = plan.conflicts;
     this.emit();
@@ -539,6 +594,12 @@ export class ProjectSession {
   }
 
   // ---- internals -------------------------------------------------------------------------
+
+  private withStateError(errors: FileError[]): FileError[] {
+    if (!this.stateError) return errors;
+    const message = `${this.stateError}. Review statuses won't be saved until this file is fixed.`;
+    return [...errors.filter((e) => e.relPath !== STATE_PATH), { relPath: STATE_PATH, message }];
+  }
 
   private emit(): void {
     this.version++;

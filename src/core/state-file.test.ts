@@ -14,14 +14,17 @@ describe("state-file", () => {
     expect(out.indexOf("a::y")).toBeLessThan(out.indexOf("b::x"));
     expect(out).toContain('\n  "entries"');
   });
-  it("parseState tolerates invalid JSON", () => {
-    expect(parseState("{nope", fb)).toEqual({ version: 1, project: fb, entries: {} });
-    expect(parseState(null, fb).entries).toEqual({});
-    expect(parseState('{"version":2,"entries":{"a":{}}}', fb).entries).toEqual({});
+  it("parseState reports invalid JSON as an error with an empty state", () => {
+    const bad = parseState("{nope");
+    expect(bad.state).toEqual({ version: 1, project: {}, entries: {} });
+    expect(bad.error).toBeTruthy();
+    expect(parseState(null)).toEqual({ state: { version: 1, project: {}, entries: {} } });
+    expect(parseState('{"version":2,"entries":{"a":{}}}').state.entries).toEqual({});
   });
-  it("parseState reads valid file and merges fallback", () => {
-    const s = parseState('{"version":1,"project":{"localesPath":"x"},"entries":{"a::k":{"th":{"s":"reviewed","h":"1"}}}}', fb);
-    expect(s.project).toEqual({ baseLocale: "en", localesPath: "x" });
+  it("parseState reads a valid file; project holds only what the file says", () => {
+    const { state: s, error } = parseState('{"version":1,"project":{"localesPath":"x"},"entries":{"a::k":{"th":{"s":"reviewed","h":"1"}}}}');
+    expect(error).toBeUndefined();
+    expect(s.project).toEqual({ localesPath: "x" });
     expect(s.entries["a::k"].th.s).toBe("reviewed");
   });
   it("reconcile prunes deleted keys and removed locales", () => {

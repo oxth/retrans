@@ -3,7 +3,11 @@ import { isTranslated, type KeyId, type ProjectData } from "./model";
 export interface StateEntry { s: "translated" | "reviewed"; h: string; m?: true }
 export interface StateFile {
   version: 1;
-  project: { baseLocale: string; localesPath?: string };
+  /**
+   * Explicit user overrides only: a Settings-page locales path, and the base language the user
+   * picked when detection couldn't tell. Detected values are never stored here.
+   */
+  project: { baseLocale?: string; localesPath?: string };
   entries: Record<KeyId, Record<string, StateEntry>>;
 }
 export const STATE_PATH = ".paratrans/state.json";
@@ -18,19 +22,23 @@ function isEntry(v: unknown): v is StateEntry {
   return isRecord(v) && (v.s === "translated" || v.s === "reviewed") && typeof v.h === "string";
 }
 
-export function parseState(text: string | null, fallback: StateFile["project"]): StateFile {
-  const empty: StateFile = { version: 1, project: { ...fallback }, entries: {} };
-  if (text === null) return empty;
+/**
+ * A missing file (null) is an empty state. Text that isn't a version-1 state object comes back as
+ * an empty state plus `error`: callers must not overwrite such a file (it may hold merge markers).
+ */
+export function parseState(text: string | null): { state: StateFile; error?: string } {
+  const empty = (): StateFile => ({ version: 1, project: {}, entries: {} });
+  if (text === null) return { state: empty() };
   let raw: unknown;
   try {
-    raw = JSON.parse(text);
-  } catch {
-    return empty;
+    raw = JSON.parse(text.startsWith("\uFEFF") ? text.slice(1) : text);
+  } catch (err) {
+    return { state: empty(), error: `not valid JSON (${err instanceof Error ? err.message : String(err)})` };
   }
-  if (!isRecord(raw) || raw.version !== 1) return empty;
+  if (!isRecord(raw)) return { state: empty(), error: "not a JSON object" };
+  if (raw.version !== 1) return { state: empty(), error: `unsupported version ${JSON.stringify(raw.version)}` };
   const p = isRecord(raw.project) ? raw.project : {};
   const project = {
-    ...fallback,
     ...(typeof p.baseLocale === "string" ? { baseLocale: p.baseLocale } : {}),
     ...(typeof p.localesPath === "string" ? { localesPath: p.localesPath } : {}),
   };
@@ -46,7 +54,7 @@ export function parseState(text: string | null, fallback: StateFile["project"]):
       if (Object.keys(out).length) entries[id] = out;
     }
   }
-  return { version: 1, project, entries };
+  return { state: { version: 1, project, entries } };
 }
 
 function sorted(v: Json): Json {
