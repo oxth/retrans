@@ -1,0 +1,13 @@
+{
+  "title": "Hello",
+  "nav": {
+    "home": "Home",
+    "about": "About"
+  },
+  "items_one": "{{count}} item",
+  "items_other": "{{count}} items",
+  "lit": {
+    "a.b": "x"
+  },
+  "only_en": "English only"
+}
