@@ -23,7 +23,15 @@ export function detectStyle(text: string): JsonStyle {
   return { indent, eol, finalNewline: text.endsWith(eol) };
 }
 
-export function parseJson(text: string): { value: unknown; error?: string } {
+/** A leading UTF-8 byte-order mark. It is kept in file text (and so re-written) but never parsed. */
+const BOM = "\uFEFF";
+
+function splitBom(text: string): [string, string] {
+  return text.startsWith(BOM) ? [BOM, text.slice(1)] : ["", text];
+}
+
+export function parseJson(input: string): { value: unknown; error?: string } {
+  const text = splitBom(input)[1];
   const errors: ParseError[] = [];
   parse(text, errors, { allowTrailingComma: false, disallowComments: true });
   if (errors.length > 0) {
@@ -118,7 +126,12 @@ function compactReplace(text: string, path: string[], value: unknown): string | 
   return text.slice(0, node.offset) + ser(value) + text.slice(node.offset + node.length);
 }
 
-export function setAt(text: string, path: string[], value: unknown, style: JsonStyle): string {
+export function setAt(input: string, path: string[], value: unknown, style: JsonStyle): string {
+  const [bom, text] = splitBom(input);
+  return bom + setAtBare(text, path, value, style);
+}
+
+function setAtBare(text: string, path: string[], value: unknown, style: JsonStyle): string {
   const out =
     compactInsert(text, path, value) ?? compactReplace(text, path, value) ?? edit(text, path, value, style);
   if (out === text) return text;
@@ -162,7 +175,12 @@ function removeProperty(text: string, path: string[], style: JsonStyle): string 
   return text.slice(0, from) + text.slice(to);
 }
 
-export function removeAt(text: string, path: string[], style: JsonStyle): string {
+export function removeAt(input: string, path: string[], style: JsonStyle): string {
+  const [bom, text] = splitBom(input);
+  return bom + removeAtBare(text, path, style);
+}
+
+function removeAtBare(text: string, path: string[], style: JsonStyle): string {
   if (getAt(parse(text), path) === undefined) return text;
   let out = removeProperty(text, path, style);
   for (let i = path.length - 1; i >= 1; i--) {

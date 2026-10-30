@@ -129,3 +129,18 @@ describe("compact and trailing whitespace", () => {
     expect(a.filter((l, i) => l !== b[i])).toEqual(['    "b": "1",']);
   });
 });
+
+describe("json-text UTF-8 BOM (#9)", () => {
+  const BOM = "\uFEFF";
+  it("parseJson ignores a leading BOM", () => {
+    expect(parseJson(BOM + '{"a":"x"}')).toEqual({ value: { a: "x" } });
+  });
+  it("setAt and removeAt keep the BOM and change nothing else", () => {
+    const text = BOM + '{\n  "a": "1",\n  "b": "2"\n}\n';
+    const style = detectStyle(text);
+    expect(setAt(text, ["a"], "9", style)).toBe(BOM + '{\n  "a": "9",\n  "b": "2"\n}\n');
+    expect(setAt(text, ["c"], "3", style)).toBe(BOM + '{\n  "a": "1",\n  "b": "2",\n  "c": "3"\n}\n');
+    expect(removeAt(text, ["a"], style)).toBe(BOM + '{\n  "b": "2"\n}\n');
+    expect(setAt(BOM + '{"a":"1"}', ["b"], "2", detectStyle(BOM + '{"a":"1"}'))).toBe(BOM + '{"a":"1","b":"2"}');
+  });
+});
