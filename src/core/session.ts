@@ -504,12 +504,16 @@ export class ProjectSession {
     return plan.conflicts;
   }
 
-  /** "theirs" adopts the on-disk value (undefined = cleared) and its status; "mine" keeps current. */
+  /**
+   * "theirs" adopts the current on-disk value (undefined = cleared) and its status, never the
+   * possibly older `c.theirs`; "mine" keeps current.
+   */
   resolveConflict(c: Conflict, pick: "mine" | "theirs"): void {
     this.conflicts = this.conflicts.filter((x) => x.id !== c.id || x.locale !== c.locale);
     if (pick === "theirs") {
-      this.put(c.id, c.locale, c.theirs);
-      if (c.theirs && !keySet(this.data.keyOrder).has(c.id)) this.setKeyOrder([...this.data.keyOrder, c.id]);
+      const theirs = this.disk.get(c.id)?.get(c.locale);
+      this.put(c.id, c.locale, theirs ? structuredClone(theirs) : undefined);
+      if (theirs && !keySet(this.data.keyOrder).has(c.id)) this.setKeyOrder([...this.data.keyOrder, c.id]);
       const disk = (JSON.parse(this.stateBaseline) as StateFile).entries[c.id]?.[c.locale];
       if (disk) (this.state.entries[c.id] ??= {})[c.locale] = { ...disk };
       else if (this.state.entries[c.id]) {
@@ -519,6 +523,30 @@ export class ProjectSession {
       this.stateTouched = true;
     }
     this.emit();
+  }
+
+  /**
+   * Brings a list of conflicts up to date: one per cell (later entries win), `mine`/`theirs` from
+   * the current value and disk snapshot, and cells whose value now equals disk dropped.
+   */
+  refreshConflicts(list: Conflict[]): Conflict[] {
+    const byCell = new Map<string, Conflict>();
+    for (const c of list) {
+      const k = `${c.id}\0${c.locale}`;
+      byCell.delete(k); // re-insert so the newest keeps its place at the end
+      byCell.set(k, c);
+    }
+    const out: Conflict[] = [];
+    for (const { id, locale } of byCell.values()) {
+      const mine = this.value(id, locale);
+      const theirs = this.disk.get(id)?.get(locale);
+      if (valuesEqual(mine, theirs)) continue;
+      const c: Conflict = { id, locale };
+      if (mine) c.mine = mine;
+      if (theirs) c.theirs = theirs;
+      out.push(c);
+    }
+    return out;
   }
 
   /** Unsaved edits, for the crash-recovery journal. Each cell carries its disk value at the time. */

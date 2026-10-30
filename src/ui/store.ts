@@ -150,7 +150,7 @@ export const useApp = create<AppState>((set, get) => ({
         if (get().session !== session) return;
         session.reloadFromDisk().then(
           (c) => {
-            if (c.length && get().session === session) set((s) => ({ conflicts: [...s.conflicts, ...c] }));
+            if (get().session === session) set((s) => ({ conflicts: session.refreshConflicts([...s.conflicts, ...c]) }));
           },
           (e) => {
             if (get().session === session) set({ error: `Reload failed: ${msg(e)}` });
@@ -178,7 +178,7 @@ export const useApp = create<AppState>((set, get) => ({
     if (!session || !recovery) return;
     try {
       const c = session.applyJournal(recovery.journal);
-      set((s) => ({ recovery: null, conflicts: [...s.conflicts, ...c] }));
+      set((s) => ({ recovery: null, conflicts: session.refreshConflicts([...s.conflicts, ...c]) }));
     } catch (e) {
       set({ recovery: null, error: `Could not restore unsaved changes: ${msg(e)}` });
       await clearJournal(fs, recovery.path).catch(() => {});
@@ -200,10 +200,8 @@ export const useApp = create<AppState>((set, get) => ({
       let r = await session.save();
       if (r.stale.length) {
         const c = await session.reloadFromDisk();
-        if (c.length) {
-          if (current()) set((s) => ({ conflicts: [...s.conflicts, ...c] }));
-          return false;
-        }
+        if (current()) set((s) => ({ conflicts: session.refreshConflicts([...s.conflicts, ...c]) }));
+        if (c.length) return false;
         r = await session.save();
         if (r.stale.length) {
           if (current()) set({ error: "Files changed on disk again while saving. Try saving again." });
