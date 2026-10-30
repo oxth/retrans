@@ -50,5 +50,10 @@ export interface FormatAdapter {
     shape: "nested" | "flat";
     prefix?: Record<string, unknown>;
   };
-  onLocalesChanged(fs: Fs, root: string, locales: string[]): Promise<{ configSnippet?: string }>;
+  /** `written`: root-relative paths this call wrote (e.g. Paraglide's settings.json). */
+  onLocalesChanged(
+    fs: Fs,
+    root: string,
+    locales: string[],
+  ): Promise<{ configSnippet?: string; written?: string[] }>;
 }

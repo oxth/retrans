@@ -80,6 +80,41 @@ describe("ProjectSession", () => {
     expect((await json(fs, `${NEXT}/en/common.json`)).lit).toEqual({ "a.b": "z" });
   });
 
+  it("literal dotted key stays literal after clear -> save -> re-set (base)", async () => {
+    const { fs, s } = await openFx("next-nested");
+    s.setText(c("lit.a.b"), "en", null);
+    await s.save();
+    expect((await json(fs, `${NEXT}/en/common.json`)).lit).toBeUndefined();
+    s.setText(c("lit.a.b"), "en", "back");
+    await s.save();
+    expect((await json(fs, `${NEXT}/en/common.json`)).lit).toEqual({ "a.b": "back" });
+  });
+
+  it("literal dotted key stays literal in th after the en value was cleared and re-set", async () => {
+    const { fs, s } = await openFx("next-nested");
+    s.setText(c("lit.a.b"), "en", null);
+    await s.save();
+    s.setText(c("lit.a.b"), "th", "y");
+    await s.save();
+    expect((await json(fs, `${NEXT}/th/common.json`)).lit).toEqual({ "a.b": "y" });
+    s.setText(c("lit.a.b"), "th", null);
+    await s.save();
+    s.setText(c("lit.a.b"), "en", "back");
+    s.setText(c("lit.a.b"), "th", "again");
+    s.addLanguage("fr");
+    s.setText(c("lit.a.b"), "fr", "encore");
+    await s.save();
+    expect((await json(fs, `${NEXT}/en/common.json`)).lit).toEqual({ "a.b": "back" });
+    expect((await json(fs, `${NEXT}/th/common.json`)).lit).toEqual({ "a.b": "again" });
+    expect((await json(fs, `${NEXT}/fr/common.json`)).lit).toEqual({ "a.b": "encore" });
+  });
+
+  it("addKey with an empty base text is invalid", async () => {
+    const { s } = await openFx("next-nested");
+    expect(() => s.addKey("common", "fresh", "")).toThrow(expect.objectContaining({ code: "invalid" }));
+    expect(s.data.keyOrder).not.toContain(c("fresh"));
+  });
+
   it("addKey adds to the base file only; other locales stay absent", async () => {
     const { fs, s } = await openFx("next-nested");
     const thBefore = await read(fs, `${NEXT}/th/common.json`);
@@ -187,6 +222,7 @@ describe("ProjectSession", () => {
     s.setText(keyId("", "nesting.level1.level2.level3"), "de", "Verschachtelt");
     const r = await s.save();
     expect(r.written).toContain("messages/de.json");
+    expect(r.written).toContain("project.inlang/settings.json");
     expect(await read(fs, "messages/de.json")).toBe(
       '{\n\t"$schema": "https://inlang.com/schema/inlang-message-format",\n\t"nesting": {\n\t\t"level1": {\n\t\t\t"level2": {\n\t\t\t\t"level3": "Verschachtelt"\n\t\t\t}\n\t\t}\n\t}\n}\n',
     );
@@ -228,6 +264,7 @@ describe("ProjectSession", () => {
     s.removeLanguage("th");
     const r = await s.save();
     expect(r.deleted).toEqual(["messages/th.json"]);
+    expect(r.written).toEqual(["project.inlang/settings.json"]);
     expect(await read(fs, "project.inlang/settings.json")).toContain('"locales": ["en"]');
   });
 
@@ -359,5 +396,61 @@ describe("ProjectSession", () => {
     off();
     s.setText(c("title"), "th", "y");
     expect(calls).toBe(2);
+  });
+
+  it("overlapping saves run one after another; status edits during a save are kept", async () => {
+    const { fs, s } = await openFx("next-nested");
+    let release!: () => void;
+    let stateWriteStarted!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const started = new Promise<void>((r) => (stateWriteStarted = r));
+    const write = fs.writeTextAtomic.bind(fs);
+    fs.writeTextAtomic = async (p: string, content: string) => {
+      if (p.endsWith(STATE_PATH)) {
+        stateWriteStarted();
+        await gate;
+      }
+      return write(p, content);
+    };
+    s.setText(c("title"), "th", "ใหม่");
+    const p1 = s.save();
+    const p2 = s.save();
+    await started;
+    s.markReviewed(c("nav.home"), "th");
+    release();
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(r1.written).toEqual([`${NEXT}/th/common.json`, STATE_PATH]);
+    expect(s.meta(c("nav.home"), "th").status).toBe("reviewed");
+    // second save ran after the first and picked up the in-flight status edit
+    expect(r2).toEqual({ written: [STATE_PATH], deleted: [], stale: [] });
+    expect((await json(fs, STATE_PATH)).entries[c("nav.home")].th.s).toBe("reviewed");
+    expect(fs.writes.filter((w) => w.endsWith("th/common.json"))).toHaveLength(1);
+  });
+
+  it("a status edit during an in-flight save is written by the next save", async () => {
+    const { fs, s } = await openFx("next-nested");
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const begun = new Promise<void>((r) => (started = r));
+    const write = fs.writeTextAtomic.bind(fs);
+    fs.writeTextAtomic = async (p: string, content: string) => {
+      if (p.endsWith(STATE_PATH)) {
+        started();
+        await gate;
+      }
+      return write(p, content);
+    };
+    s.markReviewed(c("title"), "th");
+    const p1 = s.save();
+    await begun;
+    s.markReviewed(c("nav.home"), "th");
+    release();
+    await p1;
+    expect(s.meta(c("nav.home"), "th").status).toBe("reviewed");
+    expect(s.isDirty()).toBe(true);
+    const r = await s.save();
+    expect(r.written).toEqual([STATE_PATH]);
+    expect(Object.keys((await json(fs, STATE_PATH)).entries).sort()).toEqual([c("nav.home"), c("title")].sort());
   });
 });

@@ -95,8 +95,8 @@ export function applyChanges(
   let hasSet = false;
   for (const ch of changes) {
     if (ch.value) continue;
+    // Keep the segIndex entry: a later re-set must land on the same (possibly literal-dot) path.
     text = removeAt(text, adapter.jsonPath(view, ch.key), file.style);
-    segIndex.delete(ch.key);
   }
   if (changes.some((ch) => ch.value)) text = expandEmpty(text, file.style.eol);
   for (const ch of changes) {

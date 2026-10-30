@@ -176,7 +176,8 @@ export const paraglideAdapter: FormatAdapter = {
     const p = joinPath(root, SETTINGS_PATH);
     const text = await fs.readText(p);
     const next = setAt(text, ["locales"], locales, detectStyle(text));
-    if (next !== text) await fs.writeTextAtomic(p, next);
-    return {};
+    if (next === text) return {};
+    await fs.writeTextAtomic(p, next);
+    return { written: [SETTINGS_PATH] };
   },
 };

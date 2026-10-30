@@ -62,6 +62,7 @@ export class ProjectSession {
   private creates = new Map<string, { locale: string; ns: string }>(); // relPath -> pending create
   private removed = new Map<string, LoadedFile>(); // relPath -> pending delete
   private localesChanged = false;
+  private saving: Promise<unknown> = Promise.resolve();
   private listeners = new Set<() => void>();
   private dirtyCache: { version: number; cells: Array<{ id: KeyId; locale: string }> } | null = null;
 
@@ -189,6 +190,7 @@ export class ProjectSession {
 
   addKey(ns: string, key: string, baseText: string, opts?: { plural?: boolean }): KeyId {
     validateKey(key);
+    if (!baseText) throw new KeyError("invalid", "A new key needs a base-language text");
     if (!this.data.namespaces.includes(ns)) throw new KeyError("invalid", `namespace "${ns}" does not exist`);
     const base = this.data.baseLocale;
     const keys = opts?.plural ? pluralCategories(base).map((c) => `${key}_${c}`) : [key];
@@ -196,9 +198,9 @@ export class ProjectSession {
       validateKey(k);
       checkCollision(this.data.keyOrder, ns, k);
     }
-    if (baseText) this.assertWritable(base, ns);
+    this.assertWritable(base, ns);
     const ids = keys.map((k) => keyId(ns, k));
-    if (baseText) for (const id of ids) this.put(id, base, { kind: "text", text: baseText });
+    for (const id of ids) this.put(id, base, { kind: "text", text: baseText });
     this.setKeyOrder([...this.data.keyOrder, ...ids]);
     this.emit();
     return opts?.plural ? keyId(ns, `${key}_other`) : ids[0];
@@ -296,7 +298,14 @@ export class ProjectSession {
 
   // ---- saving ----------------------------------------------------------------------------
 
-  async save(): Promise<SaveResult> {
+  /** Saves are serialized: a call made while another is in flight runs after it. */
+  save(): Promise<SaveResult> {
+    const run = this.saving.then(() => this.saveNow());
+    this.saving = run.catch(() => undefined);
+    return run;
+  }
+
+  private async saveNow(): Promise<SaveResult> {
     const res: SaveResult = { written: [], deleted: [], stale: [] };
     const byFile = new Map<string, { locale: string; ns: string; changes: CellChange[] }>();
     for (const { id, locale } of this.dirtyCells()) {
@@ -350,19 +359,25 @@ export class ProjectSession {
     }
 
     if (this.localesChanged) {
-      await this.adapter.onLocalesChanged(this.fs, this.root, this.data.locales);
       this.localesChanged = false;
+      try {
+        const r = await this.adapter.onLocalesChanged(this.fs, this.root, this.data.locales);
+        res.written.push(...(r.written ?? []));
+      } catch (err) {
+        this.localesChanged = true;
+        throw err;
+      }
     }
 
-    const next = reconcile(this.state, this.data);
-    const serialized = serializeState(next);
+    // this.state stays the live object: status edits made while the write is in flight survive,
+    // and stay dirty because they differ from the baseline captured here.
+    const serialized = serializeState(reconcile(this.state, this.data));
+    this.stateTouched = false;
     if (serialized !== this.stateBaseline) {
       await this.fs.writeTextAtomic(joinPath(this.root, STATE_PATH), serialized);
       res.written.push(STATE_PATH);
       this.stateBaseline = serialized;
     }
-    this.state = next;
-    this.stateTouched = false;
     this.emit();
     return res;
   }

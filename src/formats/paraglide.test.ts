@@ -70,11 +70,11 @@ describe("paraglide", () => {
     const p = "/project/project.inlang/settings.json";
     const before = await fs.readText(p);
     const res = await adapter.onLocalesChanged(fs, R, ["en", "th", "de"]);
-    expect(res.configSnippet).toBeUndefined();
+    expect(res).toEqual({ written: ["project.inlang/settings.json"] });
     const after = await fs.readText(p);
     expect(after).toBe(before.replace('["en", "th"]', '["en", "th", "de"]'));
     fs.writes.length = 0;
-    await adapter.onLocalesChanged(fs, R, ["en", "th", "de"]);
+    expect(await adapter.onLocalesChanged(fs, R, ["en", "th", "de"])).toEqual({});
     expect(fs.writes).toEqual([]);
   });
 

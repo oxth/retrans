@@ -129,7 +129,7 @@ describe("next-i18next onLocalesChanged", () => {
   it("onLocalesChanged returns snippet and writes nothing", async () => {
     const fs = fx("next-nested");
     const r = await adapter.onLocalesChanged(fs, R, ["en", "th", "ja"]);
-    expect(r.configSnippet).toBe("locales: ['en', 'th', 'ja'],");
+    expect(r).toEqual({ configSnippet: "locales: ['en', 'th', 'ja']," });
     expect(fs.writes).toEqual([]);
   });
 });
