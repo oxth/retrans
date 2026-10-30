@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef } from "react";
 import { isApplicable } from "../core/plurals";
 import type { ProjectSession } from "../core/session";
-import type { KeyId } from "../core/model";
+import { isTranslated, type KeyId } from "../core/model";
 import { CellEditor } from "./CellEditor";
 import { StatusDot } from "./StatusDot";
 import { Warnings } from "./Warnings";
@@ -71,7 +71,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
           onNextMissing={() => {
             if (!actions.next(id, locale)) refocus.current = true;
           }}
-          onMarkReviewed={isBase ? undefined : () => session.value(id, locale) && actions.review(id, locale)}
+          onMarkReviewed={isBase ? undefined : () => isTranslated(session.value(id, locale)) && actions.review(id, locale)}
           onRefocus={() => {
             refocus.current = true;
           }}
@@ -84,14 +84,14 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     if (e.target !== e.currentTarget) return;
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "r") {
       e.preventDefault();
-      if (v && !isBase) actions.review(id, locale);
+      if (isTranslated(v) && !isBase) actions.review(id, locale);
     } else if (e.key === "Enter" || e.key === "F2") {
       e.preventDefault();
       actions.start(id, locale);
     }
   };
 
-  if (!v) {
+  if (!v || !isTranslated(v)) {
     return (
       <div
         className="flex cursor-text items-center gap-2 rounded bg-red-50 px-1.5 py-1 italic text-red-600"
@@ -104,7 +104,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
       >
         {code}
         <StatusDot status="untranslated" needsReview={false} machine={false} />
-        <span>Missing — click to translate</span>
+        <span>{v ? "Missing (empty string in file) — click to translate" : "Missing — click to translate"}</span>
       </div>
     );
   }

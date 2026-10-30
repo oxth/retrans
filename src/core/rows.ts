@@ -1,4 +1,4 @@
-import { keyId, type KeyId, type MessageValue, parseKeyId, type Status } from "./model";
+import { isTranslated, keyId, type KeyId, type MessageValue, parseKeyId, type Status } from "./model";
 import { isApplicable, otherKeys, splitPlural } from "./plurals";
 import type { ProjectSession } from "./session";
 
@@ -57,7 +57,7 @@ export function buildRows(s: ProjectSession, f: RowFilter): Row[] {
       let status = f.status === "all";
       for (const l of f.locales) {
         if (!isApplicable(data, id, l)) continue;
-        if (!missing && !cells?.get(l)) missing = true;
+        if (!missing && !isTranslated(cells?.get(l))) missing = true;
         if (needMeta && !(review && machine && status)) {
           const m = s.meta(id, l);
           if (m.needsReview) review = true;
@@ -99,7 +99,7 @@ export function nextMissing(
     const row = rows[Math.floor(idx / m)];
     const locale = locales[idx % m];
     if (!isApplicable(s.data, row.id, locale)) continue;
-    if (!s.value(row.id, locale)) return { id: row.id, locale };
+    if (!isTranslated(s.value(row.id, locale))) return { id: row.id, locale };
   }
   return null;
 }

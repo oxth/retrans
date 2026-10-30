@@ -1,14 +1,14 @@
 import { hashValue } from "./hash";
-import type { CellMeta, KeyId, ProjectData } from "./model";
+import { type CellMeta, isTranslated, type KeyId, type ProjectData } from "./model";
 import type { StateFile } from "./state-file";
 
 export function cellMeta(data: ProjectData, s: StateFile, id: KeyId, locale: string): CellMeta {
   const cells = data.values.get(id);
   const value = cells?.get(locale);
   if (locale === data.baseLocale) {
-    return { status: value ? "translated" : "untranslated", needsReview: false, machine: false };
+    return { status: isTranslated(value) ? "translated" : "untranslated", needsReview: false, machine: false };
   }
-  if (!value) return { status: "untranslated", needsReview: false, machine: false };
+  if (!isTranslated(value)) return { status: "untranslated", needsReview: false, machine: false };
   const entry = s.entries[id]?.[locale];
   if (!entry) return { status: "translated", needsReview: false, machine: false };
   return {
@@ -30,7 +30,7 @@ export function recordEdit(data: ProjectData, s: StateFile, id: KeyId, locale: s
 }
 
 export function recordReviewed(data: ProjectData, s: StateFile, id: KeyId, locale: string): void {
-  if (locale === data.baseLocale || !data.values.get(id)?.get(locale)) return;
+  if (locale === data.baseLocale || !isTranslated(data.values.get(id)?.get(locale))) return;
   (s.entries[id] ??= {})[locale] = { s: "reviewed", h: baseHash(data, id) };
 }
 

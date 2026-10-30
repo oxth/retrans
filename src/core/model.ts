@@ -36,6 +36,14 @@ export interface Warning {
   names?: string[];
 }
 
+/**
+ * A cell counts as translated when it has a value that isn't the empty string. An empty string on
+ * disk is shown and counted as missing, but stays on disk until that cell is edited.
+ */
+export function isTranslated(v: MessageValue | undefined): boolean {
+  return v !== undefined && !(v.kind === "text" && v.text === "");
+}
+
 export function valuesEqual(a?: MessageValue, b?: MessageValue): boolean {
   if (a === undefined || b === undefined) return a === b;
   if (a.kind === "text" && b.kind === "text") return a.text === b.text;

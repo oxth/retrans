@@ -4,7 +4,7 @@ import { paraglideAdapter } from "../formats/paraglide";
 import { type Fs, FsError, joinPath, normalizePath } from "../platform/fs";
 import { hashValue } from "./hash";
 import {
-  type CellMeta, type CellMap, type KeyId, keyId, type MessageValue, parseKeyId,
+  type CellMeta, type CellMap, isTranslated, type KeyId, keyId, type MessageValue, parseKeyId,
   type ProjectData, valuesEqual, type Warning,
 } from "./model";
 import type { Conflict } from "./merge";
@@ -117,7 +117,7 @@ export class ProjectSession {
   warnings(id: KeyId, locale: string): Warning[] {
     if (locale === this.data.baseLocale) return [];
     const v = this.value(id, locale);
-    if (!v) return [];
+    if (!v || !isTranslated(v)) return [];
     const base = this.value(id, this.data.baseLocale);
     if (!base) return [{ kind: "orphan" }];
     if (v.kind !== "text" || base.kind !== "text") return [];
@@ -137,7 +137,7 @@ export class ProjectSession {
         if (!isApplicable(this.data, id, l)) continue;
         const s = out.get(l)!;
         s.total++;
-        if (cells?.get(l)) s.done++;
+        if (isTranslated(cells?.get(l))) s.done++;
       }
     }
     return out;

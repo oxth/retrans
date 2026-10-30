@@ -1,4 +1,4 @@
-import type { KeyId, ProjectData } from "./model";
+import { isTranslated, type KeyId, type ProjectData } from "./model";
 
 export interface StateEntry { s: "translated" | "reviewed"; h: string; m?: true }
 export interface StateFile {
@@ -72,7 +72,7 @@ export function reconcile(s: StateFile, data: ProjectData): StateFile {
     const out: Record<string, StateEntry> = {};
     for (const [loc, e] of Object.entries(cells)) {
       if (loc === data.baseLocale || !locales.has(loc)) continue;
-      if (!data.values.get(id)?.get(loc)) continue;
+      if (!isTranslated(data.values.get(id)?.get(loc))) continue;
       out[loc] = { ...e };
     }
     if (Object.keys(out).length) entries[id] = out;
