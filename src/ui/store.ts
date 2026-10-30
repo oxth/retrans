@@ -6,6 +6,7 @@ import { ProjectSession } from "../core/session";
 import type { Conflict } from "../core/merge";
 import { clearJournal, type Journal, journalPath, readJournal, writeJournal } from "../core/recovery";
 import { parseState, STATE_PATH } from "../core/state-file";
+import { isRelevantChange } from "../core/watch-filter";
 import { type Fs, FsError, joinPath } from "../platform/fs";
 import { tauriFs } from "../platform/tauri-fs";
 import { addRecent } from "../platform/prefs";
@@ -149,8 +150,9 @@ export const useApp = create<AppState>((set, get) => ({
     set({ session, detected: d, conflicts: [], recovery, error: null, version: 0, closePrompt: null });
 
     try {
-      const stop = await watchDir(root, () => {
-        if (get().session !== session) return;
+      const scope = { root, format: d.format, localesPath: session.opts.localesPath };
+      const stop = await watchDir(root, (paths) => {
+        if (get().session !== session || !isRelevantChange(paths, scope)) return;
         session.reloadFromDisk().then(
           (c) => {
             if (get().session === session) set((s) => ({ conflicts: session.refreshConflicts([...s.conflicts, ...c]) }));

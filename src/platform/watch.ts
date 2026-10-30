@@ -4,7 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 let generation = 0; // only the newest watch delivers events or may unwatch
 
 /**
- * Watches `root` recursively (Rust side debounces 300 ms and skips node_modules/.git/temp files).
+ * Watches `root` recursively (Rust side debounces 300 ms and skips node_modules/.git/.next/dist/
+ * build/target folders and temp files; the store further ignores paths outside the locales).
  * Only one watch is active app-wide; starting another replaces it. Resolves to a stop function;
  * a superseded watch's stop only unlistens and never stops the newer watch.
  */
