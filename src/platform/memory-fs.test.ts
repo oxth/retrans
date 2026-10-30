@@ -15,6 +15,10 @@ describe("MemoryFs", () => {
     await expect(fs.readText("/nope")).rejects.toMatchObject({ code: "NotFound" });
   });
 
+  it("listFiles throws NotFound for a missing root", async () => {
+    await expect(new MemoryFs({ "/r/x.json": "{}" }).listFiles("/nope", 1)).rejects.toMatchObject({ code: "NotFound" });
+  });
+
   it("listFiles returns sorted relative paths and respects maxDepth", async () => {
     const fs = new MemoryFs({ "/r/x.json": "1", "/r/a/b/c.json": "2" });
     expect(await fs.listFiles("/r", 1)).toEqual(["x.json"]);

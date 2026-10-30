@@ -77,6 +77,21 @@ describe("next-i18next load", () => {
     expect(adapter.jsonPath(f, "brand.new")).toEqual(["brand", "new"]);
   });
 
+  it("literal dotted path is kept for locales lacking the key", async () => {
+    const { files } = await adapter.load(fx("next-nested"), R, opts);
+    const th = files.find((x) => x.relPath === "public/locales/th/common.json")!;
+    expect(adapter.jsonPath(th, "lit.a.b")).toEqual(["lit", "a.b"]);
+  });
+
+  it("an ambiguous base file does not decide the project shape", async () => {
+    const fs = new MemoryFs({
+      "/project/public/locales/en/b.json": '{"pay":"x"}',
+      "/project/public/locales/en/a.json": '{"k.l":"x"}',
+    });
+    const { files } = await adapter.load(fs, R, opts);
+    expect(files.find((f) => f.ns === "b")!.shape).toBe("flat");
+  });
+
   it("malformed file is reported and never written", async () => {
     const fs = fx("next-broken");
     const { errors, files, data } = await adapter.load(fs, R, opts);

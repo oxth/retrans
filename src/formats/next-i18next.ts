@@ -1,7 +1,7 @@
 import { DEFAULT_STYLE, detectStyle, parseJson } from "../core/json-text";
 import { expandPluralKeys } from "../core/plurals";
 import { type CellMap, type KeyId, keyId, type MessageValue, type ProjectData } from "../core/model";
-import { type Fs, FsError, joinPath } from "../platform/fs";
+import { type Fs, FsError, joinPath, normalizePath } from "../platform/fs";
 import type {
   DetectResult,
   FileError,
@@ -53,7 +53,13 @@ interface Entry {
 }
 
 async function listEntries(fs: Fs, root: string, localesPath: string): Promise<Entry[]> {
-  const files = await fs.listFiles(joinPath(root, localesPath), 2);
+  let files: string[];
+  try {
+    files = await fs.listFiles(joinPath(root, localesPath), 2);
+  } catch (err) {
+    if (err instanceof FsError && err.code === "NotFound") return [];
+    throw err;
+  }
   const out: Entry[] = [];
   for (const f of files) {
     const parts = f.split("/");
@@ -86,12 +92,13 @@ function flatten(tree: unknown): Map<string, { path: string[]; value: unknown }>
   return out;
 }
 
-function detectShape(tree: unknown, fallback: "nested" | "flat"): "nested" | "flat" {
-  if (!isObj(tree)) return fallback;
+/** undefined when the file is ambiguous (e.g. only undotted top-level strings). */
+function detectShape(tree: unknown): "nested" | "flat" | undefined {
+  if (!isObj(tree)) return undefined;
   const entries = Object.entries(tree);
   if (entries.some(([, v]) => isObj(v))) return "nested";
   if (entries.some(([k]) => k.includes("."))) return "flat";
-  return fallback;
+  return undefined;
 }
 
 function toValue(v: unknown): MessageValue {
@@ -154,6 +161,7 @@ async function load(fs: Fs, root: string, opts: ProjectOptions): Promise<LoadRes
   const otherOrder: KeyId[] = [];
   const otherSeen = new Set<KeyId>();
   const baseShape = new Map<string, "nested" | "flat">(); // ns -> shape
+  const baseFiles = new Map<string, LoadedFile>();
   let firstBaseShape: "nested" | "flat" | undefined;
 
   for (const e of entries) {
@@ -180,12 +188,17 @@ async function load(fs: Fs, root: string, opts: ProjectOptions): Promise<LoadRes
       continue;
     }
     const isBase = e.locale === baseLocale;
-    const shape = detectShape(value, baseShape.get(e.ns) ?? firstBaseShape ?? "nested");
+    const strict = detectShape(value);
+    const shape = strict ?? baseShape.get(e.ns) ?? firstBaseShape ?? "nested";
     if (isBase) {
       baseShape.set(e.ns, shape);
-      firstBaseShape ??= shape;
+      if (strict) firstBaseShape ??= strict;
     }
     const segIndex = new Map<string, string[]>();
+    const baseFile = baseFiles.get(e.ns);
+    if (!isBase && baseFile && !baseFile.readOnly && baseFile.shape === "nested" && shape === "nested") {
+      for (const [k, p] of baseFile.segIndex) segIndex.set(k, p);
+    }
     for (const [key, { path, value: leaf }] of flatten(value)) {
       segIndex.set(key, path);
       const id = keyId(e.ns, key);
@@ -202,12 +215,14 @@ async function load(fs: Fs, root: string, opts: ProjectOptions): Promise<LoadRes
         otherOrder.push(id);
       }
     }
-    files.push({ relPath: e.relPath, locale: e.locale, ns: e.ns, text, style, readOnly: false, shape, segIndex });
+    const lf: LoadedFile = { relPath: e.relPath, locale: e.locale, ns: e.ns, text, style, readOnly: false, shape, segIndex };
+    if (isBase) baseFiles.set(e.ns, lf);
+    files.push(lf);
   }
 
   const data: ProjectData = {
     format: "next-i18next",
-    root,
+    root: normalizePath(root),
     baseLocale,
     locales,
     namespaces,

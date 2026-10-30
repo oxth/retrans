@@ -42,6 +42,7 @@ export class MemoryFs implements Fs {
       const rel = k.slice(prefix.length);
       if (rel.split("/").length <= maxDepth) out.push(rel);
     }
+    if (!(await this.exists(r))) throw new FsError("NotFound", `not found: ${root}`);
     return out.sort();
   }
 
