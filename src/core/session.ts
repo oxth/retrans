@@ -294,6 +294,16 @@ export class ProjectSession {
     this.emit();
   }
 
+  /** Project-level setting stored in .paratrans/state.json (e.g. the locales path override). */
+  setProjectSetting(patch: { localesPath?: string | undefined }): void {
+    if ("localesPath" in patch) {
+      if (patch.localesPath) this.state.project.localesPath = patch.localesPath;
+      else delete this.state.project.localesPath;
+    }
+    this.stateTouched = true;
+    this.emit();
+  }
+
   addNamespace(ns: string): void {
     if (this.data.format !== "next-i18next") throw new Error("Namespaces are only supported for next-i18next");
     if (!ns || /[\\/]|::/.test(ns) || ns.startsWith(".")) throw new Error(`"${ns}" is not a valid namespace`);

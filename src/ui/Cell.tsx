@@ -15,6 +15,8 @@ export interface EditActions {
   /** Opens the next missing cell; returns false (and closes the editor) when there is none. */
   next: (id: KeyId, locale: string) => boolean;
   review: (id: KeyId, locale: string) => void;
+  /** Reports an error that can no longer be shown inline (editor already unmounted). */
+  error?: (message: string) => void;
 }
 
 export interface CellProps {
@@ -65,6 +67,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
           complex={complex}
           onCommit={(t) => actions.commit(id, locale, t)}
           onCancel={actions.cancel}
+          onFlushError={actions.error}
           onNextMissing={() => {
             if (!actions.next(id, locale)) refocus.current = true;
           }}

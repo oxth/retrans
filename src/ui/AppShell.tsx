@@ -1,10 +1,16 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyId } from "../core/model";
-import { buildRows, nextMissing } from "../core/rows";
+import { buildRows, nextMissing, type Row } from "../core/rows";
 import { getViewMode, setViewMode } from "../platform/prefs";
 import type { EditActions } from "./Cell";
 import { ListView } from "./ListView";
+import { AddKeyDialog, DeleteKeyDialog, RenameKeyDialog } from "./KeyDialogs";
+import { ConflictDialog } from "./ConflictDialog";
+import { LanguagesPage } from "./LanguagesPage";
+import { LoadErrors } from "./LoadErrors";
+import { SettingsPage } from "./SettingsPage";
 import { type Page, Sidebar } from "./Sidebar";
+import { UnsavedPrompt } from "./UnsavedPrompt";
 import { useApp, useSessionVersion } from "./store";
 import { TableView } from "./TableView";
 import { type FilterState, Toolbar } from "./Toolbar";
@@ -15,12 +21,27 @@ export function AppShell() {
   const version = useSessionVersion();
   const session = useApp((s) => s.session);
   const error = useApp((s) => s.error);
-  const closeProject = useApp((s) => s.closeProject);
+  const requestClose = useApp((s) => s.requestClose);
   const [page, setPage] = useState<Page>("translations");
   const [filter, setFilter] = useState<FilterState>(INITIAL);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [viewMode, setMode] = useState<"list" | "table">("list");
   const root = session?.data.root;
+  const [dialog, setDialog] = useState<{ kind: "add" } | { kind: "rename" | "delete"; row: Row } | null>(null);
+  const dirty = !!session && (version >= 0 ? session.isDirty() : false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "s") return;
+      e.preventDefault();
+      // Flush an open editor first (blur commits it).
+      const a = document.activeElement;
+      if (a instanceof HTMLTextAreaElement) a.blur();
+      void useApp.getState().save();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     if (!root) return;
@@ -88,9 +109,12 @@ export function AppShell() {
         return !!n;
       },
       review: (id, locale) => live.current.session?.markReviewed(id, locale),
+      error: (message) => useApp.setState({ error: message }),
     }),
     [],
   );
+
+  const onRowAction = useCallback((row: Row, kind: "rename" | "delete") => setDialog({ kind, row }), []);
 
   if (!session) return null;
   const toggleLocale = (l: string) =>
@@ -102,8 +126,19 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen bg-white text-gray-900">
-      <Sidebar session={session} stats={stats} page={page} onPage={setPage} onClose={() => void closeProject()} />
+      <Sidebar session={session} stats={stats} page={page} onPage={setPage} onClose={() => void requestClose("project")} />
       <main className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-8 shrink-0 items-center justify-end gap-3 border-b border-gray-100 px-4 text-xs">
+          {dirty && <span className="font-medium text-amber-700">• Unsaved</span>}
+          <button
+            className="rounded border border-gray-300 px-2 py-0.5 hover:bg-gray-50 disabled:opacity-40"
+            disabled={!dirty}
+            onClick={() => void useApp.getState().save()}
+          >
+            Save
+          </button>
+        </div>
+        <LoadErrors session={session} />
         {error && (
           <div role="alert" className="flex items-center justify-between gap-3 bg-red-50 px-4 py-2 text-sm text-red-700">
             <span>{error}</span>
@@ -123,19 +158,27 @@ export function AppShell() {
               onToggleLocale={toggleLocale}
               viewMode={viewMode}
               onViewMode={onViewMode}
+              onAddKey={() => setDialog({ kind: "add" })}
             />
             <div className="min-h-0 flex-1">
               {viewMode === "list" ? (
-                <ListView session={session} rows={rows} locales={visible} version={version} editing={editing} actions={actions} />
+                <ListView session={session} rows={rows} locales={visible} version={version} editing={editing} actions={actions} onRowAction={onRowAction} />
               ) : (
-                <TableView session={session} rows={rows} locales={visible} version={version} editing={editing} actions={actions} />
+                <TableView session={session} rows={rows} locales={visible} version={version} editing={editing} actions={actions} onRowAction={onRowAction} />
               )}
             </div>
           </>
+        ) : page === "languages" ? (
+          <LanguagesPage session={session} stats={stats} />
         ) : (
-          <div className="p-8 text-gray-500">Coming in the next step</div>
+          <SettingsPage session={session} />
         )}
       </main>
+      {dialog?.kind === "add" && <AddKeyDialog session={session} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "rename" && <RenameKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "delete" && <DeleteKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
+      <ConflictDialog />
+      <UnsavedPrompt />
     </div>
   );
 }

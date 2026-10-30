@@ -19,10 +19,23 @@ export async function addRecent(e: RecentProject): Promise<void> {
   await s.save();
 }
 
+export async function getDefaultViewMode(): Promise<"list" | "table"> {
+  const s = await getStore();
+  return (await s.get<string>("defaultViewMode")) === "table" ? "table" : "list";
+}
+
+export async function setDefaultViewMode(m: "list" | "table"): Promise<void> {
+  const s = await getStore();
+  await s.set("defaultViewMode", m);
+  await s.save();
+}
+
+/** The project's saved mode, else the global default. */
 export async function getViewMode(root: string): Promise<"list" | "table"> {
   const s = await getStore();
   const all = (await s.get<Record<string, "list" | "table">>("viewMode")) ?? {};
-  return all[root] === "table" ? "table" : "list";
+  if (all[root] === "table" || all[root] === "list") return all[root];
+  return getDefaultViewMode();
 }
 
 export async function setViewMode(root: string, m: "list" | "table"): Promise<void> {

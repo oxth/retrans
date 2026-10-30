@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import type { Row } from "../core/rows";
 import type { ProjectSession } from "../core/session";
 import { Cell, type EditActions } from "./Cell";
+import { RowMenu } from "./RowMenu";
 
 export interface ViewProps {
   session: ProjectSession;
@@ -11,9 +12,10 @@ export interface ViewProps {
   version: number;
   editing: { id: string; locale: string } | null;
   actions: EditActions;
+  onRowAction?: (row: Row, action: "rename" | "delete") => void;
 }
 
-export function ListView({ session, rows, locales, version, editing, actions }: ViewProps) {
+export function ListView({ session, rows, locales, version, editing, actions, onRowAction }: ViewProps) {
   const parent = useRef<HTMLDivElement>(null);
   const cols = [session.data.baseLocale, ...locales];
   const virt = useVirtualizer({
@@ -48,7 +50,12 @@ export function ListView({ session, rows, locales, version, editing, actions }: 
               data-row={row.id}
             >
               <div className="w-1/3 shrink-0 px-3">
-                <div className="break-all font-mono font-semibold text-gray-700">{row.key}</div>
+                <div className="flex items-start gap-1">
+                  <div className="min-w-0 flex-1 break-all font-mono font-semibold text-gray-700">{row.key}</div>
+                  {onRowAction && (
+                    <RowMenu name={row.key} onRename={() => onRowAction(row, "rename")} onDelete={() => onRowAction(row, "delete")} />
+                  )}
+                </div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-gray-400">
                   {row.ns && <span>{row.ns}</span>}
                   {row.pluralGroup && (

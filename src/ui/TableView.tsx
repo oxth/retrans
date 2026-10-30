@@ -1,6 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useRef } from "react";
 import { Cell } from "./Cell";
+import { RowMenu } from "./RowMenu";
 import type { ViewProps } from "./ListView";
 
 const KEY_W = 220;
@@ -8,7 +9,7 @@ const COL_W = 260;
 /** Fixed height of the sticky header; the virtualizer needs it as scrollMargin so the visible range is right. */
 const HEADER_H = 32;
 
-export function TableView({ session, rows, locales, version, editing, actions }: ViewProps) {
+export function TableView({ session, rows, locales, version, editing, actions, onRowAction }: ViewProps) {
   const parent = useRef<HTMLDivElement>(null);
   const base = session.data.baseLocale;
   const width = KEY_W + COL_W * (locales.length + 1);
@@ -59,7 +60,12 @@ export function TableView({ session, rows, locales, version, editing, actions }:
                   data-row={row.id}
                 >
                   <div className="shrink-0 bg-white px-2 py-1.5" style={{ width: KEY_W, ...pin(0) }}>
-                    <div className="break-all font-mono font-semibold text-gray-700">{row.key}</div>
+                    <div className="flex items-start gap-1">
+                      <div className="min-w-0 flex-1 break-all font-mono font-semibold text-gray-700">{row.key}</div>
+                      {onRowAction && (
+                        <RowMenu name={row.key} onRename={() => onRowAction(row, "rename")} onDelete={() => onRowAction(row, "delete")} />
+                      )}
+                    </div>
                     {row.ns && <div className="text-[10px] text-gray-400">{row.ns}</div>}
                   </div>
                   <div className="shrink-0 border-r border-gray-100 bg-white" style={{ width: COL_W, ...pin(KEY_W) }}>

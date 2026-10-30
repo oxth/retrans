@@ -453,4 +453,18 @@ describe("ProjectSession", () => {
     expect(r.written).toEqual([STATE_PATH]);
     expect(Object.keys((await json(fs, STATE_PATH)).entries).sort()).toEqual([c("nav.home"), c("title")].sort());
   });
+
+  it("setProjectSetting marks state dirty and save writes localesPath to state.json", async () => {
+    const { fs, s } = await openFx("next-nested");
+    expect(s.isDirty()).toBe(false);
+    s.setProjectSetting({ localesPath: "public/i18n" });
+    expect(s.isDirty()).toBe(true);
+    const r = await s.save();
+    expect(r.written).toEqual([STATE_PATH]);
+    expect((await json(fs, STATE_PATH)).project.localesPath).toBe("public/i18n");
+    expect(s.isDirty()).toBe(false);
+    s.setProjectSetting({ localesPath: undefined });
+    await s.save();
+    expect((await json(fs, STATE_PATH)).project.localesPath).toBeUndefined();
+  });
 });

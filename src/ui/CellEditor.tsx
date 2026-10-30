@@ -14,16 +14,18 @@ export interface CellEditorProps {
   onMarkReviewed?: () => void;
   /** Called after a successful Enter/Esc/Tab-without-next close, so the host can return focus to the cell. */
   onRefocus?: () => void;
+  /** An unmount-time flush failed (e.g. read-only file): the editor is gone, so the host must show the message. */
+  onFlushError?: (message: string) => void;
 }
 
-export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, onNextMissing, onMarkReviewed, onRefocus }: CellEditorProps) {
+export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, onNextMissing, onMarkReviewed, onRefocus, onFlushError }: CellEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [error, setError] = useState<string | null>(null);
   const draft = useRef(initial);
   const done = useRef(false); // committed or cancelled: nothing left to flush
   const composing = useRef(false);
-  const latest = useRef({ onCommit, complex, initial });
-  latest.current = { onCommit, complex, initial };
+  const latest = useRef({ onCommit, complex, initial, onFlushError });
+  latest.current = { onCommit, complex, initial, onFlushError };
 
   // Flush unsaved text if the editor disappears (cell switch, virtualizer unmount, filter change).
   useEffect(
@@ -39,8 +41,8 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
       }
       try {
         l.onCommit(draft.current);
-      } catch {
-        /* editor is gone; nowhere to show the error */
+      } catch (e) {
+        l.onFlushError?.(e instanceof Error ? e.message : String(e));
       }
     },
     [],

@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { StartScreen } from "./ui/StartScreen";
 import { AppShell } from "./ui/AppShell";
 import { useApp } from "./ui/store";
@@ -19,7 +21,36 @@ function RecoveryPrompt() {
   );
 }
 
+/** Intercepts the window's close request while the open project has unsaved changes. */
+function useCloseGuard() {
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let gone = false;
+    try {
+      getCurrentWindow()
+        .onCloseRequested((e) => {
+          const { session, requestClose } = useApp.getState();
+          if (session?.isDirty()) {
+            e.preventDefault();
+            void requestClose("window");
+          }
+        })
+        .then(
+          (u) => (gone ? u() : (unlisten = u)),
+          () => {},
+        );
+    } catch {
+      /* not running inside Tauri */
+    }
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  }, []);
+}
+
 export default function App() {
+  useCloseGuard();
   const session = useApp((s) => s.session);
   return session ? (
     <>
