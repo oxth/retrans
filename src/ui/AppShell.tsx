@@ -34,6 +34,8 @@ export function AppShell() {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "s") return;
       e.preventDefault();
+      // Not while a modal (conflicts, unsaved-changes prompt, key dialogs) is up.
+      if (document.querySelector('[role="dialog"]')) return;
       // Flush an open editor first (blur commits it).
       const a = document.activeElement;
       if (a instanceof HTMLTextAreaElement) a.blur();

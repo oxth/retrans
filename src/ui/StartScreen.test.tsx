@@ -123,3 +123,18 @@ describe("StartScreen", () => {
     expect(useApp.getState().recovery).toBeNull();
   });
 });
+
+describe("StartScreen review fixes", () => {
+  it("#6 a recent project with no detected base language opens with the persisted one", async () => {
+    const fs = new MemoryFs({
+      "/project/public/locales/en/common.json": '{"a":"A"}',
+      "/project/public/locales/th/common.json": '{"a":"ก"}',
+      "/project/.paratrans/state.json": JSON.stringify({ version: 1, project: { baseLocale: "th" }, entries: {} }),
+    });
+    await addRecent({ root: "/project", name: "project", format: "next-i18next" });
+    await setup(fs);
+    await userEvent.click(await screen.findByRole("button", { name: /^project\// }));
+    await screen.findByRole("button", { name: "Close project" });
+    expect(useApp.getState().session!.data.baseLocale).toBe("th");
+  });
+});

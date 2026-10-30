@@ -28,7 +28,10 @@ export interface AppState {
   closeProject(): Promise<void>;
   restoreRecovery(): Promise<void>;
   discardRecovery(): Promise<void>;
-  /** Saves (reloading and merging if files changed on disk). True when the session ended up clean. */
+  /**
+   * Saves (reloading and merging if files changed on disk). True when the session ended up clean.
+   * Refuses (false, with an error) while conflicts are unresolved.
+   */
   save(): Promise<boolean>;
   requestClose(then: "project" | "window"): Promise<void>;
   answerClosePrompt(choice: "save" | "discard" | "cancel"): Promise<void>;
@@ -195,6 +198,10 @@ export const useApp = create<AppState>((set, get) => ({
     const { session, fs } = get();
     if (!session) return false;
     if (!session.isDirty()) return true;
+    if (get().conflicts.length > 0) {
+      set({ error: "Resolve conflicts before saving." });
+      return false;
+    }
     const current = () => get().session === session;
     try {
       let r = await session.save();

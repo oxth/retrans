@@ -222,7 +222,10 @@ describe("saving", () => {
     const fs = nested();
     const s = await open(fs);
     act(() => s.setText("common::title", "th", "MINE"));
-    useApp.setState({ conflicts: [{ id: "common::title", locale: "th", mine: { kind: "text", text: "MINE" }, theirs: { kind: "text", text: "THEIRS" } }] });
+    // "Theirs" takes the current disk value, so the conflict has to be a real one.
+    const orig = JSON.parse(await fs.readText(TH));
+    await fs.writeTextAtomic(TH, JSON.stringify({ ...orig, title: "THEIRS" }, null, 2) + "\n");
+    await act(async () => void (await useApp.getState().save()));
     const dlg = await screen.findByRole("dialog", { name: "Resolve conflicts" });
     await userEvent.click(within(dlg).getByRole("button", { name: "Theirs" }));
     expect(s.value("common::title", "th")).toEqual({ kind: "text", text: "THEIRS" });
@@ -327,5 +330,59 @@ describe("settings and load errors", () => {
     expect(banner).toHaveTextContent(new RegExp(`${s.errors.length} files? couldn't be read and (are|is) read-only`));
     await userEvent.click(within(banner).getByRole("button", { name: /details/i }));
     expect(within(banner).getByText(new RegExp(s.errors[0].relPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))).toBeInTheDocument();
+  });
+});
+
+describe("review fixes (UI)", () => {
+  it("#1 an empty string on disk renders as a red Missing cell", async () => {
+    const fs = new MemoryFs({
+      "/project/public/locales/en/common.json": '{"a":"A","b":"B"}\n',
+      "/project/public/locales/th/common.json": '{"a":"","b":"บี"}\n',
+    });
+    await open(fs);
+    const cell = rowEl("common::a")!.querySelector('[data-cell="missing"][data-locale="th"]');
+    expect(cell).not.toBeNull();
+    expect(cell).toHaveTextContent(/empty/i);
+  });
+
+  it("#3 Cmd+S does nothing while a modal dialog is open", async () => {
+    const fs = nested();
+    const s = await open(fs);
+    act(() => s.setText("common::title", "th", "W"));
+    await userEvent.click(screen.getByRole("button", { name: "+ Key" }));
+    await screen.findByRole("dialog");
+    fs.writes.length = 0;
+    await userEvent.keyboard("{Meta>}s{/Meta}");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fs.writes).toEqual([]);
+  });
+
+  it("#3 the close prompt's Save refuses while conflicts are unresolved", async () => {
+    const fs = nested();
+    const s = await open(fs);
+    act(() => s.setText("common::title", "th", "W"));
+    act(() => useApp.setState({ conflicts: [{ id: "common::title", locale: "th", mine: { kind: "text", text: "W" } }] }));
+    await useApp.getState().requestClose("window");
+    fs.writes.length = 0;
+    await act(() => useApp.getState().answerClosePrompt("save"));
+    expect(win.destroy).not.toHaveBeenCalled();
+    expect(fs.writes).toEqual([]);
+    expect(useApp.getState().error).toMatch(/Resolve conflicts before saving/);
+  });
+
+  it("#6 settings: saving the detected locales path creates no override; Reset to detected removes one", async () => {
+    const s = await open(nested());
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save setting" }));
+    expect(s.state.project.localesPath).toBeUndefined();
+    expect(s.isDirty()).toBe(false);
+    await userEvent.clear(screen.getByLabelText("Locales path"));
+    await userEvent.type(screen.getByLabelText("Locales path"), "public/i18n");
+    await userEvent.click(screen.getByRole("button", { name: "Save setting" }));
+    expect(s.state.project.localesPath).toBe("public/i18n");
+    await userEvent.click(screen.getByRole("button", { name: "Reset to detected" }));
+    expect(s.state.project.localesPath).toBeUndefined();
+    expect(screen.getByLabelText("Locales path")).toHaveValue("public/locales");
+    expect(s.isDirty()).toBe(false);
   });
 });
