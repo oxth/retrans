@@ -1,0 +1,4 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"greeting": "สวัสดี {username}! ยินดีต้อนรับสู่ {placename}"
+}

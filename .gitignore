@@ -2,3 +2,8 @@
 node_modules/
 dist/
 src-tauri/target/
+dist-ssr
+*.local
+.DS_Store
+.idea
+*.log
