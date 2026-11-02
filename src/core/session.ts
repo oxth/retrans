@@ -341,12 +341,13 @@ export class ProjectSession {
     this.emit();
   }
 
-  /** Project-level setting stored in .retrans/state.json (e.g. the locales path override). */
-  setProjectSetting(patch: { localesPath?: string | undefined }): void {
+  /** Project-level setting stored in .retrans/state.json (e.g. the locales path override, the project id). */
+  setProjectSetting(patch: { localesPath?: string | undefined; id?: string }): void {
     if ("localesPath" in patch) {
       if (patch.localesPath) this.state.project.localesPath = patch.localesPath;
       else delete this.state.project.localesPath;
     }
+    if (patch.id) this.state.project.id = patch.id;
     this.stateTouched = true;
     this.emit();
   }

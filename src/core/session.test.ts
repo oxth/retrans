@@ -468,3 +468,12 @@ describe("ProjectSession", () => {
     expect((await json(fs, STATE_PATH)).project.localesPath).toBeUndefined();
   });
 });
+
+describe("ProjectSession project id", () => {
+  it("setProjectSetting({ id }) marks state touched and persists on save", async () => {
+    const { fs, s } = await openFx("next-nested");
+    s.setProjectSetting({ id: "p-9" });
+    await s.save();
+    expect((await json(fs, STATE_PATH)).project.id).toBe("p-9");
+  });
+});
