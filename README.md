@@ -49,7 +49,7 @@ Retrans can suggest and batch-fill translations with a local language model. It 
 - **Enable it** in the machine translation settings, then pick a model. Sizes range from a small model (about 1.8 GB) to larger, better ones; the settings list the exact download size of each.
 - **Gemma terms:** TranslateGemma is under the Gemma terms of use. The app shows a summary and links, and asks you to accept before downloading.
 - **Where models live:** in the app data folder. A custom GGUF file you add stays where it is.
-- **Privacy:** translation runs entirely on your computer. The only network traffic is the model download from huggingface.co.
+- **Privacy:** translation runs entirely on your computer. The only network traffic is the model download from huggingface.co and update checks/downloads from github.com. There is no telemetry.
 
 ## Working with a translator
 
