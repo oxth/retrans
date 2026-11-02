@@ -1,0 +1,75 @@
+[
+  {
+    "id": "translategemma-4b",
+    "name": "TranslateGemma 4B",
+    "tier": "recommended",
+    "repo": "bullerwins/translategemma-4b-it-GGUF",
+    "file": "translategemma-4b-it-Q4_K_M.gguf",
+    "url": "https://huggingface.co/bullerwins/translategemma-4b-it-GGUF/resolve/7c938465a870d8624bcfa98a8e4a3510053c19a8/translategemma-4b-it-Q4_K_M.gguf",
+    "sha256": "7f7357c14abd9da4eb200b38b05da502cd6e10d7e1d403fbc9f78c19f3209b72",
+    "sizeBytes": 2489909312,
+    "ramGb": "8–16 GB",
+    "languages": "55 languages incl. Thai, English",
+    "license": {
+      "name": "Gemma Terms of Use",
+      "url": "https://ai.google.dev/gemma/terms",
+      "requiresAcceptance": true
+    },
+    "template": "translategemma",
+    "recommended": true
+  },
+  {
+    "id": "translategemma-12b",
+    "name": "TranslateGemma 12B",
+    "tier": "best",
+    "repo": "bullerwins/translategemma-12b-it-GGUF",
+    "file": "translategemma-12b-it-Q4_K_M.gguf",
+    "url": "https://huggingface.co/bullerwins/translategemma-12b-it-GGUF/resolve/d7d1d8cc4ff53d4bc883ef33eae3894f07833b63/translategemma-12b-it-Q4_K_M.gguf",
+    "sha256": "9196d728812afbf5efc10b539298585725edc3a4ecc092c22fdde5bbaf41879e",
+    "sizeBytes": 7300793664,
+    "ramGb": "16–32 GB",
+    "languages": "55 languages incl. Thai, English",
+    "license": {
+      "name": "Gemma Terms of Use",
+      "url": "https://ai.google.dev/gemma/terms",
+      "requiresAcceptance": true
+    },
+    "template": "translategemma"
+  },
+  {
+    "id": "qwen3-1.7b",
+    "name": "Qwen3 1.7B",
+    "tier": "small",
+    "repo": "Qwen/Qwen3-1.7B-GGUF",
+    "file": "Qwen3-1.7B-Q8_0.gguf",
+    "url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/90862c4b9d2787eaed51d12237eafdfe7c5f6077/Qwen3-1.7B-Q8_0.gguf",
+    "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+    "sizeBytes": 1834426016,
+    "ramGb": "8 GB",
+    "languages": "119 languages incl. Thai, English",
+    "license": {
+      "name": "Apache 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "requiresAcceptance": false
+    },
+    "template": "qwen3"
+  },
+  {
+    "id": "qwen3-8b",
+    "name": "Qwen3 8B",
+    "tier": "best-alt",
+    "repo": "Qwen/Qwen3-8B-GGUF",
+    "file": "Qwen3-8B-Q4_K_M.gguf",
+    "url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf",
+    "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+    "sizeBytes": 5027783488,
+    "ramGb": "16 GB",
+    "languages": "119 languages incl. Thai, English",
+    "license": {
+      "name": "Apache 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "requiresAcceptance": false
+    },
+    "template": "qwen3"
+  }
+]

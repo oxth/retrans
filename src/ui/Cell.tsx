@@ -3,6 +3,7 @@ import { isApplicable } from "../core/plurals";
 import type { ProjectSession } from "../core/session";
 import { isTranslated, type KeyId } from "../core/model";
 import { CellEditor } from "./CellEditor";
+import { useSuggestion } from "./Suggestion";
 import { StatusDot } from "./StatusDot";
 import { Warnings } from "./Warnings";
 
@@ -11,6 +12,8 @@ export interface EditActions {
   start: (id: KeyId, locale: string) => void;
   /** May throw; the editor shows the message inline. */
   commit: (id: KeyId, locale: string, text: string) => void;
+  /** Writes accepted machine output (flagged as machine, never reviewed). May throw. */
+  commitMachine: (id: KeyId, locale: string, text: string) => void;
   cancel: () => void;
   /** Opens the next missing cell; returns false (and closes the editor) when there is none. */
   next: (id: KeyId, locale: string) => boolean;
@@ -42,6 +45,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     }
   });
   const isBase = locale === session.data.baseLocale;
+  const suggestion = useSuggestion(session, id, locale, editing && !isBase);
   const code = showCode ? <span className="w-8 shrink-0 font-bold uppercase text-gray-500">{locale}</span> : null;
 
   if (!isApplicable(session.data, id, locale)) {
@@ -68,6 +72,8 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
           onCommit={(t) => actions.commit(id, locale, t)}
           onCancel={actions.cancel}
           onFlushError={actions.error}
+          suggestion={suggestion}
+          onAcceptSuggestion={(t) => actions.commitMachine(id, locale, t)}
           onNextMissing={() => {
             if (!actions.next(id, locale)) refocus.current = true;
           }}

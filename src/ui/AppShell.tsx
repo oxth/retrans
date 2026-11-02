@@ -13,7 +13,10 @@ import { type Page, Sidebar } from "./Sidebar";
 import { UnsavedPrompt } from "./UnsavedPrompt";
 import { useApp, useSessionVersion } from "./store";
 import { TableView } from "./TableView";
+import { activeModel, useMt } from "./mt-store";
 import { type FilterState, Toolbar } from "./Toolbar";
+import { TranslateMissingDialog } from "./TranslateMissingDialog";
+import { useShallow } from "zustand/react/shallow";
 
 const INITIAL: FilterState = { search: "", ns: "all", missing: false, needsReview: false, machine: false, status: "all" };
 
@@ -27,7 +30,8 @@ export function AppShell() {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [viewMode, setMode] = useState<"list" | "table">("list");
   const root = session?.data.root;
-  const [dialog, setDialog] = useState<{ kind: "add" } | { kind: "rename" | "delete"; row: Row } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "add" } | { kind: "translate" } | { kind: "rename" | "delete"; row: Row } | null>(null);
+  const hasModel = useMt(useShallow((s) => activeModel(s))) !== null;
   const dirty = !!session && (version >= 0 ? session.isDirty() : false);
 
   useEffect(() => {
@@ -104,6 +108,10 @@ export function AppShell() {
         // Only close if this cell is still the one being edited (blur/unmount flushes may arrive after a switch).
         setEditing((cur) => (cur && cur.id === id && cur.locale === locale ? null : cur));
       },
+      commitMachine: (id, locale, text) => {
+        live.current.session?.setText(id, locale, text, { machine: true });
+        setEditing((cur) => (cur && cur.id === id && cur.locale === locale ? null : cur));
+      },
       next: (id, locale) => {
         const { session: s, rows: r, visible: v } = live.current;
         const n = s ? nextMissing(s, r, { id, locale }, v) : null;
@@ -161,6 +169,7 @@ export function AppShell() {
               viewMode={viewMode}
               onViewMode={onViewMode}
               onAddKey={() => setDialog({ kind: "add" })}
+              onTranslateMissing={hasModel ? () => setDialog({ kind: "translate" }) : undefined}
             />
             <div className="min-h-0 flex-1">
               {viewMode === "list" ? (
@@ -177,6 +186,7 @@ export function AppShell() {
         )}
       </main>
       {dialog?.kind === "add" && <AddKeyDialog session={session} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "translate" && <TranslateMissingDialog session={session} defaultLocale={visible[0]} onClose={() => setDialog(null)} />}
       {dialog?.kind === "rename" && <RenameKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
       {dialog?.kind === "delete" && <DeleteKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
       <ConflictDialog />

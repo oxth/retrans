@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyId } from "../core/model";
+import { SuggestionBox, type SuggestionState } from "./Suggestion";
 
 export interface CellEditorProps {
   id: KeyId;
@@ -16,12 +17,17 @@ export interface CellEditorProps {
   onRefocus?: () => void;
   /** An unmount-time flush failed (e.g. read-only file): the editor is gone, so the host must show the message. */
   onFlushError?: (message: string) => void;
+  suggestion?: SuggestionState | null;
+  /** Writes the machine suggestion; may throw like onCommit. */
+  onAcceptSuggestion?: (text: string) => void;
 }
 
-export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, onNextMissing, onMarkReviewed, onRefocus, onFlushError }: CellEditorProps) {
+export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, onNextMissing, onMarkReviewed, onRefocus, onFlushError, suggestion, onAcceptSuggestion }: CellEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [error, setError] = useState<string | null>(null);
   const draft = useRef(initial);
+  // Once the user has typed, their text wins: the suggestion is hidden and can't be accepted.
+  const [edited, setEdited] = useState(false);
   const done = useRef(false); // committed or cancelled: nothing left to flush
   const composing = useRef(false);
   const latest = useRef({ onCommit, complex, initial, onFlushError });
@@ -87,6 +93,20 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
     }
   };
 
+  const canAccept = () =>
+    !done.current && suggestion?.status === "ready" && !!onAcceptSuggestion && (ref.current?.value ?? draft.current) === initial;
+
+  const accept = () => {
+    if (!canAccept() || suggestion?.status !== "ready" || !onAcceptSuggestion) return;
+    try {
+      onAcceptSuggestion(suggestion.text);
+      done.current = true;
+      onRefocus?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   return (
     <div className="w-full">
       <textarea
@@ -108,6 +128,7 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
         }}
         onInput={(e) => {
           draft.current = e.currentTarget.value;
+          setEdited(draft.current !== initial);
           grow();
           if (error) setError(null);
         }}
@@ -125,7 +146,9 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
             }
           } else if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            if (tryCommit()) onRefocus?.();
+            // Cmd/Ctrl+Enter accepts a ready suggestion over untouched text; otherwise it's Enter.
+            if ((e.metaKey || e.ctrlKey) && canAccept()) accept();
+            else if (tryCommit()) onRefocus?.();
           } else if (e.key === "Escape") {
             e.preventDefault();
             done.current = true;
@@ -142,6 +165,7 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
           }
         }}
       />
+      {suggestion && !edited && <SuggestionBox state={suggestion} onAccept={accept} />}
       {error && (
         <div role="alert" className="mt-0.5 text-xs text-red-600">
           {error}

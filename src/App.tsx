@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { StartScreen } from "./ui/StartScreen";
 import { AppShell } from "./ui/AppShell";
 import { useApp } from "./ui/store";
+import { useMt } from "./ui/mt-store";
 
 function RecoveryPrompt() {
   const { recovery, restoreRecovery, discardRecovery } = useApp();
@@ -51,6 +52,9 @@ function useCloseGuard() {
 
 export default function App() {
   useCloseGuard();
+  useEffect(() => {
+    void useMt.getState().init();
+  }, []);
   const session = useApp((s) => s.session);
   return session ? (
     <>
