@@ -90,6 +90,42 @@ jobs:
         if: runner.os == 'Windows'
         run: pnpm tauri build --bundles nsis
 
+      - name: Set up the MSVC developer environment (dumpbin)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # A clean Windows 10+ machine has no VC++ redistributable: retrans.exe and every shipped DLL
+      # may import only Windows' own DLLs (the UCRT included) and each other.
+      - name: Check retrans.exe and the shipped DLLs need no VC++ redistributable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dlls = @(Get-ChildItem src-tauri/llama-dlls -Filter *.dll)
+          if ($dlls.Count -eq 0) { Write-Error 'No DLLs staged in src-tauri/llama-dlls' }
+          $shipped = @($dlls | ForEach-Object { $_.Name.ToLowerInvariant() })
+          $sys32 = Join-Path $env:SystemRoot 'System32'
+          # Present on the runner's System32 but NOT on a clean machine: the VC++ redistributable.
+          $redist = '^(msvcp|vcruntime|vcomp|concrt|vccorlib|msvcr)\d|^ucrtbased\.dll$'
+          $bad = @()
+          foreach ($bin in @(Get-Item src-tauri/target/release/retrans.exe) + $dlls) {
+            $out = & dumpbin /nologo /dependents $bin.FullName
+            if ($LASTEXITCODE -ne 0) { Write-Error "dumpbin failed on $($bin.Name)" }
+            $deps = @($out | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[\w.-]+\.dll$' })
+            Write-Host "$($bin.Name): $($deps -join ', ')"
+            foreach ($d in $deps) {
+              $n = $d.ToLowerInvariant()
+              $ok = ($n -match '^(api|ext)-ms-win-') -or ($shipped -contains $n) -or
+                    (($n -notmatch $redist) -and (Test-Path (Join-Path $sys32 $d)))
+              if (-not $ok) { $bad += "$($bin.Name) -> $d" }
+            }
+          }
+          if ($bad.Count) {
+            $bad | ForEach-Object { Write-Host "::error::Not available on a clean Windows install: $_" }
+            exit 1
+          }
+          Write-Host 'No VC++ redistributable dependencies.'
+
       - name: Check llama.cpp DLLs sit next to retrans.exe in the installer
         if: runner.os == 'Windows'
         shell: bash

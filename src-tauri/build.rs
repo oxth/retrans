@@ -1,5 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
+
+#[path = "build_stage.rs"]
+mod build_stage;
 
 fn main() {
     link_clang_runtime_on_macos();
@@ -55,13 +58,15 @@ fn clang_runtime_dir() -> Option<PathBuf> {
 }
 
 /// Windows builds llama.cpp with `dynamic-backends`: `llama.dll`/`ggml*.dll` plus one
-/// `ggml-cpu-*.dll` per CPU variant. Copy them all into `llama-dlls/`, which the Windows
-/// bundle installs next to the exe (see tauri.windows.conf.json).
+/// `ggml-cpu-*.dll` per CPU variant. Mirror them into `llama-dlls/`, which the Windows bundle
+/// installs next to the exe (see tauri.windows.conf.json). Only changed DLLs are copied and stale
+/// ones removed, so an unchanged build leaves the folder (and the bundle inputs) alone.
 fn stage_llama_dlls_on_windows() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
     println!("cargo:rerun-if-env-changed=DEP_LLAMA_BACKENDS_DIR");
+    println!("cargo:rerun-if-changed=build_stage.rs");
     // Set by llama-cpp-sys-2's build script (`cargo:backends_dir=<OUT_DIR>/backends`).
     let backends = PathBuf::from(
         std::env::var("DEP_LLAMA_BACKENDS_DIR")
@@ -69,31 +74,17 @@ fn stage_llama_dlls_on_windows() {
     );
     // llama-cpp-sys-2 installs the shared libraries to `<OUT_DIR>/bin` on Windows.
     let shared = backends.parent().expect("backends dir has a parent").join("bin");
-
-    let dest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("llama-dlls");
-    let _ = std::fs::remove_dir_all(&dest); // drop DLLs left over from an older build
-    std::fs::create_dir_all(&dest).expect("create llama-dlls");
-    let mut copied = 0;
     for dir in [&shared, &backends] {
-        copied += copy_dlls(dir, &dest);
-    }
-    if copied == 0 {
-        panic!("no llama.cpp DLLs found in {} or {}", shared.display(), backends.display());
-    }
-}
-
-fn copy_dlls(from: &Path, to: &Path) -> usize {
-    let Ok(entries) = std::fs::read_dir(from) else {
-        println!("cargo:warning=llama.cpp DLL dir {} is missing", from.display());
-        return 0;
-    };
-    let mut n = 0;
-    for path in entries.filter_map(|e| e.ok().map(|e| e.path())) {
-        let is_dll = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("dll"));
-        if is_dll && path.is_file() {
-            std::fs::copy(&path, to.join(path.file_name().unwrap())).expect("copy llama.cpp DLL");
-            n += 1;
+        if dir.is_dir() {
+            println!("cargo:rerun-if-changed={}", dir.display());
+        } else {
+            println!("cargo:warning=llama.cpp DLL dir {} is missing", dir.display());
         }
     }
-    n
+
+    let dest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("llama-dlls");
+    let report = build_stage::sync_dlls(&[&shared, &backends], &dest).expect("stage llama.cpp DLLs");
+    if report.found == 0 {
+        panic!("no llama.cpp DLLs found in {} or {}", shared.display(), backends.display());
+    }
 }

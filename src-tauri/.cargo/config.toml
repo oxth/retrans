@@ -1,0 +1,16 @@
+# Retrans must start on a clean Windows x64 machine without the VC++ redistributable, so nothing
+# may import MSVCP140/VCRUNTIME140*.dll (Windows 10+ ships the UCRT, which may stay dynamic).
+
+# retrans.exe: static C runtime. tauri-build additionally links the VC runtime statically and the
+# UCRT dynamically (build.windows.staticVCRuntime, default true); static_vcruntime recommends
+# pairing that with +crt-static so every cc-built object uses /MT.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# llama.dll / ggml*.dll: llama-cpp-sys-2 builds them with the static MSVC runtime (/MT) only when
+# LLAMA_STATIC_CRT=1 (it calls cmake's static_crt(false) otherwise). llama.cpp's CMake policy
+# CMP0091 is NEW, so the runtime also comes from CMAKE_MSVC_RUNTIME_LIBRARY, which llama-cpp-sys-2
+# forwards from CMAKE_* env vars; set it to match. Both are ignored by non-MSVC toolchains.
+[env]
+LLAMA_STATIC_CRT = "1"
+CMAKE_MSVC_RUNTIME_LIBRARY = "MultiThreaded"
