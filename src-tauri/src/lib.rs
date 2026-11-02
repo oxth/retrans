@@ -1,6 +1,7 @@
 mod fs_cmds;
 mod mt;
 mod watch;
+mod zip_cmds;
 
 use std::sync::Arc;
 
@@ -28,6 +29,8 @@ pub fn run() {
             fs_cmds::mkdirp,
             watch::watch_dir,
             watch::unwatch_dir,
+            zip_cmds::zip_write,
+            zip_cmds::zip_read,
             mt::download::mt_models_dir,
             mt::download::mt_models_status,
             mt::download::mt_download_start,
