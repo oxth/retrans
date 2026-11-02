@@ -8,6 +8,7 @@ import { AddKeyDialog, DeleteKeyDialog, RenameKeyDialog } from "./KeyDialogs";
 import { ConflictDialog } from "./ConflictDialog";
 import { LanguagesPage } from "./LanguagesPage";
 import { LoadErrors } from "./LoadErrors";
+import { SharePage } from "./SharePage";
 import { SettingsPage } from "./SettingsPage";
 import { type Page, Sidebar } from "./Sidebar";
 import { UnsavedPrompt } from "./UnsavedPrompt";
@@ -181,6 +182,8 @@ export function AppShell() {
           </>
         ) : page === "languages" ? (
           <LanguagesPage session={session} stats={stats} />
+        ) : page === "share" ? (
+          <SharePage session={session} />
         ) : (
           <SettingsPage session={session} />
         )}
