@@ -101,10 +101,32 @@ fn backend() -> Result<&'static LlamaBackend, String> {
     BACKEND
         .get_or_init(|| {
             send_logs_to_tracing(LogOptions::default().with_logs_enabled(false));
+            #[cfg(target_os = "windows")]
+            load_cpu_backends();
             LlamaBackend::init().ok()
         })
         .as_ref()
         .ok_or_else(|| "Couldn't start the inference backend".to_string())
+}
+
+/// Windows builds llama.cpp with `dynamic-backends`: the CPU backend is a `ggml-cpu-*.dll` per
+/// CPU variant, and nothing runs until one is loaded. Installed builds ship them next to the exe;
+/// `cargo test`/`cargo run` fall back to the llama.cpp build dir baked in at compile time.
+#[cfg(target_os = "windows")]
+fn load_cpu_backends() {
+    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
+    let has_cpu_dll = |dir: &Path| {
+        std::fs::read_dir(dir).is_ok_and(|entries| {
+            entries.filter_map(Result::ok).any(|e| {
+                let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+                name.starts_with("ggml-cpu") && name.ends_with(".dll")
+            })
+        })
+    };
+    match exe_dir {
+        Some(dir) if has_cpu_dll(&dir) => llama_cpp_2::llama_backend::load_backends_from_path(&dir),
+        _ => llama_cpp_2::llama_backend::load_backends(),
+    }
 }
 
 /// Canonical form for comparing model paths; falls back to the path as given.
@@ -432,6 +454,25 @@ mod tests {
         assert_eq!(engine.generate(&req(1)), Err(LOAD_FAILED.into()));
         assert_eq!(engine.cancel.load(Ordering::SeqCst), NO_REQ);
         assert_eq!(engine.generate(&req(9)), Err(LOAD_FAILED.into()));
+    }
+
+    /// Engine smoke test (also run by CI on Windows) with the 1.2 MB stories260K model:
+    /// RETRANS_SMOKE_MODEL=/path/stories260K-f32.gguf cargo test generates_with_tiny_model -- --ignored
+    #[test]
+    #[ignore]
+    fn generates_with_tiny_model() {
+        let path = std::env::var("RETRANS_SMOKE_MODEL").expect("set RETRANS_SMOKE_MODEL");
+        let out = Engine::default()
+            .generate(&GenerateRequest {
+                req_id: 1,
+                model_path: path,
+                prompt: "Once upon a time".into(),
+                add_bos: true,
+                max_tokens: 16,
+                stop: vec![],
+            })
+            .expect("generates");
+        assert!(!out.is_empty(), "empty output");
     }
 
     /// Needs a real model: RETRANS_TEST_MODEL=/path/translategemma-4b-it-Q4_K_M.gguf cargo test -- --ignored

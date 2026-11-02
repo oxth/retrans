@@ -7,3 +7,6 @@ dist-ssr
 .DS_Store
 .idea
 *.log
+
+# llama.cpp DLLs staged by src-tauri/build.rs for the Windows bundle
+src-tauri/llama-dlls/

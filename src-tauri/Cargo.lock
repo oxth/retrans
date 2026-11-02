@@ -3321,6 +3321,7 @@ version = "0.1.0"
 dependencies = [
  "futures-util",
  "llama-cpp-2",
+ "llama-cpp-sys-2",
  "notify-debouncer-mini",
  "reqwest",
  "serde",
