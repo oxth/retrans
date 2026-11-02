@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { open as pickFolder } from "@tauri-apps/plugin-dialog";
+import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import type { DetectResult } from "../formats/adapter";
 import { detectProject } from "../formats/detect";
+import { extractPackage } from "../package/extract";
+import { zipRead } from "../platform/zip";
 import { getRecent, type RecentProject } from "../platform/prefs";
 import { NewProjectWizard } from "./NewProjectWizard";
 import { OpenProjectDialog } from "./OpenProjectDialog";
@@ -32,11 +34,33 @@ export function StartScreen() {
 
   const chooseFolder = async () => {
     try {
-      const p = await pickFolder({ directory: true });
+      const p = await pickFile({ directory: true });
       if (typeof p !== "string") return;
       const root = p.replace(/\\/g, "/");
       const detected = await detect(root);
       if (detected) setPending({ root, detected, savedBase: await savedBaseLocale(fs, root, detected) });
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const openPackage = async () => {
+    setMessage(null);
+    try {
+      const zipPath = await pickFile({ filters: [{ name: "Retrans package", extensions: ["zip"] }] });
+      if (typeof zipPath !== "string") return;
+      const parent = await pickFile({ directory: true, title: "Choose where to put the project" });
+      if (typeof parent !== "string") return;
+      const zipName = zipPath.replace(/\\/g, "/").split("/").pop()!.replace(/\.zip$/i, "");
+      const root = `${parent.replace(/\\/g, "/").replace(/\/+$/, "")}/${zipName}`;
+      await extractPackage(fs, await zipRead(zipPath), root);
+      const detected = await detect(root);
+      if (!detected) return;
+      if (detected.baseLocale === null) {
+        setPending({ root, detected, savedBase: await savedBaseLocale(fs, root, detected) });
+      } else {
+        await openProject(root, detected, { baseLocale: detected.baseLocale, localesPath: detected.localesPath });
+      }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     }
@@ -65,6 +89,9 @@ export function StartScreen() {
           </button>
           <button onClick={() => setWizard(true)} className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium hover:bg-gray-100">
             New project
+          </button>
+          <button onClick={openPackage} className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium hover:bg-gray-100">
+            Open translator package…
           </button>
         </div>
         {message && <p role="alert" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{message}</p>}

@@ -3,10 +3,19 @@ import { resolve } from "node:path";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const pick = vi.hoisted(() => ({ value: "/project" as string | null }));
+const pick = vi.hoisted(() => ({ value: "/project" as string | null, queue: [] as Array<string | null> }));
+const zip = vi.hoisted(() => ({ entries: [] as Array<{ path: string; text: string }>, src: "" }));
 const prefs = vi.hoisted(() => new Map<string, unknown>());
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => pick.value) }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(async () => (pick.queue.length ? pick.queue.shift()! : pick.value)),
+}));
+vi.mock("../platform/zip", () => ({
+  zipRead: vi.fn(async (src: string) => {
+    zip.src = src;
+    return zip.entries;
+  }),
+}));
 vi.mock("@tauri-apps/api/path", () => ({ appDataDir: vi.fn(async () => "/appdata") }));
 vi.mock("@tauri-apps/plugin-store", () => ({
   load: vi.fn(async () => ({
@@ -22,7 +31,7 @@ import { journalPath } from "../core/recovery";
 import { ProjectSession } from "../core/session";
 import { detectProject } from "../formats/detect";
 import { MemoryFs, loadFixtureDir } from "../platform/memory-fs";
-import { addRecent } from "../platform/prefs";
+import { addRecent, getRecent } from "../platform/prefs";
 import { useApp } from "./store";
 
 const FIX = resolve(__dirname, "../test/fixtures") + "/";
@@ -38,6 +47,7 @@ afterEach(cleanup);
 beforeEach(() => {
   prefs.clear();
   pick.value = "/project";
+  pick.queue = [];
 });
 
 describe("StartScreen", () => {
@@ -136,5 +146,41 @@ describe("StartScreen review fixes", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^project\// }));
     await screen.findByRole("button", { name: "Close project" });
     expect(useApp.getState().session!.data.baseLocale).toBe("th");
+  });
+});
+
+describe("StartScreen translator package", () => {
+  it("extracts the zip next to the chosen folder and opens it", async () => {
+    const fs = new MemoryFs({});
+    zip.entries = [
+      { path: "public/locales/en/common.json", text: '{"a":"A"}' },
+      { path: "public/locales/th/common.json", text: '{"a":"ก"}' },
+      {
+        path: ".retrans/package.json",
+        text: JSON.stringify({
+          retransPackage: 1, format: "next-i18next", baseLocale: "en", locales: ["th"], localesPath: "public/locales",
+          exportedAt: "2026-11-02T00:00:00.000Z", sourceProjectId: "p", baseline: {},
+        }),
+      },
+    ];
+    pick.queue = ["/Users/me/Downloads/shop-translation-2026-11-02.zip", "/Users/me/Work"];
+    await setup(fs);
+    await userEvent.click(screen.getByRole("button", { name: "Open translator package…" }));
+    const root = "/Users/me/Work/shop-translation-2026-11-02";
+    await waitFor(() => expect(useApp.getState().session).not.toBeNull());
+    expect((await getRecent())[0].root).toBe(root);
+    expect(zip.src).toBe("/Users/me/Downloads/shop-translation-2026-11-02.zip");
+    expect(await fs.exists(root + "/public/locales/en/common.json")).toBe(true);
+    expect(useApp.getState().session!.data.baseLocale).toBe("en");
+  });
+
+  it("shows the error and writes nothing for a non-package zip", async () => {
+    const fs = new MemoryFs({});
+    zip.entries = [{ path: "README.txt", text: "x" }];
+    pick.queue = ["/d/foo.zip", "/w"];
+    await setup(fs);
+    await userEvent.click(screen.getByRole("button", { name: "Open translator package…" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This file isn't a Retrans package or project.");
+    expect(await fs.exists("/w/foo")).toBe(false);
   });
 });
