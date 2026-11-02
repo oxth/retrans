@@ -1,4 +1,3 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import { type Fs, FsError, joinPath, normalizePath } from "./fs";
 
 export class MemoryFs implements Fs {
@@ -58,8 +57,12 @@ export class MemoryFs implements Fs {
   }
 }
 
-/** Test-only: loads a real directory into a MemoryFs, mounted at `mountAt`. */
+/**
+ * Test-only: loads a real directory into a MemoryFs, mounted at `mountAt`. node:fs is loaded here,
+ * not imported at the top, so the app can use MemoryFs (package import) in the browser bundle.
+ */
 export function loadFixtureDir(absDir: string, mountAt = "/project"): MemoryFs {
+  const { readdirSync, readFileSync, statSync } = process.getBuiltinModule("node:fs");
   const files: Record<string, string> = {};
   const walk = (dir: string, rel: string) => {
     for (const name of readdirSync(dir)) {

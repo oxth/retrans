@@ -17,7 +17,7 @@ import {
 } from "./session-helpers";
 import type { Journal } from "./recovery";
 import { planReload } from "./session-reload";
-import { parseState, reconcile, serializeState, STATE_PATH, type StateFile } from "./state-file";
+import { parseState, reconcile, serializeState, STATE_PATH, type StateEntry, type StateFile } from "./state-file";
 import { cellMeta, recordCleared, recordEdit, recordReviewed, renameInState } from "./status";
 
 export { KeyError } from "./session-helpers";
@@ -190,6 +190,24 @@ export class ProjectSession {
     } else {
       this.put(id, locale, { kind: "text", text });
       recordEdit(this.data, this.state, id, locale, !!opts?.machine);
+    }
+    this.stateTouched = true;
+    this.emit();
+  }
+
+  /**
+   * Take a cell from an imported package: its value plus the translator's status entry when the
+   * package carried one (their Reviewed / machine flags travel); otherwise a plain human edit.
+   */
+  importCell(id: KeyId, locale: string, value: MessageValue | undefined, entry: StateEntry | undefined): void {
+    this.requireCell(id, locale);
+    if (value === undefined) {
+      this.put(id, locale, undefined);
+      recordCleared(this.state, id, locale);
+    } else {
+      this.put(id, locale, value.kind === "complex" ? { kind: "complex", raw: structuredClone(value.raw) } : { ...value });
+      if (entry) (this.state.entries[id] ??= {})[locale] = { ...entry };
+      else recordEdit(this.data, this.state, id, locale, false);
     }
     this.stateTouched = true;
     this.emit();
