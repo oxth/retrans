@@ -243,6 +243,41 @@ describe("import diff", () => {
   });
 });
 
+describe("applyImport at scale", () => {
+  it("5,000 cells into a 5,000 keys × 10 languages project: fast, one change notification", async () => {
+    const LOCS = ["en", "th", "ja", "de", "fr", "es", "it", "ko", "zh", "pt"];
+    const N = 5000;
+    const base: Record<string, string> = {};
+    const th: Record<string, string> = {};
+    for (let i = 0; i < N; i++) {
+      base[`k${i}`] = `Value ${i}`;
+      th[`k${i}`] = `ค่า ${i}`;
+    }
+    const files: Record<string, string> = {};
+    for (const l of LOCS) files[`${R}/public/locales/${l}/common.json`] = j(l === "en" ? base : {});
+    files[`${R}/next-i18next.config.js`] = `module.exports = { i18n: { defaultLocale: 'en', locales: ${JSON.stringify(LOCS)} } };\n`;
+    const fs = new MemoryFs(files);
+    const d = (await detectProject(fs, R))!;
+    const s = await ProjectSession.open(fs, R, d, { baseLocale: "en", localesPath: d.localesPath });
+    const { session, manifest } = await openIncoming([
+      { path: "public/locales/en/common.json", text: j(base) },
+      { path: "public/locales/th/common.json", text: j(th) },
+    ], "en");
+    const diff = diffPackage(s, session, manifest);
+    expect(diff.items.length).toBe(N);
+    let calls = 0;
+    s.subscribe(() => {
+      calls++;
+      s.isDirty();
+    });
+    const t0 = performance.now();
+    expect(applyImport(s, diff, new Map())).toBe(N);
+    const ms = performance.now() - t0;
+    expect(calls).toBe(1);
+    expect(ms).toBeLessThan(500);
+  });
+});
+
 describe("plain folder with only a target language", () => {
   const thOnly = () => new MemoryFs({
     // no manifest, no config, no en: base can only be guessed

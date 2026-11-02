@@ -180,14 +180,18 @@ export function applyImport(
   picks: Map<string, "mine" | "theirs">,
 ): number {
   const keys = new Set(current.data.keyOrder);
-  let n = 0;
-  for (const item of diff.items) {
-    const pick = picks.get(`${item.id}|${item.locale}`) ?? (item.kind === "conflict" ? "mine" : "theirs");
-    if (pick !== "theirs") continue;
-    if (item.locale === current.data.baseLocale) continue;
-    if (!keys.has(item.id) || !current.data.locales.includes(item.locale)) continue;
-    current.importCell(item.id, item.locale, item.theirs, item.theirsEntry);
-    n++;
-  }
-  return n;
+  const locales = new Set(current.data.locales);
+  // One change notification for the whole import: each one costs a full dirty-cell rescan.
+  return current.batch(() => {
+    let n = 0;
+    for (const item of diff.items) {
+      const pick = picks.get(`${item.id}|${item.locale}`) ?? (item.kind === "conflict" ? "mine" : "theirs");
+      if (pick !== "theirs") continue;
+      if (item.locale === current.data.baseLocale) continue;
+      if (!keys.has(item.id) || !locales.has(item.locale)) continue;
+      current.importCell(item.id, item.locale, item.theirs, item.theirsEntry);
+      n++;
+    }
+    return n;
+  });
 }

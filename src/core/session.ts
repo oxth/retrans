@@ -78,6 +78,9 @@ export class ProjectSession {
   private localesChanged = false;
   private saving: Promise<unknown> = Promise.resolve();
   private listeners = new Set<() => void>();
+  /** Nesting depth of batch(); listeners are held while > 0. */
+  private batchDepth = 0;
+  private batchEmitted = false;
   private dirtyCache: { version: number; cells: Array<{ id: KeyId; locale: string }> } | null = null;
 
   private constructor(
@@ -117,6 +120,22 @@ export class ProjectSession {
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  /**
+   * Run `fn` with change notifications held; listeners then fire once if anything changed (also
+   * when `fn` throws). Nested batches notify only when the outermost one ends.
+   */
+  batch<T>(fn: () => T): T {
+    this.batchDepth++;
+    try {
+      return fn();
+    } finally {
+      if (--this.batchDepth === 0 && this.batchEmitted) {
+        this.batchEmitted = false;
+        this.notify();
+      }
+    }
   }
 
   value(id: KeyId, locale: string): MessageValue | undefined {
@@ -650,6 +669,11 @@ export class ProjectSession {
 
   private emit(): void {
     this.version++;
+    if (this.batchDepth > 0) this.batchEmitted = true;
+    else this.notify();
+  }
+
+  private notify(): void {
     for (const fn of [...this.listeners]) fn();
   }
 
