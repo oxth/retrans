@@ -51,6 +51,18 @@ Retrans can suggest and batch-fill translations with a local language model. It 
 - **Where models live:** in the app data folder. A custom GGUF file you add stays where it is.
 - **Privacy:** translation runs entirely on your computer. The only network traffic is the model download from huggingface.co.
 
+## Working with a translator
+
+A translator package is a `.zip` that is a complete, openable project: the locale files, `.retrans/state.json`, the project settings, and a manifest (`.retrans/package.json`) that remembers what the project looked like when it was exported.
+
+1. **Export (developer).** Save your project, then open **Import / Export** and choose **Export for translator**. Pick the languages and save the zip. Export refuses while there are unsaved edits.
+2. **Send the zip.** Any channel works.
+3. **Open (translator).** On the start screen choose **Open translator package...**, pick the zip, and choose an empty folder to extract it into. Retrans never edits files inside the zip.
+4. **Translate.** Edit and mark cells Reviewed as usual, then Save.
+5. **Send back (translator).** On the Import / Export page the export button reads **Send back to the developer**. The original baseline is kept, so the developer can tell what changed.
+6. **Import (developer).** On the Import / Export page choose **Import package (.zip)...** (or **Import folder...**). Cells the translator filled are added, status changes are applied, and cells both of you changed differently are listed as conflicts to resolve. Your own edits elsewhere are untouched, and the base language is never changed.
+7. **Review and save.** Check the imported cells, then Save.
+
 ## First launch of an unsigned build
 
 Releases are not code-signed for the OS, so the system warns on first launch.
@@ -60,7 +72,7 @@ Releases are not code-signed for the OS, so the system warns on first launch.
 
 ## Manual checklist
 
-The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts`, and `src/test/e2e-mt.test.ts` for batch machine translation with a fake engine). These GUI checks need a person, using `pnpm tauri dev` on a copy of each fixture in `src/test/fixtures/`:
+The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts`, `src/test/e2e-mt.test.ts` for batch machine translation with a fake engine, and `src/test/e2e-package.test.ts` for the translator package round trip). These GUI checks need a person, using `pnpm tauri dev` on a copy of each fixture in `src/test/fixtures/`:
 
 - [ ] The window opens and the project loads from the chosen folder.
 - [ ] Tab moves to the next missing cell; fill a missing Thai cell this way and mark it reviewed.
@@ -77,3 +89,6 @@ The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts
 - [ ] "Translate missing..." for `th`, cancel midway: the items already finished stay.
 - [ ] Delete the model: the space used drops.
 - [ ] **Fallback check:** if TranslateGemma 4B fails to load or gives poor Thai to English output, swap catalog entry 1 for the Qwen3 4B fallback given in Task 2 of `docs/superpowers/plans/2026-10-31-paratrans-local-mt.md`.
+- [ ] Translator packages: export, open the zip as a translator, translate, re-export, then import with a conflict, and resolve it.
+- [ ] Updates: an update banner appears against a draft-free test release (after the first real release).
+- [ ] Windows: suggestions work on a non-AVX2 machine if one is available, otherwise on any machine.
