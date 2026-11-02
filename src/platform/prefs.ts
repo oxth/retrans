@@ -1,5 +1,6 @@
 import { load, type Store } from "@tauri-apps/plugin-store";
 import type { Format } from "../core/model";
+import type { PromptTemplate } from "../mt/catalog";
 
 export interface RecentProject { root: string; name: string; format: Format }
 
@@ -42,5 +43,37 @@ export async function setViewMode(root: string, m: "list" | "table"): Promise<vo
   const s = await getStore();
   const all = (await s.get<Record<string, "list" | "table">>("viewMode")) ?? {};
   await s.set("viewMode", { ...all, [root]: m });
+  await s.save();
+}
+
+export interface MtSettings {
+  enabled: boolean;
+  modelId: string | null;
+  custom: { path: string; template: PromptTemplate } | null;
+  accepted: string[];
+}
+
+const mtDefaults = (): MtSettings => ({ enabled: false, modelId: null, custom: null, accepted: [] });
+
+export async function getMtSettings(): Promise<MtSettings> {
+  const s = await getStore();
+  const v = await s.get<Partial<MtSettings>>("mt");
+  if (!v || typeof v !== "object") return mtDefaults();
+  const c = v.custom;
+  const template = c?.template;
+  return {
+    enabled: v.enabled === true,
+    modelId: typeof v.modelId === "string" ? v.modelId : null,
+    custom:
+      c && typeof c.path === "string" && (template === "translategemma" || template === "qwen3")
+        ? { path: c.path, template }
+        : null,
+    accepted: Array.isArray(v.accepted) ? v.accepted.filter((a): a is string => typeof a === "string") : [],
+  };
+}
+
+export async function setMtSettings(v: MtSettings): Promise<void> {
+  const s = await getStore();
+  await s.set("mt", v);
   await s.save();
 }
