@@ -69,10 +69,11 @@ jobs:
           if [ "$size" != "$SMOKE_MODEL_SIZE" ]; then
             echo "::error::model size $size, expected $SMOKE_MODEL_SIZE"; exit 1
           fi
+          # Hash via stdin: Git Bash's sha256sum prefixes the hash with '\' when the path has backslashes.
           if command -v sha256sum >/dev/null 2>&1; then
-            actual=$(sha256sum "$model" | cut -d' ' -f1)
+            actual=$(sha256sum < "$model" | cut -d' ' -f1)
           else
-            actual=$(shasum -a 256 "$model" | cut -d' ' -f1)
+            actual=$(shasum -a 256 < "$model" | cut -d' ' -f1)
           fi
           if [ "$actual" != "$SMOKE_MODEL_SHA256" ]; then
             echo "::error::model SHA-256 $actual, expected $SMOKE_MODEL_SHA256"; exit 1
