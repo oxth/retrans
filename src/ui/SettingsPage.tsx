@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ProjectSession } from "../core/session";
 import { getDefaultViewMode, setDefaultViewMode } from "../platform/prefs";
 import { btnGhost, btnPrimary, inputCls } from "./Dialog";
+import { MtSettings } from "./MtSettings";
 import { useApp } from "./store";
 
 export function SettingsPage({ session }: { session: ProjectSession }) {
@@ -76,6 +77,10 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
           <span className="text-xs text-gray-500">Takes effect when you reopen the project.</span>
         </div>
       </div>
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold">Machine translation</h2>
+        <MtSettings session={session} />
+      </section>
       {note && <div role="status" className="text-xs text-gray-600">{note}</div>}
     </div>
   );
