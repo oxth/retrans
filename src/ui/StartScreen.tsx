@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import type { DetectResult } from "../formats/adapter";
 import { detectProject } from "../formats/detect";
-import { extractPackage } from "../package/extract";
+import { destHasFiles, extractPackage, safeEntryPath } from "../package/extract";
+import { MANIFEST_PATH, parseManifest } from "../package/manifest";
+import { joinPath } from "../platform/fs";
 import { zipRead } from "../platform/zip";
 import { getRecent, type RecentProject } from "../platform/prefs";
+import { btnGhost, btnPrimary, Dialog } from "./Dialog";
 import { NewProjectWizard } from "./NewProjectWizard";
 import { OpenProjectDialog } from "./OpenProjectDialog";
 import { savedBaseLocale, useApp } from "./store";
@@ -15,6 +18,8 @@ export function StartScreen() {
   const [pending, setPending] = useState<{ root: string; detected: DetectResult; savedBase?: string | null } | null>(null);
   const [wizard, setWizard] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  /** A package's folder that already holds that package (re-opened zip): offered instead of extracting. */
+  const [existing, setExisting] = useState<string | null>(null);
 
   useEffect(() => {
     void getRecent().then(setRecent).catch(() => {});
@@ -44,6 +49,26 @@ export function StartScreen() {
     }
   };
 
+  /** Open an extracted package folder: ask for the base language only when detection can't tell. */
+  const openPackageFolder = async (root: string) => {
+    const detected = await detect(root);
+    if (!detected) return;
+    if (detected.baseLocale === null) {
+      setPending({ root, detected, savedBase: await savedBaseLocale(fs, root, detected) });
+    } else {
+      await openProject(root, detected, { baseLocale: detected.baseLocale, localesPath: detected.localesPath });
+    }
+  };
+
+  /** The manifest in `root`, or null when missing or unreadable. */
+  const manifestIn = async (root: string) => {
+    try {
+      return parseManifest(await fs.readText(joinPath(root, MANIFEST_PATH)));
+    } catch {
+      return null;
+    }
+  };
+
   const openPackage = async () => {
     setMessage(null);
     try {
@@ -51,16 +76,28 @@ export function StartScreen() {
       if (typeof zipPath !== "string") return;
       const parent = await pickFile({ directory: true, title: "Choose where to put the project" });
       if (typeof parent !== "string") return;
-      const zipName = zipPath.replace(/\\/g, "/").split("/").pop()!.replace(/\.zip$/i, "");
+      const zipName = zipPath.replace(/\\/g, "/").split("/").pop()!.replace(/\.zip$/i, "") || "retrans-package";
       const root = `${parent.replace(/\\/g, "/").replace(/\/+$/, "")}/${zipName}`;
-      await extractPackage(fs, await zipRead(zipPath), root);
-      const detected = await detect(root);
-      if (!detected) return;
-      if (detected.baseLocale === null) {
-        setPending({ root, detected, savedBase: await savedBaseLocale(fs, root, detected) });
-      } else {
-        await openProject(root, detected, { baseLocale: detected.baseLocale, localesPath: detected.localesPath });
+      const entries = await zipRead(zipPath);
+      // Never extract over a folder with files: it may hold the translator's saved work.
+      if (await destHasFiles(fs, root)) {
+        const incoming = parseManifest(entries.find((e) => safeEntryPath(e.path) === MANIFEST_PATH)?.text ?? null);
+        const there = await manifestIn(root);
+        if (incoming && there && incoming.sourceProjectId === there.sourceProjectId) return setExisting(root);
+        throw new Error("Choose an empty folder.");
       }
+      await extractPackage(fs, entries, root);
+      await openPackageFolder(root);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const openExisting = async () => {
+    const root = existing!;
+    setExisting(null);
+    try {
+      await openPackageFolder(root);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     }
@@ -113,6 +150,15 @@ export function StartScreen() {
       </div>
       {pending && <OpenProjectDialog {...pending} onCancel={() => setPending(null)} />}
       {wizard && <NewProjectWizard onCancel={() => setWizard(false)} />}
+      {existing && (
+        <Dialog title="Package already open" onClose={() => setExisting(null)}>
+          <p className="break-words text-sm">This package is already open in {existing}. Open it?</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button className={btnGhost} onClick={() => setExisting(null)}>Cancel</button>
+            <button className={btnPrimary} onClick={() => void openExisting()}>Open existing</button>
+          </div>
+        </Dialog>
+      )}
     </main>
   );
 }

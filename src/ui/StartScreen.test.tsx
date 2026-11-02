@@ -165,7 +165,66 @@ describe("StartScreen review fixes", () => {
   });
 });
 
+const pkgEntries = (sourceProjectId = "p") => [
+  { path: "public/locales/en/common.json", text: '{"a":"A"}' },
+  { path: "public/locales/th/common.json", text: '{"a":"ก"}' },
+  {
+    path: ".retrans/package.json",
+    text: JSON.stringify({
+      retransPackage: 1, format: "next-i18next", baseLocale: "en", locales: ["th"], localesPath: "public/locales",
+      exportedAt: "2026-11-02T00:00:00.000Z", sourceProjectId, baseline: {},
+    }),
+  },
+];
+
 describe("StartScreen translator package", () => {
+  it("re-opening the same zip never overwrites saved work and offers the existing folder", async () => {
+    const fs = new MemoryFs({});
+    zip.entries = pkgEntries();
+    pick.queue = ["/d/shop.zip", "/w"];
+    await setup(fs);
+    await userEvent.click(screen.getByRole("button", { name: "Open translator package…" }));
+    await waitFor(() => expect(useApp.getState().session).not.toBeNull());
+    const s = useApp.getState().session!;
+    s.setText(s.data.keyOrder[0], "th", "แก้แล้ว");
+    expect(await useApp.getState().save()).toBe(true);
+    const th = "/w/shop/public/locales/th/common.json";
+    expect(await fs.readText(th)).toContain("แก้แล้ว");
+    await useApp.getState().closeProject();
+
+    pick.queue = ["/d/shop.zip", "/w"];
+    await userEvent.click(await screen.findByRole("button", { name: "Open translator package…" }));
+    const dlg = await screen.findByRole("dialog", { name: "Package already open" });
+    expect(dlg).toHaveTextContent("This package is already open in /w/shop. Open it?");
+    expect(await fs.readText(th)).toContain("แก้แล้ว");
+    await userEvent.click(screen.getByRole("button", { name: "Open existing" }));
+    await waitFor(() => expect(useApp.getState().session).not.toBeNull());
+    const s2 = useApp.getState().session!;
+    expect(s2.value(s2.data.keyOrder[0], "th")).toEqual({ kind: "text", text: "แก้แล้ว" });
+    expect(await fs.readText(th)).toContain("แก้แล้ว");
+  });
+
+  it("refuses a non-empty folder holding another package, writing nothing", async () => {
+    const fs = new MemoryFs({ "/w/shop/messages/th.json": '{"a":"x"}' });
+    zip.entries = pkgEntries();
+    pick.queue = ["/d/shop.zip", "/w"];
+    await setup(fs);
+    await userEvent.click(screen.getByRole("button", { name: "Open translator package…" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Choose an empty folder.");
+    expect(await fs.listFiles("/w/shop", 10)).toEqual(["messages/th.json"]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it('a zip named ".zip" extracts into "retrans-package"', async () => {
+    const fs = new MemoryFs({});
+    zip.entries = pkgEntries();
+    pick.queue = ["/d/.zip", "/w"];
+    await setup(fs);
+    await userEvent.click(screen.getByRole("button", { name: "Open translator package…" }));
+    await waitFor(() => expect(useApp.getState().session).not.toBeNull());
+    expect(await fs.exists("/w/retrans-package/public/locales/en/common.json")).toBe(true);
+  });
+
   it("extracts the zip next to the chosen folder and opens it", async () => {
     const fs = new MemoryFs({});
     zip.entries = [
