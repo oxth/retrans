@@ -15,6 +15,7 @@ export interface ToolbarProps {
   viewMode: "list" | "table";
   onViewMode: (m: "list" | "table") => void;
   onAddKey?: () => void;
+  onTranslateMissing?: () => void;
 }
 
 const chip = (on: boolean) =>
@@ -85,6 +86,9 @@ export function Toolbar(p: ToolbarProps) {
           </button>
         ))}
       </div>
+      {p.onTranslateMissing && (
+        <button className={field} onClick={p.onTranslateMissing}>Translate missing…</button>
+      )}
       <button onClick={p.onAddKey} className="rounded-md bg-indigo-600 px-3 py-1 text-sm font-medium text-white">+ Key</button>
     </div>
   );
