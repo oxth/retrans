@@ -17,7 +17,7 @@ Retrans is a free desktop app for managing translation files for web projects th
 
 ## 2. Goals (version 1)
 
-1. Desktop app for **macOS and Windows**, offline first.
+1. Desktop app for **macOS (Apple Silicon) and Windows**, offline first.
 2. **Open an existing project folder** and automatically detect next-i18next or Paraglide.
 3. **Create a new project**: choose format, base language, target languages, and (for next-i18next) the first namespace, then generate the right folder structure.
 4. A Tolgee-like translation screen with **List view and Table view, switchable**.
@@ -215,7 +215,7 @@ Format adapters handle **read → model** and **model → write**, and are respo
 
 ## 10. Distribution
 
-- **GitHub Actions** builds macOS (Apple Silicon + Intel, or universal) and Windows x64 installers on tag push. **GitHub Releases** hosts them.
+- **GitHub Actions** builds macOS (Apple Silicon only) and Windows x64 installers on tag push. **GitHub Releases** hosts them. Intel Macs are not supported (owner decision, 2026-11-02).
 - **Auto-update** via Tauri's updater, which uses a free update-signing key that is separate from OS code signing.
 - **Unsigned for OS purposes.** The README and the download page explain the first-launch steps: macOS right-click → Open (or the System Settings "Open Anyway"); Windows SmartScreen → More info → Run anyway.
 - Network use is limited to update checks and model downloads. There is no telemetry in v1.
