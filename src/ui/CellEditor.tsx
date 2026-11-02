@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyId } from "../core/model";
+import { SuggestionBox, type SuggestionState } from "./Suggestion";
 
 export interface CellEditorProps {
   id: KeyId;
@@ -16,9 +17,12 @@ export interface CellEditorProps {
   onRefocus?: () => void;
   /** An unmount-time flush failed (e.g. read-only file): the editor is gone, so the host must show the message. */
   onFlushError?: (message: string) => void;
+  suggestion?: SuggestionState | null;
+  /** Writes the machine suggestion; may throw like onCommit. */
+  onAcceptSuggestion?: (text: string) => void;
 }
 
-export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, onNextMissing, onMarkReviewed, onRefocus, onFlushError }: CellEditorProps) {
+export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, onNextMissing, onMarkReviewed, onRefocus, onFlushError, suggestion, onAcceptSuggestion }: CellEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [error, setError] = useState<string | null>(null);
   const draft = useRef(initial);
@@ -87,6 +91,17 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
     }
   };
 
+  const accept = () => {
+    if (done.current || suggestion?.status !== "ready" || !onAcceptSuggestion) return;
+    try {
+      onAcceptSuggestion(suggestion.text);
+      done.current = true;
+      onRefocus?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   return (
     <div className="w-full">
       <textarea
@@ -123,6 +138,9 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
                 void err;
               }
             }
+          } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && suggestion) {
+            e.preventDefault();
+            accept();
           } else if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             if (tryCommit()) onRefocus?.();
@@ -142,6 +160,7 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
           }
         }}
       />
+      {suggestion && <SuggestionBox state={suggestion} onAccept={accept} />}
       {error && (
         <div role="alert" className="mt-0.5 text-xs text-red-600">
           {error}

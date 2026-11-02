@@ -104,6 +104,10 @@ export function AppShell() {
         // Only close if this cell is still the one being edited (blur/unmount flushes may arrive after a switch).
         setEditing((cur) => (cur && cur.id === id && cur.locale === locale ? null : cur));
       },
+      commitMachine: (id, locale, text) => {
+        live.current.session?.setText(id, locale, text, { machine: true });
+        setEditing((cur) => (cur && cur.id === id && cur.locale === locale ? null : cur));
+      },
       next: (id, locale) => {
         const { session: s, rows: r, visible: v } = live.current;
         const n = s ? nextMissing(s, r, { id, locale }, v) : null;
