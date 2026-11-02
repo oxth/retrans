@@ -243,6 +243,47 @@ describe("import diff", () => {
   });
 });
 
+describe("plain folder with only a target language", () => {
+  const thOnly = () => new MemoryFs({
+    // no manifest, no config, no en: base can only be guessed
+    "/drop/public/locales/th/common.json": j({ a: "เอ", b: "บี", c: "ซี-new", zz: "unknown" }),
+  });
+
+  for (const currentBase of ["en", undefined]) {
+    it(`merges its cells (currentBase ${currentBase ?? "not passed"})`, async () => {
+      const { s } = await dev();
+      const { session, manifest, baseKnown } = await openIncomingFolder(thOnly(), "/drop", currentBase);
+      expect(baseKnown).toBe(false);
+      const diff = diffPackage(s, session, manifest);
+      expect(diff.skipped).toEqual([{ id: c("zz"), locale: "th", reason: "unknown-key" }]);
+      expect(diff.items.map((i) => [i.id, i.locale, i.kind])).toEqual([
+        [c("b"), "th", "new"],
+        [c("c"), "th", "conflict"],
+      ]);
+      expect(applyImport(s, diff, new Map([[`${c("c")}|th`, "theirs" as const]]))).toBe(2);
+      expect(s.value(c("b"), "th")).toEqual(t("บี"));
+      expect(s.value(c("c"), "th")).toEqual(t("ซี-new"));
+      expect(s.value(c("a"), "en")).toEqual(t("A"));
+    });
+  }
+
+  it("a detected incoming base stays protected", async () => {
+    const { s } = await dev();
+    const fs = new MemoryFs({
+      "/drop/next-i18next.config.js": "module.exports = { i18n: { defaultLocale: 'th', locales: ['en', 'th'] } };\n",
+      "/drop/public/locales/en/common.json": j({ a: "A", b: "B", c: "C", d: "D" }),
+      "/drop/public/locales/th/common.json": j({ a: "เอ2" }),
+    });
+    const { session, manifest, baseKnown } = await openIncomingFolder(fs, "/drop", "en");
+    expect(baseKnown).toBe(true);
+    expect(session.data.baseLocale).toBe("th");
+    const diff = diffPackage(s, session, manifest);
+    expect(diff.items).toEqual([]);
+    // th is the incoming base: every th cell that differs (changed a, missing c/d) is protected
+    expect(diff.skipped).toEqual(["a", "c", "d"].map((k) => ({ id: c(k), locale: "th", reason: "base-locale" })));
+  });
+});
+
 describe("openIncoming", () => {
   it("no translation files → Couldn't find translation files here.", async () => {
     await expect(openIncoming([{ path: "readme.txt", text: "hi" }])).rejects.toThrow("Couldn't find translation files here.");

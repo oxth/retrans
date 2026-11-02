@@ -27,6 +27,9 @@ export interface ImportDiff {
 const NO_FILES = "Couldn't find translation files here.";
 const INCOMING_ROOT = "/incoming";
 
+/** Incoming sessions whose base language was only a guess (see openIncomingFolder). */
+const fallbackBase = new WeakSet<ProjectSession>();
+
 async function readOrNull(fs: Fs, path: string): Promise<string | null> {
   try {
     return await fs.readText(path);
@@ -38,30 +41,34 @@ async function readOrNull(fs: Fs, path: string): Promise<string | null> {
 
 /**
  * Open a project (package or plain folder) read for import. Base language: the manifest's, else
- * detection's, else `currentBase` when the folder has it, else the first detected locale.
+ * detection's, else `currentBase` when the folder has it, else the first detected locale. Only a
+ * base from the manifest or detection is trusted (`baseKnown`); a fallback base is never protected
+ * by the diff, so a folder holding only target languages still merges.
  */
 export async function openIncomingFolder(
   fs: Fs,
   root: string,
   currentBase?: string,
-): Promise<{ session: ProjectSession; manifest: PackageManifest | null }> {
+): Promise<{ session: ProjectSession; manifest: PackageManifest | null; baseKnown: boolean }> {
   const d = await detectProject(fs, root);
   if (!d || d.locales.length === 0) throw new Error(NO_FILES);
   const manifest = parseManifest(await readOrNull(fs, joinPath(root, MANIFEST_PATH)));
+  const known =
+    (manifest && d.locales.includes(manifest.baseLocale) ? manifest.baseLocale : null) ?? d.baseLocale;
   const baseLocale =
-    (manifest && d.locales.includes(manifest.baseLocale) ? manifest.baseLocale : null) ??
-    d.baseLocale ??
+    known ??
     (currentBase && d.locales.includes(currentBase) ? currentBase : null) ??
     d.locales[0];
   const session = await ProjectSession.open(fs, root, d, { baseLocale, localesPath: d.localesPath });
-  return { session, manifest };
+  if (!known) fallbackBase.add(session);
+  return { session, manifest, baseKnown: !!known };
 }
 
 /** Load package entries into memory (unsafe paths dropped) and open them as a project. */
 export async function openIncoming(
   entries: Array<{ path: string; text: string }>,
   currentBase?: string,
-): Promise<{ session: ProjectSession; manifest: PackageManifest | null }> {
+): Promise<{ session: ProjectSession; manifest: PackageManifest | null; baseKnown: boolean }> {
   const files: Record<string, string> = {};
   for (const e of entries) {
     const path = safeEntryPath(e.path);
@@ -102,8 +109,11 @@ export function diffPackage(
   };
   const curLocales = new Set(current.data.locales);
   const curKeys = new Set(current.data.keyOrder);
-  // Either side's base is protected: a base text is never changed by an import.
-  const bases = new Set([current.data.baseLocale, incoming.data.baseLocale]);
+  // The current base is always protected; the incoming base too when it is known (manifest or
+  // detection), in case the two sides disagree. A guessed incoming base is never protected, or a
+  // folder holding only a target language would merge nothing.
+  const bases = new Set([current.data.baseLocale]);
+  if (!fallbackBase.has(incoming)) bases.add(incoming.data.baseLocale);
   const locales = incoming.data.locales.filter((l) => {
     if (curLocales.has(l)) return true;
     out.skipped.push({ id: "", locale: l, reason: "unknown-locale" });
