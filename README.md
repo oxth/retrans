@@ -65,6 +65,8 @@ A translator package is a `.zip` that is a complete, openable project: the local
 
 ## First launch of an unsigned build
 
+The macOS download is for Apple Silicon Macs (M1 and later) only.
+
 Releases are not code-signed for the OS, so the system warns on first launch.
 
 - **macOS:** right-click the app and choose **Open**, then confirm. Alternatively, try to open it once, then go to **System Settings > Privacy & Security** and click **Open Anyway**.
@@ -99,7 +101,7 @@ The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts
 
 ## Releasing
 
-Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed. It builds macOS (Apple Silicon and Intel) and Windows installers, signs the updater artifacts, and uploads everything, including `latest.json`, to a **draft** GitHub release.
+Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed. It builds macOS installers for Apple Silicon (M1 and later) only, and Windows installers, signs the updater artifacts, and uploads everything, including `latest.json`, to a **draft** GitHub release.
 
 1. Bump `version` in `src-tauri/tauri.conf.json` and `package.json` (they must match; the workflow fails if the tag doesn't match both).
 2. Run the [manual checklist](#manual-checklist) on a real Mac and a real Windows machine.
