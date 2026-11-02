@@ -27,6 +27,22 @@ vi.mock("@tauri-apps/plugin-store", () => ({
   })),
 }));
 vi.mock("../platform/watch", () => ({ watchDir: vi.fn(async () => async () => {}) }));
+// No Tauri runtime in tests: stub the update check and the native MT calls App makes on mount.
+vi.mock("../platform/updates", () => ({ checkForUpdate: vi.fn(async () => null) }));
+vi.mock("../platform/mt", () => ({
+  mtNative: {
+    modelsDir: vi.fn(async () => "/models"),
+    status: vi.fn(async () => []),
+    startDownload: vi.fn(async () => {}),
+    pause: vi.fn(async () => {}),
+    cancel: vi.fn(async () => {}),
+    deleteModel: vi.fn(async () => {}),
+    unload: vi.fn(async () => {}),
+    onDownload: vi.fn(async () => () => {}),
+  },
+  tauriEngine: { generate: vi.fn(), cancel: vi.fn() },
+  pickGgufFile: vi.fn(async () => null),
+}));
 
 import { journalPath } from "../core/recovery";
 import type { ProjectSession } from "../core/session";

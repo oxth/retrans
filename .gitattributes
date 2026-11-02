@@ -1,0 +1,5 @@
+# Normalise line endings so Windows checkouts match macOS.
+* text=auto eol=lf
+
+# Test fixtures are byte-exact (next-flat-crlf is intentionally CRLF): never convert them.
+src/test/fixtures/** -text
