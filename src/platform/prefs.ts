@@ -77,3 +77,14 @@ export async function setMtSettings(v: MtSettings): Promise<void> {
   await s.set("mt", v);
   await s.save();
 }
+
+export async function getAutoCheckUpdates(): Promise<boolean> {
+  const s = await getStore();
+  return (await s.get<boolean>("autoCheckUpdates")) !== false;
+}
+
+export async function setAutoCheckUpdates(on: boolean): Promise<void> {
+  const s = await getStore();
+  await s.set("autoCheckUpdates", on);
+  await s.save();
+}
