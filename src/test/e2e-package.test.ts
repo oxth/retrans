@@ -40,6 +40,7 @@ describe("e2e translator package round trip", () => {
 
     // 2. translator extracts and opens it
     await extractPackage(fs, pkg, TR);
+    expect(await fs.exists(`${TR}/${MANIFEST_PATH}`)).toBe(true);
     const tr = await open(fs, TR);
     expect(tr.data.baseLocale).toBe("en");
 
@@ -66,6 +67,7 @@ describe("e2e translator package round trip", () => {
     // 6. diff
     const inc = await openIncoming(back, dev.data.baseLocale);
     expect(inc.baseKnown).toBe(true);
+    expect(inc.manifest).not.toBeNull();
     const diff = diffPackage(dev, inc.session, inc.manifest);
     expect(diff.otherProject).toBe(false);
     const by = (k: string) => diff.items.filter((i) => i.kind === k).map((i) => `${i.id}|${i.locale}`).sort();

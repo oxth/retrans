@@ -55,11 +55,11 @@ Retrans can suggest and batch-fill translations with a local language model. It 
 
 A translator package is a `.zip` that is a complete, openable project: the locale files, `.retrans/state.json`, the project settings, and a manifest (`.retrans/package.json`) that remembers what the project looked like when it was exported.
 
-1. **Export (developer).** Save your project, then open **Import / Export** and choose **Export for translator**. Pick the languages and save the zip. Export refuses while there are unsaved edits.
+1. **Export (developer).** Save your project, then open the **Import / Export** page, and under **Export for translator** pick the languages and click **Export...**. Save the zip. Export refuses while there are unsaved edits.
 2. **Send the zip.** Any channel works.
 3. **Open (translator).** On the start screen choose **Open translator package...**, pick the zip, and choose an empty folder to extract it into. Retrans never edits files inside the zip.
 4. **Translate.** Edit and mark cells Reviewed as usual, then Save.
-5. **Send back (translator).** On the Import / Export page the export button reads **Send back to the developer**. The original baseline is kept, so the developer can tell what changed.
+5. **Send back (translator).** On the Import / Export page, under **Send back to the developer**, click **Export...**. The original baseline is kept, so the developer can tell what changed.
 6. **Import (developer).** On the Import / Export page choose **Import package (.zip)...** (or **Import folder...**). Cells the translator filled are added, status changes are applied, and cells both of you changed differently are listed as conflicts to resolve. Your own edits elsewhere are untouched, and the base language is never changed.
 7. **Review and save.** Check the imported cells, then Save.
 
