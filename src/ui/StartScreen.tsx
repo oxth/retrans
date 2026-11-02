@@ -116,8 +116,8 @@ export function StartScreen() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 p-8 text-gray-900">
-      <div className="w-full max-w-xl">
+    <main className="flex min-h-0 flex-1 justify-center overflow-auto bg-gray-50 p-8 text-gray-900">
+      <div className="my-auto w-full max-w-xl">
         <h1 className="text-3xl font-bold text-indigo-600">Retrans</h1>
         <p className="mt-1 text-gray-500">Edit next-i18next and Paraglide translations side by side.</p>
         <div className="mt-6 flex gap-3">

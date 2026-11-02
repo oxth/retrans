@@ -57,8 +57,9 @@ export default function App() {
     void useMt.getState().init();
   }, []);
   const session = useApp((s) => s.session);
+  // One window-high column: the update banner takes its row and the page fills the rest.
   return (
-    <>
+    <div className="flex h-screen flex-col">
       <UpdateBanner />
       {session ? (
         <>
@@ -68,6 +69,6 @@ export default function App() {
       ) : (
         <StartScreen />
       )}
-    </>
+    </div>
   );
 }

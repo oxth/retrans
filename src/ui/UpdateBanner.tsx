@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getAutoCheckUpdates, setAutoCheckUpdates } from "../platform/prefs";
 import { checkForUpdate, type AvailableUpdate } from "../platform/updates";
 import { btnGhost, btnPrimary } from "./Dialog";
+import { useApp } from "./store";
 
 type Phase = { kind: "idle" } | { kind: "installing"; pct: number } | { kind: "failed" };
 
@@ -9,6 +10,8 @@ function useInstall(update: AvailableUpdate | null) {
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const run = async () => {
     if (!update) return;
+    // Installing restarts the app: unsaved edits are saved or explicitly discarded first.
+    if (!(await useApp.getState().confirmUnsaved())) return;
     setPhase({ kind: "installing", pct: 0 });
     try {
       await update.install((done, total) =>
@@ -50,7 +53,7 @@ export function UpdateBanner() {
 
   if (!update || dismissed) return null;
   return (
-    <div role="status" className="flex items-center justify-between gap-3 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-sm">
+    <div role="status" className="flex shrink-0 items-center justify-between gap-3 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-sm">
       <span>Retrans {update.version} is available.</span>
       <div className="flex items-center gap-2">
         <InstallStatus phase={phase} />

@@ -55,7 +55,7 @@ const FIX = resolve(__dirname, "../test/fixtures") + "/";
 async function setup(fs: MemoryFs) {
   await useApp.getState().closeProject();
   useApp.setState({ fs });
-  render(<App />);
+  return render(<App />);
 }
 
 afterEach(cleanup);
@@ -147,6 +147,21 @@ describe("StartScreen", () => {
     await userEvent.click(screen.getByRole("button", { name: "Restore" }));
     await waitFor(() => expect(useApp.getState().session!.isDirty()).toBe(true));
     expect(useApp.getState().recovery).toBeNull();
+  });
+});
+
+describe("layout", () => {
+  it("the app is one window-high column: the update banner can't push it past the window", async () => {
+    const { container } = await setup(loadFixtureDir(FIX + "next-nested"));
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toMatch(/\bh-screen\b.*\bflex-col\b|\bflex-col\b.*\bh-screen\b/);
+    const fills = (el: Element | null) => expect(el?.className).toMatch(/\bflex-1\b.*\bmin-h-0\b|\bmin-h-0\b.*\bflex-1\b/);
+    fills(root.lastElementChild);
+    await userEvent.click(screen.getByRole("button", { name: "Open project" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Open" }));
+    await screen.findByRole("button", { name: "Close project" });
+    fills(root.firstElementChild);
+    expect(container.querySelectorAll(".h-screen, .min-h-screen")).toHaveLength(1);
   });
 });
 

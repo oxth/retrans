@@ -23,8 +23,11 @@ export interface AppState {
   conflicts: Conflict[];
   recovery: PendingRecovery | null;
   error: string | null;
-  /** Set while the Save / Discard / Cancel prompt is up; `then` is what happens afterwards. */
-  closePrompt: { then: "project" | "window" } | null;
+  /**
+   * Set while the Save / Discard / Cancel prompt is up; `then` is what happens afterwards
+   * ("proceed": the caller of confirmUnsaved goes on, e.g. installing an update).
+   */
+  closePrompt: { then: "project" | "window" } | { then: "proceed"; resolve: (go: boolean) => void } | null;
   openProject(root: string, d: DetectResult, opts: ProjectOptions): Promise<void>;
   closeProject(): Promise<void>;
   restoreRecovery(): Promise<void>;
@@ -36,6 +39,8 @@ export interface AppState {
   save(): Promise<boolean>;
   requestClose(then: "project" | "window"): Promise<void>;
   answerClosePrompt(choice: "save" | "discard" | "cancel"): Promise<void>;
+  /** True when there's nothing unsaved, or after the user saved or discarded; false on Cancel. */
+  confirmUnsaved(): Promise<boolean>;
   resolveConflict(c: Conflict, pick: "mine" | "theirs"): void;
   resolveAllConflicts(pick: "mine" | "theirs"): void;
 }
@@ -260,15 +265,24 @@ export const useApp = create<AppState>((set, get) => ({
     const prompt = get().closePrompt;
     if (!prompt) return;
     set({ closePrompt: null });
-    if (choice === "cancel") return;
+    const proceed = prompt.then === "proceed" ? prompt.resolve : null;
+    if (choice === "cancel") return proceed?.(false);
     if (choice === "save") {
-      if (!(await get().save())) return;
+      if (!(await get().save())) return proceed?.(false);
     } else {
       const { fs } = get();
       if (journalFile) await dropJournal(fs, journalFile).catch((e) => console.warn("journal clear failed", e));
       else cancelJournal();
     }
-    await finishClose(prompt.then, get().closeProject);
+    if (proceed) proceed(true);
+    else await finishClose(prompt.then as "project" | "window", get().closeProject);
+  },
+
+  confirmUnsaved() {
+    if (!get().session?.isDirty()) return Promise.resolve(true);
+    const prev = get().closePrompt;
+    if (prev?.then === "proceed") prev.resolve(false); // a newer request replaces an open one
+    return new Promise<boolean>((resolve) => set({ closePrompt: { then: "proceed", resolve } }));
   },
 
   resolveConflict(c, pick) {

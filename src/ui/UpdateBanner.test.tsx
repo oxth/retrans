@@ -7,6 +7,9 @@ const prefs = vi.hoisted(() => ({ getAutoCheckUpdates: vi.fn(), setAutoCheckUpda
 vi.mock("../platform/updates", () => updates);
 vi.mock("../platform/prefs", () => prefs);
 
+import type { ProjectSession } from "../core/session";
+import { useApp } from "./store";
+import { UnsavedPrompt } from "./UnsavedPrompt";
 import { UpdateBanner, UpdateSettings } from "./UpdateBanner";
 
 const install = vi.fn();
@@ -74,6 +77,59 @@ describe("UpdateBanner", () => {
     await Promise.resolve();
     expect(updates.checkForUpdate).not.toHaveBeenCalled();
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("Install and restart with unsaved edits", () => {
+  const dirty = { isDirty: () => true } as unknown as ProjectSession;
+  const real = useApp.getState().save;
+  afterEach(() => useApp.setState({ session: null, closePrompt: null, save: real }));
+
+  async function banner() {
+    updates.checkForUpdate.mockResolvedValue(found());
+    install.mockResolvedValue(undefined);
+    useApp.setState({ session: dirty });
+    render(<><UpdateBanner /><UnsavedPrompt /></>);
+    await userEvent.click(await screen.findByRole("button", { name: "Install and restart" }));
+    return screen.findByRole("dialog", { name: "Unsaved changes" });
+  }
+
+  it("asks first; Cancel installs nothing", async () => {
+    const d = await banner();
+    expect(d).toHaveTextContent("Save them before updating?");
+    expect(install).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it("Save installs only after a successful save", async () => {
+    const save = vi.fn(async () => false);
+    useApp.setState({ save });
+    await banner();
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(install).not.toHaveBeenCalled();
+    save.mockResolvedValue(true);
+    await userEvent.click(screen.getByRole("button", { name: "Install and restart" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(install).toHaveBeenCalled());
+  });
+
+  it("Discard installs", async () => {
+    await banner();
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(install).toHaveBeenCalled());
+  });
+
+  it("Settings asks too", async () => {
+    updates.checkForUpdate.mockResolvedValue(found());
+    useApp.setState({ session: dirty });
+    render(<><UpdateSettings /><UnsavedPrompt /></>);
+    await userEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Install and restart" }));
+    expect(await screen.findByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    expect(install).not.toHaveBeenCalled();
   });
 });
 
