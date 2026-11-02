@@ -54,8 +54,42 @@ async fn hash_existing(part: &Path, hasher: &mut Sha256) -> Result<u64, String> 
     }
 }
 
-/// Downloads `url` into `dir/file`, resuming from `dir/file.part` when present. `control` is
-/// checked between chunks; `on_progress(received, size)` is called after each chunk.
+/// Awaits `fut` unless `control` leaves RUN first (polled every 100 ms), so a stalled request or
+/// stream can still be paused or cancelled. Returns `None` when stopped.
+async fn until_stopped<F: std::future::Future>(fut: F, control: &AtomicU8) -> Option<F::Output> {
+    if control.load(Ordering::SeqCst) != RUN {
+        return None;
+    }
+    let stopped = async {
+        loop {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if control.load(Ordering::SeqCst) != RUN {
+                return;
+            }
+        }
+    };
+    tokio::select! {
+        out = fut => Some(out),
+        () = stopped => None,
+    }
+}
+
+/// Ends a stopped download: PAUSE keeps the part, CANCEL deletes it.
+async fn stop(control: &AtomicU8, part: &Path, out: Option<tokio::fs::File>) -> Result<Outcome, String> {
+    if let Some(mut out) = out {
+        out.flush().await.map_err(|e| e.to_string())?;
+    }
+    if control.load(Ordering::SeqCst) == CANCEL {
+        let _ = tokio::fs::remove_file(part).await;
+        Ok(Outcome::Cancelled)
+    } else {
+        Ok(Outcome::Paused)
+    }
+}
+
+/// Downloads `url` into `dir/file`, resuming from `dir/file.part` when present. Setting `control`
+/// to PAUSE or CANCEL stops it promptly, even while the request or stream is stalled;
+/// `on_progress(received, size)` is called after each chunk.
 #[allow(clippy::too_many_arguments)]
 pub async fn download_file(
     client: &reqwest::Client,
@@ -73,16 +107,19 @@ pub async fn download_file(
     if received > size {
         return corrupted(&part).await;
     }
-    if control.load(Ordering::SeqCst) == CANCEL {
-        let _ = tokio::fs::remove_file(&part).await;
-        return Ok(Outcome::Cancelled);
-    }
 
     let mut req = client.get(url);
     if received > 0 {
         req = req.header(reqwest::header::RANGE, format!("bytes={received}-"));
     }
-    let resp = req.send().await.map_err(|e| format!("Download failed: {e}"))?;
+    let Some(resp) = until_stopped(req.send(), control).await else {
+        return stop(control, &part, None).await;
+    };
+    let resp = match resp {
+        Ok(resp) => resp,
+        Err(_) if control.load(Ordering::SeqCst) != RUN => return stop(control, &part, None).await,
+        Err(e) => return Err(format!("Download failed: {e}")),
+    };
     let status = resp.status().as_u16();
     let mut out = match status {
         206 if received > 0 => tokio::fs::OpenOptions::new().append(true).open(&part).await,
@@ -97,8 +134,16 @@ pub async fn download_file(
     .map_err(|e| e.to_string())?;
 
     let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Download failed: {e}"))?;
+    loop {
+        let Some(next) = until_stopped(stream.next(), control).await else {
+            return stop(control, &part, Some(out)).await;
+        };
+        let Some(chunk) = next else { break };
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(_) if control.load(Ordering::SeqCst) != RUN => return stop(control, &part, Some(out)).await,
+            Err(e) => return Err(format!("Download failed: {e}")),
+        };
         received += chunk.len() as u64;
         if received > size {
             drop(out);
@@ -107,18 +152,6 @@ pub async fn download_file(
         out.write_all(&chunk).await.map_err(|e| e.to_string())?;
         hasher.update(&chunk);
         on_progress(received, size);
-        match control.load(Ordering::SeqCst) {
-            PAUSE => {
-                out.flush().await.map_err(|e| e.to_string())?;
-                return Ok(Outcome::Paused);
-            }
-            CANCEL => {
-                drop(out);
-                let _ = tokio::fs::remove_file(&part).await;
-                return Ok(Outcome::Cancelled);
-            }
-            _ => {}
-        }
     }
     out.flush().await.map_err(|e| e.to_string())?;
     drop(out);
@@ -222,7 +255,11 @@ pub fn mt_download_start(
 ) -> Result<(), String> {
     validate_request(&url, &file)?;
     let dir = models_dir(&app)?;
-    let client = reqwest::Client::builder().build().map_err(|e| e.to_string())?;
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .read_timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
     let control = Arc::new(AtomicU8::new(RUN));
     {
         let mut map = state.0.lock().map_err(|e| e.to_string())?;
@@ -497,6 +534,77 @@ mod tests {
         });
         let out = run(&url, dir.path(), &sha_hex(&body()), &AtomicU8::new(RUN)).await;
         assert_eq!(out.err().as_deref(), Some("Download failed: HTTP 404"));
+    }
+
+    /// Accepts one connection, then stalls for 30 s: after the response head and first 16 KB when
+    /// `first_chunk`, or before sending anything at all otherwise.
+    fn stalling_server(first_chunk: bool) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/x.gguf", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let _ = s.read(&mut [0u8; 4096]);
+            if first_chunk {
+                let len = body().len();
+                let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {len}\r\n\r\n");
+                let _ = s.write_all(head.as_bytes());
+                let _ = s.write_all(&body()[..16 * KB]);
+                let _ = s.flush();
+            }
+            std::thread::sleep(std::time::Duration::from_secs(30));
+        });
+        url
+    }
+
+    /// Runs a download against a stalling server and sets `flag` from outside after 300 ms; the
+    /// download must stop within 2 s.
+    async fn stop_stalled(first_chunk: bool, flag: u8) -> (tempfile::TempDir, Result<Outcome, String>) {
+        let dir = tempfile::tempdir().unwrap();
+        let url = stalling_server(first_chunk);
+        let control = AtomicU8::new(RUN);
+        let stopper = async {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            control.store(flag, Ordering::SeqCst);
+        };
+        let sha = sha_hex(&body());
+        let both = async { tokio::join!(run(&url, dir.path(), &sha, &control), stopper).0 };
+        let out = tokio::time::timeout(std::time::Duration::from_secs(2), both)
+            .await
+            .expect("download did not stop within 2 s");
+        (dir, out)
+    }
+
+    #[tokio::test]
+    async fn pause_interrupts_a_stalled_stream() {
+        let (dir, out) = stop_stalled(true, PAUSE).await;
+        assert!(matches!(out, Ok(Outcome::Paused)), "{out:?}");
+        assert_eq!(std::fs::read(dir.path().join("x.gguf.part")).unwrap(), &body()[..16 * KB]);
+    }
+
+    #[tokio::test]
+    async fn cancel_interrupts_a_stalled_stream() {
+        let (dir, out) = stop_stalled(true, CANCEL).await;
+        assert!(matches!(out, Ok(Outcome::Cancelled)), "{out:?}");
+        assert!(!dir.path().join("x.gguf.part").exists());
+    }
+
+    #[tokio::test]
+    async fn cancel_interrupts_a_pending_request() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("x.gguf.part"), &body()[..100 * KB]).unwrap();
+        let url = stalling_server(false);
+        let control = AtomicU8::new(RUN);
+        let stopper = async {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            control.store(CANCEL, Ordering::SeqCst);
+        };
+        let sha = sha_hex(&body());
+        let both = async { tokio::join!(run(&url, dir.path(), &sha, &control), stopper).0 };
+        let out = tokio::time::timeout(std::time::Duration::from_secs(2), both)
+            .await
+            .expect("download did not stop within 2 s");
+        assert!(matches!(out, Ok(Outcome::Cancelled)), "{out:?}");
+        assert!(!dir.path().join("x.gguf.part").exists());
     }
 
     #[test]
