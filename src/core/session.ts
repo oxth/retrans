@@ -160,6 +160,12 @@ export class ProjectSession {
     return out;
   }
 
+  /** False when the file holding this cell couldn't be read: edits to it are refused. */
+  isWritable(id: KeyId, locale: string): boolean {
+    const relPath = this.adapter.filePath(this.opts, locale, parseKeyId(id).ns);
+    return !this.files.find((f) => f.relPath === relPath)?.readOnly;
+  }
+
   stats(): Map<string, { done: number; total: number }> {
     const out = new Map<string, { done: number; total: number }>();
     for (const l of this.data.locales) out.set(l, { done: 0, total: 0 });

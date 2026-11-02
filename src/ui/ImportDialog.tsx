@@ -17,6 +17,17 @@ export function ImportDialog({ session, diff, onClose, onApplied }: {
   onApplied: (count: number) => void;
 }) {
   const [picks, setPicks] = useState<Map<string, "mine" | "theirs">>(new Map());
+  const [error, setError] = useState<string | null>(null);
+  const apply = () => {
+    let n: number;
+    try {
+      n = applyImport(session, diff, picks);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    onApplied(n);
+  };
   const items = useMemo(
     () => [...diff.items].sort((a, b) => Number(b.kind === "conflict") - Number(a.kind === "conflict")),
     [diff],
@@ -92,9 +103,10 @@ export function ImportDialog({ session, diff, onClose, onApplied }: {
       {items.length > shown.length && (
         <p className="mb-3 text-xs text-gray-500">+{items.length - shown.length} more (applied the same way)</p>
       )}
+      {error && <p role="alert" className="mb-3 rounded bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
       <div className="flex justify-end gap-2">
         <button className={btnGhost} onClick={onClose}>Cancel</button>
-        <button className={btnPrimary} onClick={() => onApplied(applyImport(session, diff, picks))}>Apply</button>
+        <button className={btnPrimary} onClick={apply}>Apply</button>
       </div>
     </Dialog>
   );

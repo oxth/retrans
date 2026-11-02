@@ -189,6 +189,18 @@ describe("Import", () => {
     expect((await screen.findByRole("status")).textContent).toBe("Imported 2 changes. Review and save.");
   });
 
+  it("an Apply failure shows the error and keeps the dialog open", async () => {
+    const s = await devWithPackage((t) => t.setText(c("b"), "th", "บี"));
+    await importZip();
+    const d = await screen.findByRole("dialog", { name: "Import translator work" });
+    vi.spyOn(s, "importCell").mockImplementation(() => {
+      throw new Error("public/locales/th/common.json couldn't be read and is read-only");
+    });
+    await userEvent.click(within(d).getByRole("button", { name: "Apply" }));
+    expect(within(d).getByRole("alert").textContent).toBe("public/locales/th/common.json couldn't be read and is read-only");
+    expect(screen.getByRole("dialog", { name: "Import translator work" })).toBeTruthy();
+  });
+
   it("Cancel and picker cancel change nothing", async () => {
     const s = await devWithPackage((t) => t.setText(c("b"), "th", "บี"));
     dlg.open.mockResolvedValueOnce(null);

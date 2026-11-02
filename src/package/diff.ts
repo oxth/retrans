@@ -19,7 +19,7 @@ export interface ImportItem {
 
 export interface ImportDiff {
   items: ImportItem[];
-  skipped: Array<{ id: KeyId; locale: string; reason: "unknown-key" | "unknown-locale" | "base-locale" }>;
+  skipped: Array<{ id: KeyId; locale: string; reason: "unknown-key" | "unknown-locale" | "base-locale" | "read-only-file" }>;
   otherProject: boolean;
   hasManifest: boolean;
 }
@@ -114,7 +114,11 @@ export function diffPackage(
   // folder holding only a target language would merge nothing.
   const bases = new Set([current.data.baseLocale]);
   if (!fallbackBase.has(incoming)) bases.add(incoming.data.baseLocale);
+  // With a manifest only the package's languages count (plus the bases, so base edits are reported);
+  // anything else the translator's copy carries is ignored.
+  const inPackage = (l: string) => !manifest || bases.has(l) || manifest.locales.includes(l);
   const locales = incoming.data.locales.filter((l) => {
+    if (!inPackage(l)) return false;
     if (curLocales.has(l)) return true;
     out.skipped.push({ id: "", locale: l, reason: "unknown-locale" });
     return false;
@@ -133,7 +137,10 @@ export function diffPackage(
         continue;
       }
       const item = manifest ? withManifest(current, incoming, manifest, id, locale) : valuesOnly(id, locale, mine, theirs);
-      if (item) out.items.push(item);
+      if (!item) continue;
+      // A file that failed to parse is read-only: applying would throw halfway through.
+      if (!current.isWritable(id, locale)) out.skipped.push({ id, locale, reason: "read-only-file" });
+      else out.items.push(item);
     }
   }
   return out;

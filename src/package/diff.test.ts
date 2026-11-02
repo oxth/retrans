@@ -182,14 +182,55 @@ describe("import diff", () => {
     expect(current.value(c("b"), "fr")).toBeUndefined();
   });
 
-  it("translator added a language the project lacks → unknown-locale once", async () => {
-    const { diff } = await scenario((s) => {
-      s.addLanguage("de");
-      s.setText(c("a"), "de", "A-de");
-      s.setText(c("b"), "de", "B-de");
+  it("translator added a language the project lacks → ignored with a manifest, unknown-locale once without", async () => {
+    const { s } = await dev();
+    const pkg = await buildPackage(s, { locales: ["th"], now: NOW });
+    const back = await translate(pkg, (x) => {
+      x.addLanguage("de");
+      x.setText(c("a"), "de", "A-de");
+      x.setText(c("b"), "de", "B-de");
     });
-    expect(diff.skipped).toEqual([{ id: "", locale: "de", reason: "unknown-locale" }]);
+    const withM = await openIncoming(back);
+    const diff = diffPackage(s, withM.session, withM.manifest);
+    expect(diff.skipped).toEqual([]);
     expect(diff.items).toEqual([]);
+    const noM = await openIncoming(back.filter((e) => e.path !== MANIFEST_PATH));
+    const plain = diffPackage(s, noM.session, noM.manifest);
+    expect(plain.skipped).toEqual([{ id: "", locale: "de", reason: "unknown-locale" }]);
+  });
+
+  it("cells whose file is read-only in the current project → skipped read-only-file, never applied", async () => {
+    const { s, fs } = await dev();
+    const pkg = await buildPackage(s, { locales: ["th", "ja"], now: NOW });
+    const back = await translate(pkg, (x) => {
+      x.setText(c("b"), "th", "บี");
+      x.setText(c("b"), "ja", "ビー");
+    });
+    await fs.writeTextAtomic(`${R}/public/locales/th/common.json`, "{ broken");
+    const d = (await detectProject(fs, R))!;
+    const cur = await ProjectSession.open(fs, R, d, { baseLocale: "en", localesPath: d.localesPath });
+    const { session, manifest } = await openIncoming(back);
+    const diff = diffPackage(cur, session, manifest);
+    expect(diff.items.map((i) => [i.id, i.locale])).toEqual([[c("b"), "ja"]]);
+    expect(diff.skipped).toEqual([{ id: c("b"), locale: "th", reason: "read-only-file" }]);
+    expect(applyImport(cur, diff, new Map())).toBe(1);
+    expect(cur.value(c("b"), "ja")).toEqual(t("ビー"));
+  });
+
+  it("with a manifest, only the package's languages are diffed", async () => {
+    const { s } = await dev();
+    const pkg = await buildPackage(s, { locales: ["th"], now: NOW });
+    // The translator's copy also carries ja (e.g. added by hand); the developer edits ja meanwhile.
+    const back = await translate(pkg, (x) => {
+      x.addLanguage("ja");
+      x.setText(c("a"), "ja", "エー別");
+      x.setText(c("b"), "th", "บี");
+    });
+    s.setText(c("a"), "ja", "エー2");
+    const { session, manifest } = await openIncoming(back);
+    const diff = diffPackage(s, session, manifest);
+    expect(diff.items.map((i) => [i.id, i.locale, i.kind])).toEqual([[c("b"), "th", "new"]]);
+    expect(diff.skipped).toEqual([]);
   });
 
   it("package from another project → otherProject true", async () => {
