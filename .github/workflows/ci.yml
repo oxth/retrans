@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SMOKE_MODEL_URL: https://huggingface.co/ggml-org/test-model-stories260K/resolve/479896ec924af6d40fd419ab8f4d1eb2101de00d/stories260K-f32.gguf
+  SMOKE_MODEL_SIZE: '1185376'
+  SMOKE_MODEL_SHA256: 270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d
+
+jobs:
+  test:
+    name: test (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: CMake version (llama.cpp build needs it)
+        run: cmake --version
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Frontend tests
+        run: pnpm test
+
+      - name: Type check
+        run: pnpm exec tsc --noEmit
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Download smoke-test model (stories260K) and verify SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          model='${{ runner.temp }}/stories260K-f32.gguf'
+          curl -fsSL --retry 3 --retry-delay 5 -o "$model" "$SMOKE_MODEL_URL"
+          size=$(wc -c < "$model" | tr -d ' ')
+          if [ "$size" != "$SMOKE_MODEL_SIZE" ]; then
+            echo "::error::model size $size, expected $SMOKE_MODEL_SIZE"; exit 1
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            actual=$(sha256sum "$model" | cut -d' ' -f1)
+          else
+            actual=$(shasum -a 256 "$model" | cut -d' ' -f1)
+          fi
+          if [ "$actual" != "$SMOKE_MODEL_SHA256" ]; then
+            echo "::error::model SHA-256 $actual, expected $SMOKE_MODEL_SHA256"; exit 1
+          fi
+          echo "model OK: $size bytes, sha256 $actual"
+
+      - name: Engine smoke test with the tiny model
+        working-directory: src-tauri
+        env:
+          RETRANS_SMOKE_MODEL: ${{ runner.temp }}/stories260K-f32.gguf
+        run: cargo test generates_with_tiny_model -- --ignored
+
+      - name: Build NSIS installer
+        if: runner.os == 'Windows'
+        run: pnpm tauri build --bundles nsis
+
+      - name: Check llama.cpp DLLs sit next to retrans.exe in the installer
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          setup=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe 2>/dev/null | head -n 1 || true)
+          if [ -z "$setup" ]; then echo "::error::No NSIS setup exe found"; exit 1; fi
+          echo "Installer: $setup"
+          7z l "$setup"
+          listing=$(7z l -slt "$setup")
+          # Entry paths only (skip the archive header before the ---------- line), with / separators.
+          paths=$(printf '%s\n' "$listing" | tr -d '\r' \
+            | awk '/^----------/{f=1; next} f && /^Path = /{sub(/^Path = /, ""); print}' | tr '\\' '/')
+          exe=$(printf '%s\n' "$paths" | grep -iE '(^|/)retrans\.exe$' | head -n 1 || true)
+          if [ -z "$exe" ]; then echo "::error::retrans.exe not found in installer payload"; exit 1; fi
+          case "$exe" in */*) dir="${exe%/*}" ;; *) dir="" ;; esac
+          names=$(printf '%s\n' "$paths" | awk -v d="$dir" '{
+            n = split($0, a, "/"); leaf = a[n]; parent = (n > 1) ? substr($0, 1, length($0) - length(leaf) - 1) : "";
+            if (parent == d) print leaf }')
+          echo "Files next to retrans.exe ('$dir'):"
+          printf '  %s\n' $names
+          missing=""
+          printf '%s\n' "$names" | grep -ix 'llama\.dll' >/dev/null || missing="$missing llama.dll"
+          printf '%s\n' "$names" | grep -iE '^ggml.*\.dll$' | grep -ivE '^ggml-cpu-' >/dev/null || missing="$missing ggml*.dll"
+          printf '%s\n' "$names" | grep -iE '^ggml-cpu-.+\.dll$' >/dev/null || missing="$missing ggml-cpu-*.dll"
+          if [ -n "$missing" ]; then echo "::error::Missing next to retrans.exe:$missing"; exit 1; fi
+          echo "All llama.cpp DLLs present."

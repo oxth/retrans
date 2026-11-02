@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish (${{ matrix.platform }} ${{ matrix.args }})
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest # Apple Silicon
+            args: '--target aarch64-apple-darwin'
+          - platform: macos-latest # Intel
+            args: '--target x86_64-apple-darwin'
+          - platform: windows-latest
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Check tag matches tauri.conf.json and package.json versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          tauri_v=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          pkg_v=$(node -p "require('./package.json').version")
+          tag_v="${GITHUB_REF_NAME#v}"
+          echo "tag=$tag_v tauri.conf.json=$tauri_v package.json=$pkg_v"
+          if [ "$tag_v" != "$tauri_v" ] || [ "$tag_v" != "$pkg_v" ]; then
+            echo "::error::Version mismatch: tag $GITHUB_REF_NAME, tauri.conf.json $tauri_v, package.json $pkg_v"; exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: CMake version (llama.cpp build needs it)
+        run: cmake --version
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'Retrans v__VERSION__'
+          releaseDraft: true
+          prerelease: false
+          updaterJsonPreferNsis: true
+          args: '${{ matrix.args }} --config src-tauri/tauri.release.conf.json'

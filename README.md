@@ -92,3 +92,29 @@ The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts
 - [ ] Translator packages: export, open the zip as a translator, translate, re-export, then import with a conflict, and resolve it.
 - [ ] Updates: an update banner appears against a draft-free test release (after the first real release).
 - [ ] Windows: suggestions work on a non-AVX2 machine if one is available, otherwise on any machine.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every branch push and pull request, on macOS and Windows: frontend tests, type check, `cargo test`, and an engine smoke test with a tiny (1.2 MB) model whose SHA-256 is checked. On Windows it also builds the NSIS installer and fails if `llama.dll`, `ggml*.dll` or the `ggml-cpu-*.dll` variants are not next to `retrans.exe` in the installer.
+
+## Releasing
+
+Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed. It builds macOS (Apple Silicon and Intel) and Windows installers, signs the updater artifacts, and uploads everything, including `latest.json`, to a **draft** GitHub release.
+
+1. Bump `version` in `src-tauri/tauri.conf.json` and `package.json` (they must match; the workflow fails if the tag doesn't match both).
+2. Run the [manual checklist](#manual-checklist) on a real Mac and a real Windows machine.
+3. Tag and push:
+
+   ```sh
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+
+4. Wait for the workflow to finish and the draft release to appear.
+5. Edit the release notes, then publish. Publishing is what makes `latest.json` reach users: the app checks `https://github.com/oxth/retrans/releases/latest/download/latest.json`, and drafts are not "latest".
+
+### Updater key safety
+
+Updates are signed with the Tauri updater key. The public key is in `src-tauri/tauri.conf.json`. The private key and its password live only in the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` and on the maintainer's machine (`~/.tauri/retrans.key`).
+
+- **Never commit the private key** or its password, and never paste them into issues or logs.
+- **Back it up.** If the private key is lost, existing installs can no longer auto-update: every user would have to download and install a new version by hand.
