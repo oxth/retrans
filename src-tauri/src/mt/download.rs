@@ -2,6 +2,7 @@
 //! `<app_data_dir>/models/<file>.part`, resumable across pauses and restarts, then verifies its
 //! size and SHA-256 before renaming it to `<file>`.
 
+use super::engine::Engine;
 use futures_util::StreamExt;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -325,10 +326,16 @@ pub fn mt_download_cancel(
 }
 
 #[tauri::command]
-pub fn mt_model_delete(app: AppHandle, file: String) -> Result<(), String> {
+pub fn mt_model_delete(
+    app: AppHandle,
+    engine: State<'_, Arc<Engine>>,
+    file: String,
+) -> Result<(), String> {
     validate_file(&file)?;
-    // TASK 6 HOOK: unload the engine here if it holds `file` (Windows can't delete a mapped file).
-    remove_if_exists(&models_dir(&app)?.join(&file))
+    let path = models_dir(&app)?.join(&file);
+    // Unload first if the engine holds this file: Windows can't delete a memory-mapped file.
+    engine.unload_if(&path);
+    remove_if_exists(&path)
 }
 
 fn remove_if_exists(path: &Path) -> Result<(), String> {

@@ -2,6 +2,8 @@ mod fs_cmds;
 mod mt;
 mod watch;
 
+use std::sync::Arc;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -10,6 +12,13 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(watch::WatchState::default())
         .manage(mt::download::Downloads::default())
+        .manage(Arc::new(mt::engine::Engine::default()))
+        .setup(|app| {
+            use tauri::Manager;
+            let engine = app.state::<Arc<mt::engine::Engine>>().inner().clone();
+            mt::engine::spawn_idle_unloader(engine);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             fs_cmds::read_text,
             fs_cmds::write_text_atomic,
@@ -24,7 +33,10 @@ pub fn run() {
             mt::download::mt_download_start,
             mt::download::mt_download_pause,
             mt::download::mt_download_cancel,
-            mt::download::mt_model_delete
+            mt::download::mt_model_delete,
+            mt::engine::mt_generate,
+            mt::engine::mt_cancel,
+            mt::engine::mt_unload
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
