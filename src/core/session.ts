@@ -71,7 +71,7 @@ export class ProjectSession {
   private stateBaseline: string; // serialized reconciled state as loaded / last saved
   private stateTouched = false;
   private stateDiskText: string | null; // raw state.json as loaded / last written (stale check)
-  /** Set while .paratrans/state.json on disk can't be parsed: it is then never written. */
+  /** Set while .retrans/state.json on disk can't be parsed: it is then never written. */
   private stateError: string | undefined;
   private creates = new Map<string, { locale: string; ns: string }>(); // relPath -> pending create
   private removed = new Map<string, LoadedFile>(); // relPath -> pending delete
@@ -109,7 +109,7 @@ export class ProjectSession {
 
   // ---- reading ---------------------------------------------------------------------------
 
-  /** True while .paratrans/state.json can't be parsed (it is then never written). */
+  /** True while .retrans/state.json can't be parsed (it is then never written). */
   get stateMalformed(): boolean {
     return this.stateError !== undefined;
   }
@@ -309,7 +309,7 @@ export class ProjectSession {
 
   /**
    * Records the base language the user picked (because detection couldn't tell) in
-   * .paratrans/state.json right away, changing only `project.baseLocale` in the file, so the
+   * .retrans/state.json right away, changing only `project.baseLocale` in the file, so the
    * question is asked once. Runs in the save queue. Skipped while state.json is malformed or
    * changed on disk since it was read (the in-memory value is then written by the next save).
    */
@@ -341,7 +341,7 @@ export class ProjectSession {
     this.emit();
   }
 
-  /** Project-level setting stored in .paratrans/state.json (e.g. the locales path override). */
+  /** Project-level setting stored in .retrans/state.json (e.g. the locales path override). */
   setProjectSetting(patch: { localesPath?: string | undefined }): void {
     if ("localesPath" in patch) {
       if (patch.localesPath) this.state.project.localesPath = patch.localesPath;

@@ -57,7 +57,7 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
               const next = p && p !== detectedPath ? p : undefined;
               session.setProjectSetting({ localesPath: next });
               if (!next) setPath(detectedPath);
-              setNote(next || override ? "Will be written to .paratrans/state.json on the next save." : "Using the detected path.");
+              setNote(next || override ? "Will be written to .retrans/state.json on the next save." : "Using the detected path.");
             }}
           >
             Save setting

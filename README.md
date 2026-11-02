@@ -1,6 +1,6 @@
-# Paratrans
+# Retrans
 
-Paratrans is a free desktop app for managing translation files in web projects that use **next-i18next** or **Paraglide (inlang)**. It shows every key and language in one grid, makes missing translations impossible to miss, tracks review status, and saves minimal, git-friendly diffs. It needs no account, no server and has no usage limits.
+Retrans is a free desktop app for managing translation files in web projects that use **next-i18next** or **Paraglide (inlang)**. It shows every key and language in one grid, makes missing translations impossible to miss, tracks review status, and saves minimal, git-friendly diffs. It needs no account, no server and has no usage limits.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ cd src-tauri && cargo test
 The engine test that loads an actual GGUF model is ignored by default. Point it at a model file to run it:
 
 ```sh
-cd src-tauri && PARATRANS_TEST_MODEL=<path-to-model.gguf> cargo test -- --ignored
+cd src-tauri && RETRANS_TEST_MODEL=<path-to-model.gguf> cargo test -- --ignored
 ```
 
 It runs `translates_english_to_thai_with_real_model`.
@@ -44,7 +44,7 @@ Installers and bundles end up in `src-tauri/target/release/bundle/`.
 
 ## Machine translation
 
-Paratrans can suggest and batch-fill translations with a local language model. It is off until you enable it.
+Retrans can suggest and batch-fill translations with a local language model. It is off until you enable it.
 
 - **Enable it** in the machine translation settings, then pick a model. Sizes range from a small model (about 1.8 GB) to larger, better ones; the settings list the exact download size of each.
 - **Gemma terms:** TranslateGemma is under the Gemma terms of use. The app shows a summary and links, and asks you to accept before downloading.
@@ -69,7 +69,7 @@ The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts
 - [ ] Edit a translation file in a text editor while the app is open: the app picks up the change, and a conflicting unsaved cell shows the conflict dialog.
 - [ ] Closing the window with unsaved edits shows the close prompt.
 - [ ] While the conflict dialog is open, Save / Cmd+S don't save ("Resolve conflicts before saving").
-- [ ] Put git conflict markers into `.paratrans/state.json`: the load-error banner lists it, saving still writes translations, and the file is left untouched until it's fixed.
+- [ ] Put git conflict markers into `.retrans/state.json`: the load-error banner lists it, saving still writes translations, and the file is left untouched until it's fixed.
 - [ ] Kill the app with unsaved edits, reopen the project, and the restore prompt appears.
 - [ ] Enable MT, accept the Gemma terms and download TranslateGemma 4B. Pause, quit the app, reopen, then resume: the download continues.
 - [ ] "Test this model": en to th with `{{name}}` keeps the placeholder.

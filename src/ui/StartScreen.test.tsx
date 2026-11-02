@@ -129,7 +129,7 @@ describe("StartScreen review fixes", () => {
     const fs = new MemoryFs({
       "/project/public/locales/en/common.json": '{"a":"A"}',
       "/project/public/locales/th/common.json": '{"a":"ก"}',
-      "/project/.paratrans/state.json": JSON.stringify({ version: 1, project: { baseLocale: "th" }, entries: {} }),
+      "/project/.retrans/state.json": JSON.stringify({ version: 1, project: { baseLocale: "th" }, entries: {} }),
     });
     await addRecent({ root: "/project", name: "project", format: "next-i18next" });
     await setup(fs);

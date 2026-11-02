@@ -2816,26 +2816,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "paratrans"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "llama-cpp-2",
- "notify-debouncer-mini",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-store",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3236,6 +3216,26 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
+]
+
+[[package]]
+name = "retrans"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "llama-cpp-2",
+ "notify-debouncer-mini",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-plugin-store",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

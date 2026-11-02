@@ -200,7 +200,7 @@ describe("review fixes", () => {
       const d = (await detectProject(fs, "/project"))!;
       expect(d.baseLocale).toBeNull();
       await useApp.getState().openProject("/project", d, { baseLocale: "th", localesPath: d.localesPath });
-      const st = JSON.parse(await fs.readText("/project/.paratrans/state.json"));
+      const st = JSON.parse(await fs.readText("/project/.retrans/state.json"));
       expect(st.project).toEqual({ baseLocale: "th" });
       expect(useApp.getState().session!.isDirty()).toBe(false);
       expect(await savedBaseLocale(fs, "/project", d)).toBe("th");
@@ -209,7 +209,7 @@ describe("review fixes", () => {
     it("detected base language wins over a stale state.json value", async () => {
       const { fs, d, opts } = await prep();
       expect(d.baseLocale).toBe("en");
-      await fs.writeTextAtomic("/project/.paratrans/state.json", JSON.stringify({ version: 1, project: { baseLocale: "th" }, entries: {} }));
+      await fs.writeTextAtomic("/project/.retrans/state.json", JSON.stringify({ version: 1, project: { baseLocale: "th" }, entries: {} }));
       useApp.setState({ fs });
       await useApp.getState().openProject("/project", d, opts);
       expect(useApp.getState().session!.data.baseLocale).toBe("en");
@@ -219,7 +219,7 @@ describe("review fixes", () => {
       const fs = loadFixtureDir(FIX + "paraglide");
       const d = (await detectProject(fs, "/project"))!;
       const other = d.locales.find((l) => l !== d.baseLocale)!;
-      await fs.writeTextAtomic("/project/.paratrans/state.json", JSON.stringify({ version: 1, project: { baseLocale: other }, entries: {} }));
+      await fs.writeTextAtomic("/project/.retrans/state.json", JSON.stringify({ version: 1, project: { baseLocale: other }, entries: {} }));
       useApp.setState({ fs });
       await useApp.getState().openProject("/project", d, { baseLocale: d.baseLocale!, localesPath: d.localesPath });
       expect(useApp.getState().session!.data.baseLocale).toBe(d.baseLocale);
@@ -227,7 +227,7 @@ describe("review fixes", () => {
 
     it("a localesPath override in state.json is honoured", async () => {
       const { fs, d, opts } = await prep();
-      await fs.writeTextAtomic("/project/.paratrans/state.json", JSON.stringify({ version: 1, project: { localesPath: "public/i18n" }, entries: {} }));
+      await fs.writeTextAtomic("/project/.retrans/state.json", JSON.stringify({ version: 1, project: { localesPath: "public/i18n" }, entries: {} }));
       useApp.setState({ fs });
       await useApp.getState().openProject("/project", d, opts);
       expect(useApp.getState().session!.opts.localesPath).toBe("public/i18n");
@@ -264,13 +264,13 @@ describe("review fixes", () => {
 describe("review fixes: malformed state.json", () => {
   it("#4 save writes translations, leaves state.json alone and explains why statuses weren't saved", async () => {
     const { fs, d, opts } = await prep();
-    await fs.writeTextAtomic("/project/.paratrans/state.json", "<<<<<<< HEAD\n{}\n");
+    await fs.writeTextAtomic("/project/.retrans/state.json", "<<<<<<< HEAD\n{}\n");
     useApp.setState({ fs });
     await useApp.getState().openProject("/project", d, opts);
     const s = useApp.getState().session!;
     s.markReviewed("common::title", "th");
     expect(await useApp.getState().save()).toBe(false);
     expect(useApp.getState().error).toMatch(/can't be parsed/);
-    expect(await fs.readText("/project/.paratrans/state.json")).toBe("<<<<<<< HEAD\n{}\n");
+    expect(await fs.readText("/project/.retrans/state.json")).toBe("<<<<<<< HEAD\n{}\n");
   });
 });

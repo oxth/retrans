@@ -10,7 +10,7 @@ export interface StateFile {
   project: { baseLocale?: string; localesPath?: string };
   entries: Record<KeyId, Record<string, StateEntry>>;
 }
-export const STATE_PATH = ".paratrans/state.json";
+export const STATE_PATH = ".retrans/state.json";
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 

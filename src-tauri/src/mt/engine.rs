@@ -434,11 +434,11 @@ mod tests {
         assert_eq!(engine.generate(&req(9)), Err(LOAD_FAILED.into()));
     }
 
-    /// Needs a real model: PARATRANS_TEST_MODEL=/path/translategemma-4b-it-Q4_K_M.gguf cargo test -- --ignored
+    /// Needs a real model: RETRANS_TEST_MODEL=/path/translategemma-4b-it-Q4_K_M.gguf cargo test -- --ignored
     #[test]
     #[ignore]
     fn translates_english_to_thai_with_real_model() {
-        let path = std::env::var("PARATRANS_TEST_MODEL").expect("set PARATRANS_TEST_MODEL");
+        let path = std::env::var("RETRANS_TEST_MODEL").expect("set RETRANS_TEST_MODEL");
         // Same prompt as the TS TranslateGemma template (src/mt/prompt.ts) for "Welcome back" en→th.
         let prompt = "<start_of_turn>user\nYou are a professional English (en) to Thai (th) translator. \
 Your goal is to accurately convey the meaning and nuances of the original English text while adhering to \

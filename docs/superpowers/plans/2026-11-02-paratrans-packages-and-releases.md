@@ -1,4 +1,4 @@
-# Paratrans Translator Packages and Releases Implementation Plan
+# Retrans Translator Packages and Releases Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -32,11 +32,11 @@
 **Package file format:**
 - A package is a `.zip` that **is a complete, openable project**. It holds:
   - the locale files in their normal layout;
-  - `.paratrans/state.json`;
+  - `.retrans/state.json`;
   - Paraglide `project.inlang/settings.json`, or a copy of the next-i18next config;
-  - `.paratrans/package.json` (the manifest).
-- Manifest path: exactly `.paratrans/package.json`.
-- Manifest key `paratransPackage: 1`.
+  - `.retrans/package.json` (the manifest).
+- Manifest path: exactly `.retrans/package.json`.
+- Manifest key `retransPackage: 1`.
 
 **Status rules on import:**
 - The translator's Reviewed and `machine` flags travel with their values.
@@ -44,7 +44,7 @@
 
 **Files and config:**
 - Untranslated cells stay omitted from files. Saves stay minimal-diff (existing session save path).
-- Paratrans never edits JS/TS config (`next-i18next.config.*` is copied byte-for-byte into packages, never rewritten).
+- Retrans never edits JS/TS config (`next-i18next.config.*` is copied byte-for-byte into packages, never rewritten).
 
 **Installers:**
 - Unsigned for OS purposes.
@@ -61,11 +61,11 @@
 | Where | Text |
 |---|---|
 | Export blocked by unsaved changes | `Save your changes first.` |
-| Export blocked by unreadable `state.json` | `Fix .paratrans/state.json before exporting.` |
+| Export blocked by unreadable `state.json` | `Fix .retrans/state.json before exporting.` |
 | Package from another project | `This package came from a different project. Matching keys will still be merged.` |
 | Folder with no project | `Couldn't find translation files here.` |
-| Damaged zip | `This file isn't a Paratrans package or project.` |
-| Update banner | `Paratrans <version> is available.` with buttons `Install and restart` / `Later` |
+| Damaged zip | `This file isn't a Retrans package or project.` |
+| Update banner | `Retrans <version> is available.` with buttons `Install and restart` / `Later` |
 
 ## Review Focus
 
@@ -76,7 +76,7 @@
 2. **Hostile or odd zips.** Covers `../evil`, absolute paths, `C:\x`, oversized entries, non-UTF-8 entries, `__MACOSX/` and `.DS_Store` junk, and nested folders.
    - Expected: nothing is ever written outside the target folder.
    - Junk entries are skipped.
-   - Bad files fail with `This file isn't a Paratrans package or project.`
+   - Bad files fail with `This file isn't a Retrans package or project.`
    - Tested in Tasks 2 and 4.
 3. **The developer changed things after exporting.**
    - Same cell edited on both sides → conflict.
@@ -141,10 +141,10 @@ Modified:
   - Update the doc comment: `project` holds explicit user choices plus the project's stable id.
 - **`session.ts`:** `setProjectSetting(patch: { localesPath?: string | undefined; id?: string })`. Setting `id` marks the state touched, like the existing localesPath path.
 - **`manifest.ts`:**
-  - `MANIFEST_PATH = ".paratrans/package.json"`.
+  - `MANIFEST_PATH = ".retrans/package.json"`.
   - `interface CellSnapshot { v: string; s?: "translated" | "reviewed"; m?: true }` — `v` is `hashValue(value)`, with `hashValue(undefined)` for missing.
-  - `interface PackageManifest { paratransPackage: 1; format: Format; baseLocale: string; locales: string[]; localesPath: string; exportedAt: string; sourceProjectId: string; baseline: Record<KeyId, Record<string, CellSnapshot>> }`. `locales` holds the target locales only; the base is always included in the files.
-  - `parseManifest(text: string | null): PackageManifest | null`. Returns null for missing or invalid input, or when `paratransPackage !== 1`. It never throws.
+  - `interface PackageManifest { retransPackage: 1; format: Format; baseLocale: string; locales: string[]; localesPath: string; exportedAt: string; sourceProjectId: string; baseline: Record<KeyId, Record<string, CellSnapshot>> }`. `locales` holds the target locales only; the base is always included in the files.
+  - `parseManifest(text: string | null): PackageManifest | null`. Returns null for missing or invalid input, or when `retransPackage !== 1`. It never throws.
   - `serializeManifest(m): string`. Sorted keys, 2-space indent, trailing newline (same style as `serializeState`).
   - `snapshotCells(session: ProjectSession, locales: string[]): PackageManifest["baseline"]`. For every key in `session.data.keyOrder` and every given locale, it records `{ v, s?, m? }` from `session.value` and `session.state.entries`. `s`/`m` are present only when a state entry exists. Cells that are missing **and** have no entry are omitted, to keep the file small.
 
@@ -157,12 +157,12 @@ it("round-trips project.id through state.json", () => {
   expect(serializeState(state)).toContain('"id": "p-1"');
 });
 it("parses a valid manifest and rejects others", () => {
-  const m = { paratransPackage: 1, format: "next-i18next", baseLocale: "en", locales: ["th"], localesPath: "public/locales", exportedAt: "2026-11-02T00:00:00.000Z", sourceProjectId: "p-1", baseline: {} };
+  const m = { retransPackage: 1, format: "next-i18next", baseLocale: "en", locales: ["th"], localesPath: "public/locales", exportedAt: "2026-11-02T00:00:00.000Z", sourceProjectId: "p-1", baseline: {} };
   expect(parseManifest(JSON.stringify(m))).toEqual(m);
   expect(parseManifest(serializeManifest(m as PackageManifest))).toEqual(m);
   expect(parseManifest(null)).toBeNull();
   expect(parseManifest("{")).toBeNull();
-  expect(parseManifest(JSON.stringify({ ...m, paratransPackage: 2 }))).toBeNull();
+  expect(parseManifest(JSON.stringify({ ...m, retransPackage: 2 }))).toBeNull();
   expect(parseManifest(JSON.stringify({ ...m, format: "xliff" }))).toBeNull();
 });
 it("snapshots values and statuses for the given locales", async () => {
@@ -192,7 +192,7 @@ it("snapshots values and statuses for the given locales", async () => {
 **Interfaces:**
 - **Rust:**
   - `#[derive(Serialize, Deserialize)] pub struct ZipEntry { pub path: String, pub text: String }`
-  - Command `zip_write(dest: String, entries: Vec<ZipEntry>) -> Result<(), String>`. Deflate; writes `dest.paratrans-tmp`, then renames (atomic, same as `fs_cmds`).
+  - Command `zip_write(dest: String, entries: Vec<ZipEntry>) -> Result<(), String>`. Deflate; writes `dest.retrans-tmp`, then renames (atomic, same as `fs_cmds`).
   - Command `zip_read(src: String) -> Result<Vec<ZipEntry>, String>`.
   - Pure helper `pub fn clean_entry_path(raw: &str) -> Option<String>`:
     - Converts `\` to `/`.
@@ -201,7 +201,7 @@ it("snapshots values and statuses for the given locales", async () => {
     - Strips a leading `./`.
 - **`zip_read` rules:**
   - Entries for which `clean_entry_path` gives None are skipped.
-  - More than `MAX_ENTRIES = 5000` entries, any entry over `MAX_ENTRY_BYTES = 20 * 1024 * 1024` uncompressed, a total over `MAX_TOTAL_BYTES = 200 * 1024 * 1024`, or any kept entry that isn't valid UTF-8 → `Err("This file isn't a Paratrans package or project.")`.
+  - More than `MAX_ENTRIES = 5000` entries, any entry over `MAX_ENTRY_BYTES = 20 * 1024 * 1024` uncompressed, a total over `MAX_TOTAL_BYTES = 200 * 1024 * 1024`, or any kept entry that isn't valid UTF-8 → `Err("This file isn't a Retrans package or project.")`.
   - The same error is returned when the file isn't a zip.
 - **Cargo:** `zip = { version = "9", default-features = false, features = ["deflate"] }`.
 - **`src/platform/zip.ts`:**
@@ -210,7 +210,7 @@ it("snapshots values and statuses for the given locales", async () => {
   - Both use `invoke`. A string rejection becomes an `Error` with that message.
 
 - [ ] **Step 1: Write the failing tests.** Inline `#[cfg(test)]`, with `tempfile`.
-  - `round_trips_utf8_entries`: write `[("a/b.json","{\"x\":\"ไทย\"}"), (".paratrans/package.json","{}")]`, then read → equal (order kept), and no `.paratrans-tmp` left behind.
+  - `round_trips_utf8_entries`: write `[("a/b.json","{\"x\":\"ไทย\"}"), (".retrans/package.json","{}")]`, then read → equal (order kept), and no `.retrans-tmp` left behind.
   - `clean_entry_path_rules`:
     - `"./a.json"` → `"a.json"`
     - `"a\\b.json"` → `"a/b.json"`
@@ -244,16 +244,16 @@ it("snapshots values and statuses for the given locales", async () => {
 **`buildPackage` rules:**
 - **Refusals, checked first:**
   - `session.isDirty()` → `ExportError("Save your changes first.")`.
-  - `session.stateMalformed` → `ExportError("Fix .paratrans/state.json before exporting.")`.
+  - `session.stateMalformed` → `ExportError("Fix .retrans/state.json before exporting.")`.
   - `session.state.project.id` is missing → `ExportError("Save your changes first.")`. The UI (Task 6) assigns an id and saves before calling this.
 - **Locales:** `included = [baseLocale, ...opts.locales filtered to project targets]`.
 - **Locale files:**
   - Every `session.files` entry whose `locale` is in `included`.
   - Text is the loaded text (equal to disk, since the session is clean); paths are root-relative `relPath`.
-- **`.paratrans/state.json`:** `serializeState` of the state, with `entries` filtered to the included locales and `project` copied unchanged.
+- **`.retrans/state.json`:** `serializeState` of the state, with `entries` filtered to the included locales and `project` copied unchanged.
 - **Paraglide:** `project.inlang/settings.json` read via `session.fs`, with its `locales` array replaced by `included` using `setAt` (minimal edit).
 - **next-i18next:** each existing `next-i18next.config.{js,mjs,cjs,ts}` at the root, copied byte-for-byte.
-- **Manifest `.paratrans/package.json`:**
+- **Manifest `.retrans/package.json`:**
   - The project has no manifest of its own: `sourceProjectId = project.id`, `baseline = snapshotCells(session, opts.locales)`, `exportedAt = opts.now.toISOString()`, plus format, base, locales and localesPath from the session.
   - **The project was itself opened from a package** (a valid manifest exists at `MANIFEST_PATH` on disk): copy that manifest's `sourceProjectId`, `baseline`, `baseLocale` and `localesPath`. Set `locales` to the requested locales filtered to those of the original manifest. Update only `exportedAt`. This is how a translator sends work back without destroying the baseline (Review Focus #1).
 - **Ordering:** entries are sorted by path.
@@ -261,7 +261,7 @@ it("snapshots values and statuses for the given locales", async () => {
 - [ ] **Step 1: Write the failing tests** (MemoryFs projects, as in `src/mt/batch.test.ts`):
   - `"next-i18next: includes base + chosen locales, config copy, filtered state and manifest"`
     - Project `en`, `th`, `ja`, with `next-i18next.config.js`. Export `["th"]`.
-    - Paths equal `[".paratrans/package.json", ".paratrans/state.json", "next-i18next.config.js", "public/locales/en/common.json", "public/locales/th/common.json"]`.
+    - Paths equal `[".retrans/package.json", ".retrans/state.json", "next-i18next.config.js", "public/locales/en/common.json", "public/locales/th/common.json"]`.
     - The config text is byte-identical.
     - `state.json` has no `ja` entries.
     - The manifest has `locales: ["th"]`, `sourceProjectId` equal to the project id, and a baseline for `th` cells.
@@ -295,14 +295,14 @@ it("snapshots values and statuses for the given locales", async () => {
   - `extractPackage(fs: Fs, entries: Array<{ path: string; text: string }>, dest: string): Promise<void>`:
     - Refuses with `Error("Choose an empty folder.")` when `dest` exists and `fs.listFiles(dest, 1)` is non-empty.
     - Writes each safe entry with `mkdirp` + `writeTextAtomic`, and skips unsafe ones.
-    - Requires at least one entry to be a locale file or the manifest. Otherwise it throws `Error("This file isn't a Paratrans package or project.")` before writing anything.
+    - Requires at least one entry to be a locale file or the manifest. Otherwise it throws `Error("This file isn't a Retrans package or project.")` before writing anything.
 - **`detect.ts`:** `detectProject(fs, root)` first reads `MANIFEST_PATH`. If `parseManifest` gives a manifest:
   - Run that format's adapter `detect`.
   - If it returns a result, override `baseLocale` with `manifest.baseLocale` when that is in `result.locales`.
-  - If it returns null, throw `Error("This file isn't a Paratrans package or project.")`.
+  - If it returns null, throw `Error("This file isn't a Retrans package or project.")`.
   - Without a manifest, behaviour is unchanged.
 - **StartScreen:**
-  - New button `Open translator package…`. It picks a `.zip` via plugin-dialog `open({ filters: [{ name: "Paratrans package", extensions: ["zip"] }] })`.
+  - New button `Open translator package…`. It picks a `.zip` via plugin-dialog `open({ filters: [{ name: "Retrans package", extensions: ["zip"] }] })`.
   - Then a folder via `open({ directory: true, title: "Choose where to put the project" })`.
   - Extract into `<folder>/<zip file name without .zip>`, then follow the normal open-project flow on that path.
   - Errors show in the start screen's existing error area.
@@ -413,7 +413,7 @@ it("snapshots values and statuses for the given locales", async () => {
   - **On click:**
     1. If there is no `project.id`, set `crypto.randomUUID()` via `setProjectSetting`, then `await useApp.getState().save()`.
     2. `buildPackage`.
-    3. `save({ defaultPath: packageFileName(name, new Date()), filters: [{ name: "Paratrans package", extensions: ["zip"] }] })`.
+    3. `save({ defaultPath: packageFileName(name, new Date()), filters: [{ name: "Retrans package", extensions: ["zip"] }] })`.
     4. `zipWrite`.
   - **Result:** `Exported <file name>.` in a `role="status"` region. An `ExportError` message shows in a `role="alert"` region.
   - **Copy for package projects:** when the project was opened from a package (it has a manifest), the section title reads `Send back to the developer` and the button reads `Export…`.
@@ -431,7 +431,7 @@ it("snapshots values and statuses for the given locales", async () => {
 
 - [ ] **Step 1: Write the failing tests** (mock plugin-dialog and `../platform/zip`; MemoryFs sessions):
   - The export button is disabled with the note when dirty.
-  - Export assigns an id and saves when missing, then calls `zipWrite` with the dialog path and entries that include `.paratrans/package.json`.
+  - Export assigns an id and saves when missing, then calls `zipWrite` with the dialog path and entries that include `.retrans/package.json`.
   - Export shows the `ExportError` message.
   - Importing a package shows the counts; picking `Use theirs` on a conflict, then `Apply`, updates the session and shows the status line.
   - The other-project warning and the no-manifest note render.
@@ -465,11 +465,11 @@ it("snapshots values and statuses for the given locales", async () => {
 - **`UpdateBanner`:**
   - Mounted once in `App`. On mount, when auto-check is on, it calls `checkForUpdate()` once.
   - Errors (offline, placeholder key, dev build) → `console.warn` only, and nothing is shown.
-  - When an update is found: a top banner with `Paratrans <version> is available.` and buttons `Install and restart` / `Later`.
+  - When an update is found: a top banner with `Retrans <version> is available.` and buttons `Install and restart` / `Later`.
   - While installing: a progress text `Downloading… <percent>%`. An install failure shows `Update failed. Try again later.`
 - **Settings:** a section `<h2>Updates</h2>` with:
   - a checkbox `Check for updates automatically`;
-  - a button `Check for updates` showing `You're up to date.`, `Paratrans <version> is available.` (with `Install and restart`), or `Couldn't check for updates.`
+  - a button `Check for updates` showing `You're up to date.`, `Retrans <version> is available.` (with `Install and restart`), or `Couldn't check for updates.`
 
 - [ ] **Step 1: Write the failing tests** (mock `../platform/updates` and prefs):
   - The banner appears with the version.
@@ -510,11 +510,11 @@ it("snapshots values and statuses for the given locales", async () => {
 - **`tauri.conf.json`:** `bundle.windows`-compatible resources mapping `"llama-dlls/*.dll"` into the install root, next to the exe. Use the Tauri v2 resources map form `{ "llama-dlls/": "./" }` or the equivalent glob that the Tauri CLI accepts. Verify by listing the NSIS install tree in CI (Task 9).
 - **`engine.rs`:** on Windows, before the first `LlamaBackend::init()`, call `llama_cpp_2::llama_backend::load_backends_from_path(<dir of current_exe>)`. Gate it with `#[cfg(target_os = "windows")]`.
 - **Smoke test:**
-  - Add `#[test] #[ignore] fn generates_with_tiny_model()`. It reads `PARATRANS_SMOKE_MODEL` and runs `generate` with prompt `"Once upon a time"`, `addBos=true`, `maxTokens=16`, no stop strings.
+  - Add `#[test] #[ignore] fn generates_with_tiny_model()`. It reads `RETRANS_SMOKE_MODEL` and runs `generate` with prompt `"Once upon a time"`, `addBos=true`, `maxTokens=16`, no stop strings.
   - It asserts the output is non-empty and that no error occurred.
   - Model (CI only): `https://huggingface.co/ggml-org/test-model-stories260K/resolve/479896ec924af6d40fd419ab8f4d1eb2101de00d/stories260K-f32.gguf`, size `1185376`, SHA-256 `270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d`.
 
-- [ ] **Step 1: Write the smoke test.** Add `generates_with_tiny_model` as above. Locally on macOS, download the 1.2 MB model to the scratch dir, verify its SHA-256, then run `PARATRANS_SMOKE_MODEL=<path> cargo test generates_with_tiny_model -- --ignored`. Expected: PASS.
+- [ ] **Step 1: Write the smoke test.** Add `generates_with_tiny_model` as above. Locally on macOS, download the 1.2 MB model to the scratch dir, verify its SHA-256, then run `RETRANS_SMOKE_MODEL=<path> cargo test generates_with_tiny_model -- --ignored`. Expected: PASS.
 - [ ] **Step 2: Implement the Windows-only changes.** Everything Windows-specific is `cfg`-gated or target-gated, so macOS builds are unaffected.
 - [ ] **Step 3: Verify on macOS.** Run `cargo test` and `pnpm tauri build --bundles app`. Expected: success, and the `.app` stays under 40 MB.
 - [ ] **Step 4: Commit.**
@@ -535,9 +535,9 @@ The Windows build itself is verified by Task 9's CI. If it fails there, fix it i
 **Step 0 — the user's part. Stop and ask before doing any of this; it creates public things and secrets:**
 1. Create a **public** GitHub repository. Public repos get unlimited free Actions minutes; private repos bill macOS minutes at 10×.
 2. `git remote add origin <url>`.
-3. Generate the update key: `pnpm tauri signer generate -w ~/.tauri/paratrans.key`. Keep the password.
+3. Generate the update key: `pnpm tauri signer generate -w ~/.tauri/retrans.key`. Keep the password.
 4. Add the repo secrets `TAURI_SIGNING_PRIVATE_KEY` (the key file's content) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
-5. Paste the public key (`~/.tauri/paratrans.key.pub` content) into the conversation. It is safe to share.
+5. Paste the public key (`~/.tauri/retrans.key.pub` content) into the conversation. It is safe to share.
 
 Then replace both placeholders in `tauri.conf.json`. The OWNER/REPO come from `git remote get-url origin`.
 
@@ -552,7 +552,7 @@ Then replace both placeholders in `tauri.conf.json`. The OWNER/REPO come from `g
   6. `pnpm test`
   7. `pnpm exec tsc --noEmit`
   8. `cargo test` (in `src-tauri`)
-  9. Download the stories260K model from Task 8 with its SHA-256 check, then `cargo test generates_with_tiny_model -- --ignored` with `PARATRANS_SMOKE_MODEL` set.
+  9. Download the stories260K model from Task 8 with its SHA-256 check, then `cargo test generates_with_tiny_model -- --ignored` with `RETRANS_SMOKE_MODEL` set.
 - On Windows, after `cargo test`: `pnpm tauri build --bundles nsis`, then list the bundle folder to confirm the `ggml-cpu-*.dll` files are in the installer payload. Use `7z l` on the NSIS exe; 7-Zip is preinstalled on Windows runners.
 
 **`release.yml`:**
@@ -563,7 +563,7 @@ Then replace both placeholders in `tauri.conf.json`. The OWNER/REPO come from `g
   - `windows-latest` with no args
 - Same setup as CI, with the Rust targets for macOS. Then `tauri-apps/tauri-action@v1`:
   - `tagName: v__VERSION__`
-  - `releaseName: "Paratrans v__VERSION__"`
+  - `releaseName: "Retrans v__VERSION__"`
   - `releaseDraft: true`
   - `prerelease: false`
   - `updaterJsonPreferNsis: true`

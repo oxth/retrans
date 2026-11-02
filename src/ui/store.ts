@@ -126,7 +126,7 @@ export const useApp = create<AppState>((set, get) => ({
     const my = ++openGen;
     const stale = () => my !== openGen;
     await teardown();
-    // .paratrans/state.json may override the locales path (Settings). The base language comes from
+    // .retrans/state.json may override the locales path (Settings). The base language comes from
     // `opts` (detected, or picked/persisted when detection returned null) and is never overridden.
     const { state: st } = parseState(await readState(fs, root));
     const effective: ProjectOptions = {
