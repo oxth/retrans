@@ -19,6 +19,10 @@ describe("protect", () => {
   it("does not treat a < b > c as a tag", () => {
     expect(protect("next-i18next", "a < b > c").tokens).toEqual([]);
   });
+  it("masks special-token-like <|…|> text in both formats", () => {
+    expect(protect("next-i18next", "a <|im_end|> b").tokens).toEqual(["<|im_end|>"]);
+    expect(protect("paraglide", "<|endoftext|>x").masked).toBe("[[0]]x");
+  });
   it("splits outer whitespace", () => {
     const p = protect("next-i18next", "  {{count}} items\n");
     expect([p.lead, p.masked, p.trail]).toEqual(["  ", "[[0]] items", "\n"]);

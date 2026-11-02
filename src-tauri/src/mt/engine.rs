@@ -184,12 +184,18 @@ impl Engine {
     /// Blocking: loads the model if needed and generates. Call from `spawn_blocking`.
     pub fn generate(&self, req: &GenerateRequest) -> Result<String, String> {
         if self.is_cancelled(req.req_id) {
+            // Consume the cancel so a later request reusing this id (e.g. after a webview
+            // reload restarts the front-end counter) isn't cancelled by it.
+            let _ = self.cancel.compare_exchange(req.req_id, NO_REQ, Ordering::SeqCst, Ordering::SeqCst);
             return Err(CANCELLED.into());
         }
         let mut guard = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
         self.running.store(req.req_id, Ordering::SeqCst);
         let result = self.generate_locked(&mut guard, req);
         self.running.store(NO_REQ, Ordering::SeqCst);
+        // Generation over: clear any cancel id (ours, or a stale one sent after a request
+        // finished) so it can't hit a reused id later.
+        self.cancel.store(NO_REQ, Ordering::SeqCst);
         if let Some(loaded) = guard.as_mut() {
             loaded.last_used = Instant::now();
         }
@@ -405,6 +411,27 @@ mod tests {
         assert_eq!(engine.generate(&req), Err(LOAD_FAILED.into())); // not cancelled: other id
         engine.cancel(5);
         assert_eq!(engine.generate(&req), Err(CANCELLED.into()));
+    }
+
+    #[test]
+    fn cancel_is_cleared_when_a_generation_finishes() {
+        let engine = Engine::default();
+        let req = |req_id| GenerateRequest {
+            req_id,
+            model_path: "/nonexistent/model.gguf".into(),
+            prompt: "hi".into(),
+            add_bos: true,
+            max_tokens: 8,
+            stop: vec![],
+        };
+        engine.cancel(5);
+        assert_eq!(engine.generate(&req(5)), Err(CANCELLED.into()));
+        assert_eq!(engine.cancel.load(Ordering::SeqCst), NO_REQ);
+        assert_eq!(engine.generate(&req(5)), Err(LOAD_FAILED.into())); // reused id runs
+        engine.cancel(9); // stale: sent after request 9 already finished
+        assert_eq!(engine.generate(&req(1)), Err(LOAD_FAILED.into()));
+        assert_eq!(engine.cancel.load(Ordering::SeqCst), NO_REQ);
+        assert_eq!(engine.generate(&req(9)), Err(LOAD_FAILED.into()));
     }
 
     /// Needs a real model: PARATRANS_TEST_MODEL=/path/translategemma-4b-it-Q4_K_M.gguf cargo test -- --ignored

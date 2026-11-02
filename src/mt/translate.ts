@@ -58,6 +58,6 @@ export async function translateText(
     const message = e instanceof Error ? e.message : String(e);
     return message === "cancelled" ? { ok: false, reason: "cancelled" } : { ok: false, reason: "error", message };
   }
-  const r = restore(cleanOutput(raw), p);
+  const r = restore(cleanOutput(raw, p.masked), p);
   return r.ok ? { ok: true, text: r.text } : { ok: false, reason: "unsafe" };
 }

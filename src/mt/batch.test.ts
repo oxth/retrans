@@ -77,6 +77,38 @@ describe("batch", () => {
     });
   });
 
+  it("stops at the first error that isn't 'too long'", async () => {
+    const session = await open();
+    const seen: string[] = [];
+    const r = await translateMissing(session, missingItems(session, "th", "all"), "th", async (s) => {
+      seen.push(s);
+      return s === "C" ? { ok: false, reason: "error", message: "Couldn't load the model file. Is it a llama.cpp GGUF model?" } : { ok: true, text: `th:${s}` };
+    }, () => {}, new AbortController().signal);
+    expect(seen).toEqual(["A", "C"]);
+    expect(r).toEqual({
+      translated: 1,
+      unsafe: [],
+      failed: [{ id: c("c"), message: "Couldn't load the model file. Is it a llama.cpp GGUF model?" }],
+      skipped: 0,
+      cancelled: false,
+    });
+    expect(session.value(keyId("other", "x"), "th")).toBeUndefined();
+  });
+
+  it("keeps going after 'Text is too long to translate'", async () => {
+    const session = await open();
+    const r = await translateMissing(session, missingItems(session, "th", "all"), "th", async (s) =>
+      s === "A" ? { ok: false, reason: "error", message: "Text is too long to translate" } : { ok: true, text: `th:${s}` },
+    () => {}, new AbortController().signal);
+    expect(r).toEqual({
+      translated: 2,
+      unsafe: [],
+      failed: [{ id: c("a"), message: "Text is too long to translate" }],
+      skipped: 0,
+      cancelled: false,
+    });
+  });
+
   it("stops on abort before the next item", async () => {
     const session = await open();
     const ac = new AbortController();

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -158,8 +158,42 @@ describe("MtSettings", () => {
     await waitFor(() => expect(c.getByRole("radio", { name: "Use this model" })).toBeChecked());
     expect(useMt.getState().settings.modelId).toBe("translategemma-4b");
     expect(screen.getByText("Space used: 2.49 GB")).toBeInTheDocument();
+  });
+
+  it("Delete model asks for confirmation first", async () => {
+    seed({ files: { [GEMMA]: { size: 2489909312, complete: true } } });
+    render(<MtSettings session={session()} />);
+    const c = within(card("TranslateGemma 4B"));
     await userEvent.click(c.getByRole("button", { name: "Delete model" }));
-    expect(native.deleteModel).toHaveBeenCalledWith(GEMMA);
+    let d = screen.getByRole("dialog");
+    expect(within(d).getByText("Delete TranslateGemma 4B? You'll need to download it again (2.49 GB) to use it.")).toBeInTheDocument();
+    await userEvent.click(within(d).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(native.deleteModel).not.toHaveBeenCalled();
+    await userEvent.click(c.getByRole("button", { name: "Delete model" }));
+    d = screen.getByRole("dialog");
+    await userEvent.click(within(d).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(native.deleteModel).toHaveBeenCalledWith(GEMMA));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a paused download offers Resume and Cancel after its file is re-read", async () => {
+    let emit: (e: unknown) => void = () => {};
+    native.onDownload.mockImplementation(async (cb) => {
+      emit = cb;
+      return () => {};
+    });
+    seed({ initialized: false, settings: { accepted: ["translategemma-4b"] } as never });
+    prefs.set("mt", { enabled: true, modelId: null, custom: null, accepted: ["translategemma-4b"] });
+    render(<MtSettings session={session()} />);
+    await waitFor(() => expect(native.onDownload).toHaveBeenCalled());
+    const c = within(card("TranslateGemma 4B"));
+    act(() => emit({ id: "translategemma-4b", state: "progress", received: 5, total: 10 }));
+    expect(c.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    native.status.mockResolvedValue([{ file: GEMMA, size: 5, complete: false }]);
+    act(() => emit({ id: "translategemma-4b", state: "paused", received: 5, total: 10 }));
+    expect(await c.findByRole("button", { name: "Resume" })).toBeInTheDocument();
+    expect(c.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 
   it("custom GGUF: choose file, prompt style, missing file", async () => {

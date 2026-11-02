@@ -40,7 +40,8 @@ export function buildPrompt(
   };
 }
 
-export function cleanOutput(raw: string): string {
+/** Strips chat markup and wrapping quotes the model added (quotes the `source` itself is wrapped in are kept). */
+export function cleanOutput(raw: string, source?: string): string {
   let s = raw;
   const cut = s.search(/<end_of_turn>|<\|im_end\|>/);
   if (cut >= 0) s = s.slice(0, cut);
@@ -48,6 +49,8 @@ export function cleanOutput(raw: string): string {
   const pairs: [string, string][] = [['"', '"'], ["“", "”"], ["「", "」"]];
   for (const [o, c] of pairs) {
     if (s.length >= 2 && s.startsWith(o) && s.endsWith(c)) {
+      const src = source?.trim();
+      if (src && src.length >= 2 && src.startsWith(o) && src.endsWith(c)) return s;
       return s.slice(o.length, s.length - c.length);
     }
   }

@@ -326,16 +326,25 @@ pub fn mt_download_cancel(
 }
 
 #[tauri::command]
-pub fn mt_model_delete(
+pub async fn mt_model_delete(
     app: AppHandle,
     engine: State<'_, Arc<Engine>>,
     file: String,
 ) -> Result<(), String> {
     validate_file(&file)?;
     let path = models_dir(&app)?.join(&file);
-    // Unload first if the engine holds this file: Windows can't delete a memory-mapped file.
-    engine.unload_if(&path);
-    remove_if_exists(&path)
+    let engine = Arc::clone(&engine);
+    // Unloading may wait for a running generation, so keep it off the main thread.
+    tauri::async_runtime::spawn_blocking(move || delete_model_file(&engine, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Blocking: unloads the model first if the engine holds this file (Windows can't delete a
+/// memory-mapped file), then deletes it. A missing file is not an error.
+fn delete_model_file(engine: &Engine, path: &Path) -> Result<(), String> {
+    engine.unload_if(path);
+    remove_if_exists(path)
 }
 
 fn remove_if_exists(path: &Path) -> Result<(), String> {
@@ -612,6 +621,17 @@ mod tests {
             .expect("download did not stop within 2 s");
         assert!(matches!(out, Ok(Outcome::Cancelled)), "{out:?}");
         assert!(!dir.path().join("x.gguf.part").exists());
+    }
+
+    #[test]
+    fn delete_model_file_removes_the_file_and_ignores_a_missing_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("m.gguf");
+        std::fs::write(&path, b"model").unwrap();
+        let engine = Engine::default();
+        assert_eq!(delete_model_file(&engine, &path), Ok(()));
+        assert!(!path.exists());
+        assert_eq!(delete_model_file(&engine, &path), Ok(()));
     }
 
     #[test]

@@ -48,6 +48,11 @@ describe("translateText", () => {
     ).toEqual({ ok: false, reason: "error", message: "Text is too long to translate" });
   });
 
+  it("keeps quotes the source text is wrapped in", async () => {
+    expect(await translateText(fake('"คำพูด"').engine, model, "paraglide", "en", "th", ' "Quoted"')).toEqual({ ok: true, text: ' "คำพูด"' });
+    expect(await translateText(fake('"คำพูด"').engine, model, "paraglide", "en", "th", "Quoted")).toEqual({ ok: true, text: "คำพูด" });
+  });
+
   it("nextReqId increments", () => {
     const a = nextReqId();
     expect(nextReqId()).toBe(a + 1);

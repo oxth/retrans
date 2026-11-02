@@ -91,12 +91,56 @@ describe("suggestions", () => {
     const s = await open(nested());
     const spy = vi.spyOn(s, "setText");
     await userEvent.click(cell("common::only_en", "th"));
-    await userEvent.type(editor(), "abc");
     await userEvent.click(await screen.findByRole("button", { name: "Accept" }));
     expect(s.value("common::only_en", "th")).toEqual({ kind: "text", text: "สวัสดี" });
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith("common::only_en", "th", "สวัสดี", { machine: true });
     noEditor();
+  });
+
+  it("typing hides the suggestion and Cmd+Enter saves the typed text", async () => {
+    mtOn();
+    const s = await open(nested());
+    await userEvent.click(cell("common::only_en", "th"));
+    expect(await screen.findByText("Suggestion: สวัสดี")).toBeInTheDocument();
+    await userEvent.type(editor(), "abc");
+    expect(screen.queryByTestId("suggestion")).toBeNull();
+    await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+    expect(s.value("common::only_en", "th")).toEqual({ kind: "text", text: "abc" });
+    expect(s.meta("common::only_en", "th").machine).toBe(false);
+    noEditor();
+  });
+
+  it("typing then undoing back to the initial text shows the suggestion again", async () => {
+    mtOn();
+    await open(nested());
+    await userEvent.click(cell("common::only_en", "th"));
+    expect(await screen.findByText("Suggestion: สวัสดี")).toBeInTheDocument();
+    await userEvent.type(editor(), "a");
+    expect(screen.queryByTestId("suggestion")).toBeNull();
+    await userEvent.type(editor(), "{Backspace}");
+    expect(screen.getByText("Suggestion: สวัสดี")).toBeInTheDocument();
+  });
+
+  it("Cmd+Enter while loading commits the typed draft like Enter", async () => {
+    mtOn(() => new Promise<string>(() => {}));
+    const s = await open(nested());
+    await userEvent.click(cell("common::only_en", "th"));
+    expect(await screen.findByText("Translating…")).toBeInTheDocument();
+    await userEvent.type(editor(), "mine");
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    expect(s.value("common::only_en", "th")).toEqual({ kind: "text", text: "mine" });
+    expect(s.meta("common::only_en", "th").machine).toBe(false);
+    noEditor();
+  });
+
+  it("Cmd+Shift+Enter does not accept the suggestion", async () => {
+    mtOn();
+    const s = await open(nested());
+    await userEvent.click(cell("common::only_en", "th"));
+    expect(await screen.findByText("Suggestion: สวัสดี")).toBeInTheDocument();
+    await userEvent.keyboard("{Meta>}{Shift>}{Enter}{/Shift}{/Meta}");
+    expect(s.value("common::only_en", "th")).toBeUndefined();
   });
 
   it("no suggestion for translated cells, the base locale, complex values, or when MT is off", async () => {
@@ -126,14 +170,16 @@ describe("suggestions", () => {
     expect(screen.queryByTestId("suggestion")).toBeNull();
   });
 
-  it("unsafe output shows the message and Ctrl+Enter does nothing", async () => {
+  it("unsafe output shows the message and Ctrl+Enter only commits the unchanged draft", async () => {
     mtOn(async () => "รายการ");
     const s = await open(nested());
+    const spy = vi.spyOn(s, "setText");
     await userEvent.click(cell("common::items_other", "th"));
     expect(await screen.findByText("Couldn't translate safely")).toBeInTheDocument();
     await userEvent.keyboard("{Control>}{Enter}{/Control}");
     expect(s.value("common::items_other", "th")).toBeUndefined();
-    expect(editor()).toBeInTheDocument();
+    expect(spy).not.toHaveBeenCalled();
+    noEditor();
   });
 
   it("leaving the cell cancels the request and the late result never appears", async () => {

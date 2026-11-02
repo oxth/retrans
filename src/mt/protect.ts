@@ -13,9 +13,11 @@ export function token(n: number): string {
 
 const TAG = String.raw`<\/?[A-Za-z0-9][\w-]*(?:\s[^<>]*)?\/?>`;
 const LITERAL = String.raw`\[\[\d+\]\]`;
+/** Chat-template special tokens (`<|im_end|>`…) must never reach the prompt as live text. */
+const SPECIAL = String.raw`<\|[^|>]*\|>`;
 const PATTERNS: Record<Format, RegExp> = {
-  "next-i18next": new RegExp(String.raw`\{\{[^}]*\}\}|\$t\([^)]*\)|${TAG}|${LITERAL}`, "g"),
-  paraglide: new RegExp(String.raw`\{\s*[A-Za-z_]\w*\s*\}|${TAG}|${LITERAL}`, "g"),
+  "next-i18next": new RegExp(String.raw`\{\{[^}]*\}\}|\$t\([^)]*\)|${TAG}|${LITERAL}|${SPECIAL}`, "g"),
+  paraglide: new RegExp(String.raw`\{\s*[A-Za-z_]\w*\s*\}|${TAG}|${LITERAL}|${SPECIAL}`, "g"),
 };
 
 export function protect(format: Format, text: string): Protected {

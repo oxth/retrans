@@ -30,6 +30,7 @@ const cardCls = "space-y-2 rounded-lg border border-gray-200 p-3";
 
 function ModelCard({ model, onDownload }: { model: CatalogModel; onDownload: (m: CatalogModel) => void }) {
   const s = useMt();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const dl = s.downloads[model.id];
   const file = s.files[model.file];
   const running = dl?.state === "progress";
@@ -77,11 +78,30 @@ function ModelCard({ model, onDownload }: { model: CatalogModel; onDownload: (m:
             <input type="radio" name="mt-model" checked={s.settings.modelId === model.id} onChange={() => void s.selectModel(model.id)} />
             Use this model
           </label>
-          <button className={btnGhost} onClick={() => void s.deleteModel(model.id)}>Delete model</button>
+          <button className={btnGhost} onClick={() => setConfirmDelete(true)}>Delete model</button>
         </div>
       )}
       {!running && !complete && !partial && dl?.state !== "error" && (
         <button className={btnPrimary} onClick={() => onDownload(model)}>Download</button>
+      )}
+      {confirmDelete && (
+        <Dialog title="Delete model" onClose={() => setConfirmDelete(false)}>
+          <p className="text-sm">
+            Delete {model.name}? You'll need to download it again ({formatBytes(model.sizeBytes)}) to use it.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button className={btnGhost} onClick={() => setConfirmDelete(false)}>Cancel</button>
+            <button
+              className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white"
+              onClick={() => {
+                setConfirmDelete(false);
+                void s.deleteModel(model.id);
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        </Dialog>
       )}
     </div>
   );

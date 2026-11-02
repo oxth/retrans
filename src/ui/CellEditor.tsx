@@ -26,6 +26,8 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
   const ref = useRef<HTMLTextAreaElement>(null);
   const [error, setError] = useState<string | null>(null);
   const draft = useRef(initial);
+  // Once the user has typed, their text wins: the suggestion is hidden and can't be accepted.
+  const [edited, setEdited] = useState(false);
   const done = useRef(false); // committed or cancelled: nothing left to flush
   const composing = useRef(false);
   const latest = useRef({ onCommit, complex, initial, onFlushError });
@@ -91,8 +93,11 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
     }
   };
 
+  const canAccept = () =>
+    !done.current && suggestion?.status === "ready" && !!onAcceptSuggestion && (ref.current?.value ?? draft.current) === initial;
+
   const accept = () => {
-    if (done.current || suggestion?.status !== "ready" || !onAcceptSuggestion) return;
+    if (!canAccept() || suggestion?.status !== "ready" || !onAcceptSuggestion) return;
     try {
       onAcceptSuggestion(suggestion.text);
       done.current = true;
@@ -123,6 +128,7 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
         }}
         onInput={(e) => {
           draft.current = e.currentTarget.value;
+          setEdited(draft.current !== initial);
           grow();
           if (error) setError(null);
         }}
@@ -138,12 +144,11 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
                 void err;
               }
             }
-          } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && suggestion) {
-            e.preventDefault();
-            accept();
           } else if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            if (tryCommit()) onRefocus?.();
+            // Cmd/Ctrl+Enter accepts a ready suggestion over untouched text; otherwise it's Enter.
+            if ((e.metaKey || e.ctrlKey) && canAccept()) accept();
+            else if (tryCommit()) onRefocus?.();
           } else if (e.key === "Escape") {
             e.preventDefault();
             done.current = true;
@@ -160,7 +165,7 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
           }
         }}
       />
-      {suggestion && <SuggestionBox state={suggestion} onAccept={accept} />}
+      {suggestion && !edited && <SuggestionBox state={suggestion} onAccept={accept} />}
       {error && (
         <div role="alert" className="mt-0.5 text-xs text-red-600">
           {error}

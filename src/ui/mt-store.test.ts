@@ -125,4 +125,63 @@ describe("useMt", () => {
     expect(native.deleteModel).toHaveBeenCalledWith(GEMMA);
     expect(activeModel(useMt.getState())).toBeNull();
   });
+
+  it("refreshes files when a download pauses or fails", async () => {
+    await useMt.getState().init();
+    emit({ id: "translategemma-4b", state: "progress", received: 5, total: 10 });
+    native.status.mockResolvedValue([{ file: GEMMA, size: 5, complete: false }]);
+    emit({ id: "translategemma-4b", state: "paused", received: 5, total: 10 });
+    await vi.waitFor(() => expect(useMt.getState().files[GEMMA]).toEqual({ size: 5, complete: false }));
+    native.status.mockResolvedValue([{ file: GEMMA, size: 6, complete: false }]);
+    emit({ id: "translategemma-4b", state: "error", received: 6, total: 10, message: "Network" });
+    await vi.waitFor(() => expect(useMt.getState().files[GEMMA]).toEqual({ size: 6, complete: false }));
+  });
+
+  it("selects a finished download when no usable model is selected", async () => {
+    await useMt.getState().init();
+    native.status.mockResolvedValue(gemmaStatus);
+    emit({ id: "translategemma-4b", state: "done", received: 10, total: 10 });
+    await vi.waitFor(() => expect(useMt.getState().settings.modelId).toBe("translategemma-4b"));
+    expect((prefs.get("mt") as { modelId: string }).modelId).toBe("translategemma-4b");
+  });
+
+  it("replaces a selected model whose file is missing with the finished download", async () => {
+    prefs.set("mt", { enabled: true, modelId: "qwen3-1.7b", custom: null, accepted: [] });
+    await useMt.getState().init();
+    native.status.mockResolvedValue(gemmaStatus);
+    emit({ id: "translategemma-4b", state: "done", received: 10, total: 10 });
+    await vi.waitFor(() => expect(useMt.getState().settings.modelId).toBe("translategemma-4b"));
+  });
+
+  it("keeps a usable selected model when another download finishes", async () => {
+    const qwen = findModel("qwen3-1.7b")!.file;
+    prefs.set("mt", { enabled: true, modelId: "qwen3-1.7b", custom: null, accepted: [] });
+    native.status.mockResolvedValue([{ file: qwen, size: 1, complete: true }]);
+    await useMt.getState().init();
+    native.status.mockResolvedValue([{ file: qwen, size: 1, complete: true }, ...gemmaStatus]);
+    emit({ id: "translategemma-4b", state: "done", received: 10, total: 10 });
+    await vi.waitFor(() => expect(useMt.getState().files[GEMMA]?.complete).toBe(true));
+    expect(useMt.getState().settings.modelId).toBe("qwen3-1.7b");
+  });
+
+  it("keeps a usable custom model when a download finishes", async () => {
+    prefs.set("mt", { enabled: true, modelId: "custom", custom: { path: "/x/m.gguf", template: "qwen3" }, accepted: [] });
+    fsExists.mockResolvedValue(true);
+    await useMt.getState().init();
+    native.status.mockResolvedValue(gemmaStatus);
+    emit({ id: "translategemma-4b", state: "done", received: 10, total: 10 });
+    await vi.waitFor(() => expect(useMt.getState().files[GEMMA]?.complete).toBe(true));
+    expect(useMt.getState().settings.modelId).toBe("custom");
+  });
+
+  it("turning off pauses running downloads", async () => {
+    native.pause.mockResolvedValue(undefined);
+    await useMt.getState().init();
+    await useMt.getState().setEnabled(true);
+    emit({ id: "translategemma-4b", state: "progress", received: 5, total: 10 });
+    emit({ id: "qwen3-1.7b", state: "paused", received: 5, total: 10 });
+    await useMt.getState().setEnabled(false);
+    expect(native.pause).toHaveBeenCalledTimes(1);
+    expect(native.pause).toHaveBeenCalledWith("translategemma-4b");
+  });
 });

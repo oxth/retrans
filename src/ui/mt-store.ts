@@ -58,6 +58,20 @@ export const useMt = create<MtState>((set, get) => {
     }
   };
 
+  // a finished download becomes the selected model unless a usable one is already selected
+  const autoSelect = async (id: string) => {
+    const s = get();
+    const m = findModel(id);
+    if (!m || !s.files[m.file]?.complete) return;
+    const { modelId, custom } = s.settings;
+    if (modelId === "custom" && custom && !s.customMissing) return;
+    if (modelId && modelId !== "custom") {
+      const cur = findModel(modelId);
+      if (cur && s.files[cur.file]?.complete) return;
+    }
+    await s.selectModel(id);
+  };
+
   return {
     initialized: false,
     settings: { enabled: false, modelId: null, custom: null, accepted: [] },
@@ -83,7 +97,8 @@ export const useMt = create<MtState>((set, get) => {
           set((s) => ({
             downloads: { ...s.downloads, [e.id]: { received: e.received, total: e.total, state: e.state, message: e.message } },
           }));
-          if (e.state === "done" || e.state === "cancelled") void get().refresh();
+          if (e.state === "done") void get().refresh().then(() => autoSelect(e.id));
+          else if (e.state !== "progress") void get().refresh();
         });
       } catch (e) {
         warn("download events", e);
@@ -92,7 +107,10 @@ export const useMt = create<MtState>((set, get) => {
 
     async setEnabled(on) {
       await save({ ...get().settings, enabled: on });
-      if (!on) await unload();
+      if (on) return;
+      const running = Object.entries(get().downloads).filter(([, d]) => d.state === "progress");
+      await Promise.all(running.map(([id]) => get().pause(id)));
+      await unload();
     },
 
     async selectModel(id) {

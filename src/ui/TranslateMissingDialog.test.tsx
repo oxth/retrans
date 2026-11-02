@@ -132,6 +132,38 @@ describe("TranslateMissingDialog", () => {
     expect(s.value(c("c"), "th")).toBeUndefined();
   });
 
+  it("shows the first key as soon as the run starts", async () => {
+    mtOn(() => new Promise<string>(() => {}));
+    const s = await openSession();
+    render(<TranslateMissingDialog session={s} onClose={() => {}} defaultLocale="th" />);
+    await userEvent.selectOptions(screen.getByLabelText("Namespace"), "common");
+    await userEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(await screen.findByText("0 of 2")).toBeInTheDocument();
+    expect(screen.getByText("a")).toBeInTheDocument();
+  });
+
+  it("stops on a model error and shows its message", async () => {
+    mtOn(async () => {
+      throw new Error("Couldn't load the model file. Is it a llama.cpp GGUF model?");
+    });
+    const s = await openSession();
+    render(<TranslateMissingDialog session={s} onClose={() => {}} defaultLocale="th" />);
+    await userEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(await screen.findByText("1 failed.")).toBeInTheDocument();
+    expect(screen.getByText("Couldn't load the model file. Is it a llama.cpp GGUF model?")).toBeInTheDocument();
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("an unexpected throw still ends in the summary", async () => {
+    mtOn(async () => undefined as unknown as string);
+    const s = await openSession();
+    render(<TranslateMissingDialog session={s} onClose={() => {}} defaultLocale="th" />);
+    await userEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(await screen.findByText(/Translated 0\./)).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+  });
+
   it("unsafe results are listed", async () => {
     mtOn(async () => "รายการ");
     const s = await openSession({ n: "{{count}} items" }, {});

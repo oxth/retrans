@@ -26,3 +26,9 @@ it("cleans model output", () => {
   expect(cleanOutput("<think>\nhmm\n</think>\n\n“Hello”<|im_end|>")).toBe("Hello");
   expect(cleanOutput('  "He said \\"hi\\""  ')).toBe('He said \\"hi\\"');
 });
+it("keeps wrapping quotes when the source is wrapped in the same pair", () => {
+  expect(cleanOutput('"Zitiert"', '"Quoted"')).toBe('"Zitiert"');
+  expect(cleanOutput("“Zitiert”", "“Quoted”")).toBe("“Zitiert”");
+  expect(cleanOutput('"Zitiert"', "Quoted")).toBe("Zitiert");
+  expect(cleanOutput('"Zitiert"', "“Quoted”")).toBe("Zitiert");
+});

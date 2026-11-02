@@ -47,22 +47,33 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
     if (!model || !items.length) return;
     const ac = new AbortController();
     abort.current = ac;
-    setPhase({ kind: "running", done: 0, total: items.length, current: null });
-    const result = await translateMissing(
-      session,
-      items,
-      locale,
-      (source) => {
-        const id = nextReqId();
-        reqId.current = id;
-        return translateText(engine, model, format, baseLocale, locale, source, id);
-      },
-      (pr) => alive.current && setPhase({ kind: "running", ...pr }),
-      ac.signal,
-    );
-    reqId.current = null;
-    abort.current = null;
-    if (alive.current) setPhase({ kind: "done", result });
+    const first = items[0].id;
+    setPhase({ kind: "running", done: 0, total: items.length, current: first });
+    let result: BatchResult = { translated: 0, unsafe: [], failed: [], skipped: 0, cancelled: true };
+    try {
+      result = await translateMissing(
+        session,
+        items,
+        locale,
+        async (source) => {
+          const id = nextReqId();
+          reqId.current = id;
+          try {
+            return await translateText(engine, model, format, baseLocale, locale, source, id);
+          } catch (e) {
+            return { ok: false, reason: "error", message: e instanceof Error ? e.message : String(e) };
+          }
+        },
+        (pr) => alive.current && setPhase({ kind: "running", ...pr, current: pr.current ?? (pr.done === 0 ? first : null) }),
+        ac.signal,
+      );
+    } catch (e) {
+      console.warn("[mt] batch translation failed", e);
+    } finally {
+      reqId.current = null;
+      abort.current = null;
+      if (alive.current) setPhase({ kind: "done", result });
+    }
   };
 
   const cancel = () => {
@@ -132,7 +143,16 @@ function Summary({ result: r, onClose }: { result: BatchResult; onClose: () => v
       {r.cancelled && <p>Stopped.</p>}
       <p>Translated {r.translated}.</p>
       {r.unsafe.length > 0 && <p>{r.unsafe.length} couldn't be translated safely.</p>}
-      {r.failed.length > 0 && <p>{r.failed.length} failed.</p>}
+      {r.failed.length > 0 && (
+        <>
+          <p>{r.failed.length} failed.</p>
+          <ul className="text-xs text-red-600">
+            {[...new Set(r.failed.map((f) => f.message))].map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        </>
+      )}
       {r.skipped > 0 && <p>{r.skipped} skipped (changed while running).</p>}
       {keys.length > 0 && (
         <ul className="max-h-40 overflow-auto font-mono text-xs text-gray-600">

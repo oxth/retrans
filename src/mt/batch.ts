@@ -4,6 +4,8 @@ import type { ProjectSession } from "../core/session";
 import { sourceText } from "./source";
 import type { TranslateResult } from "./translate";
 
+const TOO_LONG = "Text is too long to translate";
+
 export interface BatchItem {
   id: KeyId;
   source: string;
@@ -73,6 +75,9 @@ export async function translateMissing(
       result.unsafe.push(id);
     } else if (r.reason === "error") {
       result.failed.push({ id, message: r.message });
+      // Only an over-long item is specific to that item; any other error (model won't load,
+      // engine crashed…) would fail every remaining item the same way.
+      if (r.message !== TOO_LONG) break;
     } else {
       result.cancelled = true;
       break;
