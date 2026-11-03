@@ -97,10 +97,24 @@ function scheduleJournal(session: ProjectSession, fs: Fs): void {
   }, JOURNAL_DELAY_MS);
 }
 
+/**
+ * The sync from source held back while a recovery journal waits for Restore / Discard: syncing
+ * first would merge the source against values the journal is about to replace (and mark the
+ * source as merged), so a journaled edit could silently overwrite a source change.
+ */
+let deferredSync: (() => void) | null = null;
+
+function runDeferredSync(): void {
+  const run = deferredSync;
+  deferredSync = null;
+  run?.();
+}
+
 let stopWatch: (() => Promise<void>) | null = null;
 let unsubscribe: (() => void) | null = null;
 
 async function teardown(): Promise<void> {
+  deferredSync = null;
   cancelJournal();
   journalFile = null;
   unsubscribe?.();
@@ -204,7 +218,10 @@ export const useApp = create<AppState>((set, get) => ({
         },
       );
     };
-    if (sourceDir !== undefined) sync();
+    if (sourceDir !== undefined) {
+      if (recovery) deferredSync = sync; // runs after Restore / Discard
+      else sync();
+    }
 
     try {
       const scope = {
@@ -213,7 +230,8 @@ export const useApp = create<AppState>((set, get) => ({
       };
       const stop = await watchDir(root, (paths) => {
         if (get().session !== session) return;
-        if (sourceDir !== undefined && isSourceChange(paths, root, sourceDir)) sync();
+        // While a recovery is pending the deferred sync covers source changes too.
+        if (sourceDir !== undefined && isSourceChange(paths, root, sourceDir) && !deferredSync) sync();
         if (!isRelevantChange(paths, scope)) return;
         session.reloadFromDisk().then(
           (c) => {
@@ -250,12 +268,18 @@ export const useApp = create<AppState>((set, get) => ({
       set({ recovery: null, error: `Could not restore unsaved changes: ${msg(e)}` });
       await dropJournal(fs, recovery.path).catch(() => {});
     }
+    // After the journal: an edit it restored that the source also changed is a source conflict.
+    if (get().session === session) runDeferredSync();
   },
 
   async discardRecovery() {
     const { fs, recovery } = get();
-    if (recovery) await dropJournal(fs, recovery.path);
-    set({ recovery: null });
+    try {
+      if (recovery) await dropJournal(fs, recovery.path);
+    } finally {
+      set({ recovery: null });
+      runDeferredSync();
+    }
   },
 
   async save() {

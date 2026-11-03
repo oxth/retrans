@@ -64,6 +64,7 @@ function projectEqual(a: StateFile["project"], b: StateFile["project"]): boolean
 export interface SourceReadOnly { id: KeyId; reason: string; locale?: string }
 
 export const READ_ONLY_MESSAGE = "Can't edit here (computed in code)";
+export const RENAME_READ_ONLY_MESSAGE = "Can't rename — this key is computed in code.";
 
 export class ProjectSession {
   readonly fs: Fs;
@@ -458,6 +459,7 @@ export class ProjectSession {
     const ignore = new Set(pairs.keys());
     for (const target of pairs.values()) checkCollision(this.data.keyOrder, ns, parseKeyId(target).key, ignore);
     for (const src of pairs.keys()) this.assertWritableKey(src);
+    if ([...pairs.keys()].some((src) => this.roCells.some((r) => r.id === src))) throw new Error(RENAME_READ_ONLY_MESSAGE);
 
     for (const [src, dst] of pairs) {
       const cells = this.data.values.get(src);
@@ -465,6 +467,7 @@ export class ProjectSession {
       if (cells) this.data.values.set(dst, cells);
       renameInState(this.state, src, dst);
     }
+    if (this.wsMeta) this.renameInMeta(pairs);
     this.setKeyOrder(this.data.keyOrder.map((k) => pairs.get(k) ?? k));
     this.stateTouched = true;
     this.emit();
@@ -484,6 +487,21 @@ export class ProjectSession {
     this.stateTouched = true;
     if (this.wsMeta) this.forgetInMeta(drop);
     this.emit();
+  }
+
+  /** A renamed key takes its workspace meta along (empty-key row, draft, marker, removed-in-source). */
+  private renameInMeta(pairs: Map<KeyId, KeyId>): void {
+    const meta = this.wsMeta!;
+    const ids = (list: KeyId[]) => [...new Set(list.map((id) => pairs.get(id) ?? id))];
+    const table = <T>(t: Record<KeyId, T>) =>
+      Object.fromEntries(Object.entries(t).map(([id, v]) => [pairs.get(id) ?? id, v])) as Record<KeyId, T>;
+    this.wsMeta = {
+      ...meta,
+      emptyKeys: ids(meta.emptyKeys).sort(),
+      removedInSource: ids(meta.removedInSource),
+      drafts: table(meta.drafts),
+      markers: table(meta.markers),
+    };
   }
 
   /** A deleted key leaves the workspace meta too (so it doesn't come back as a row or a mark). */

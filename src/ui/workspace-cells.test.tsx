@@ -26,7 +26,8 @@ vi.mock("../platform/watch", () => ({
 
 import { keyId } from "../core/model";
 import { ProjectSession } from "../core/session";
-import { readJournal } from "../core/recovery";
+import { journalPath, readJournal, writeJournal } from "../core/recovery";
+import { diffPackage } from "../package/diff";
 import { detectProject } from "../formats/detect";
 import type { MemoryFs } from "../platform/memory-fs";
 import { openFixtureWorkspace } from "../test/workspace-fixture";
@@ -255,5 +256,100 @@ describe("recovery journal and workspace meta", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("recovery pending on open: sync waits for the user", () => {
+  const SAVE = keyId("button", "button_save");
+  /** Journal: en button_save "Save" → "Store" (unsaved). Source then changes it to "Save it". */
+  async function journalAndSourceChange(fs: MemoryFs) {
+    const d = (await detectProject(fs, "/project"))!;
+    const a = await ProjectSession.open(fs, "/project", d, { baseLocale: "th", localesPath: d.localesPath });
+    a.setText(SAVE, "en", "Store");
+    await writeJournal(fs, journalPath("/appdata", "/project"), a.toJournal());
+    await replaceIn(fs, `${LOCALES}/button.tsx`, "button_save: 'Save',", "button_save: 'Save it',");
+  }
+
+  it("restore: the journaled edit and the source change surface as a source conflict", async () => {
+    const { session } = await openWs(journalAndSourceChange, { waitSync: false });
+    expect(useApp.getState().recovery).not.toBeNull();
+    // Sync deferred: nothing taken from the source yet; watcher source events ignored too.
+    act(() => watch.cb!([`${LOCALES}/button.tsx`]));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(session.value(SAVE, "en")).toEqual({ kind: "text", text: "Save" });
+    expect(session.pendingBaseline).toBeNull();
+    await act(async () => {
+      await useApp.getState().restoreRecovery();
+    });
+    await waitFor(() => expect(useApp.getState().conflicts).toEqual([
+      { id: SAVE, locale: "en", mine: { kind: "text", text: "Store" }, theirs: { kind: "text", text: "Save it" }, origin: "source" },
+    ]));
+    expect(session.value(SAVE, "en")).toEqual({ kind: "text", text: "Store" });
+  });
+
+  it("discard: the sync then takes the source change", async () => {
+    const { session } = await openWs(journalAndSourceChange, { waitSync: false });
+    expect(useApp.getState().recovery).not.toBeNull();
+    await act(async () => {
+      await useApp.getState().discardRecovery();
+    });
+    await waitFor(() => expect(session.value(SAVE, "en")).toEqual({ kind: "text", text: "Save it" }));
+    expect(useApp.getState().conflicts).toEqual([]);
+  });
+});
+
+describe("renaming a workspace key", () => {
+  it("moves emptyKeys, drafts and markers to the new id; the row survives save and reopen", async () => {
+    const { fs, session } = await openFixtureWorkspace();
+    const from = keyId("common", "only_en");
+    const to = keyId("common", "only_english");
+    session.renameKey(from, "only_english");
+    const m = session.workspace!;
+    expect(m.emptyKeys).toEqual([to]);
+    expect(m.drafts[to]).toEqual({ en: "Only EN" });
+    expect(m.markers[to]).toEqual({ en: "Only EN (EN)" });
+    expect(m.drafts[from]).toBeUndefined();
+    expect(m.markers[from]).toBeUndefined();
+    expect(session.data.keyOrder).toContain(to);
+    expect(session.data.keyOrder).not.toContain(from);
+    expect(session.toJournal().workspaceMeta).toMatchObject({ emptyKeys: [to] });
+    await session.save();
+    const d = (await detectProject(fs, "/project"))!;
+    const b = await ProjectSession.open(fs, "/project", d, { baseLocale: "th", localesPath: d.localesPath });
+    expect(b.data.keyOrder).toContain(to);
+    expect(b.data.keyOrder).not.toContain(from);
+  });
+
+  it("moves removedInSource and a draft of a key with values", async () => {
+    const { session } = await openFixtureWorkspace();
+    const from = keyId("button", "button_reset_password");
+    const to = keyId("button", "button_reset_pw");
+    session.setWorkspaceMeta({ removedInSource: [from] });
+    session.renameKey(from, "button_reset_pw");
+    expect(session.workspace!.removedInSource).toEqual([to]);
+    expect(session.workspace!.drafts[to]).toEqual({ en: "Reset password" });
+    expect(session.workspace!.markers[to]).toEqual({ en: "Reset password (EN)" });
+  });
+
+  it("refuses to rename a key computed in code", async () => {
+    const { session } = await openFixtureWorkspace();
+    expect(() => session.renameKey(keyId("dashboardMaguro", "maguro_brand"), "brand")).toThrow(
+      "Can't rename — this key is computed in code.",
+    );
+    expect(session.data.keyOrder).toContain(keyId("dashboardMaguro", "maguro_brand"));
+  });
+});
+
+describe("translator package import into a workspace", () => {
+  it("skips read-only cells (read-only-file) and applies the rest", async () => {
+    const cur = (await openFixtureWorkspace()).session;
+    const inc = (await openFixtureWorkspace()).session;
+    const brand = keyId("dashboardMaguro", "maguro_brand");
+    const ok = keyId("button", "button_ok");
+    inc.importCell(brand, "en", { kind: "text", text: "Brand" }, undefined);
+    inc.importCell(ok, "en", { kind: "text", text: "Okay" }, undefined);
+    const diff = diffPackage(cur, inc, null);
+    expect(diff.items.map((i) => [i.id, i.locale])).toEqual([[ok, "en"]]);
+    expect(diff.skipped).toEqual([{ id: brand, locale: "en", reason: "read-only-file" }]);
   });
 });
