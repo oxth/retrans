@@ -65,7 +65,7 @@ A translator package is a `.zip` that is a complete, openable project: the local
 
 ## First launch of an unsigned build
 
-The macOS download is for Apple Silicon Macs (M1 and later) only.
+The macOS download is for Apple Silicon Macs (M1 and later) running macOS 11 Big Sur or newer.
 
 Releases are not code-signed for the OS, so the system warns on first launch.
 
