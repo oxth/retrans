@@ -430,6 +430,41 @@ describe("generated TypeScript files", () => {
   });
 });
 
+describe("performance", () => {
+  it("plans a write-back of a 5,000-key split + 5,000-key table source in under 500 ms", async () => {
+    const R = "/p";
+    const N = 5000;
+    const keys = Array.from({ length: N }, (_, i) => i);
+    const split = [
+      "export const bigTH = {", ...keys.map((i) => `  k_${i}: 'ค่า ${i}',`), "};", "",
+      "export const bigEN = {", ...keys.map((i) => `  k_${i}: 'Value ${i}',`), "};", "",
+    ].join("\n");
+    const table = [
+      "import { mapLocale } from './mapLocale';", "", "const table = {",
+      ...keys.map((i) => `  t_${i}: { th: 'ตาราง ${i}', en: 'Table ${i}' },`), "};", "",
+      "export const tableTH = mapLocale(table, 'th');", "export const tableEN = mapLocale(table, 'en');", "",
+    ].join("\n");
+    const fs = new MemoryFs({ [`${R}/loc/big.tsx`]: split, [`${R}/loc/table.ts`]: table });
+    const source = await importTsLocales(fs, R, "loc", "th");
+    // Planning reads only the session's values and the stored baseline: no need to save first.
+    const s = await ProjectSession.fromImport(fs, R, source, { name: "big", localesDir: "loc", baseLocale: "th" });
+    await fs.writeTextAtomic(`${R}/${BASELINE_PATH}`, serializeBaseline(source.baseline));
+    expect(s.data.keyOrder).toHaveLength(2 * N);
+    s.batch(() => {
+      for (const i of keys) {
+        s.setText(keyId("big", `k_${i}`), "en", `New ${i}`);
+        s.setText(keyId("table", `t_${i}`), "en", `New table ${i}`);
+      }
+    });
+    const t = performance.now();
+    const plan = await planExport(s, { kind: "ts-writeback" }, source);
+    const ms = performance.now() - t;
+    expect(plan.blocked).toBeUndefined();
+    expect(plan.files).toHaveLength(2);
+    expect(ms).toBeLessThan(500);
+  });
+});
+
 describe("writeExportPlan: failures", () => {
   it("aborts before writing anything when a write-back file changed since planning", async () => {
     const w = await setup();

@@ -285,11 +285,12 @@ async function planTsSource(
   const rows = rowsByGroup(session);
   const sessionLocales = session.data.locales;
 
-  const outputs: Array<{ relPath: string; text: string }> = [];
+  /** Every module as it will be after the export; `module` is set when it didn't change. */
+  const outputs: Output[] = [];
   for (const { relPath, module, text } of source.modules.values()) {
     const ids = (rows.get(module.group) ?? []).filter((id) => !removed.has(id));
     const out = applyTsEdits(text, module, moduleEdits(session, module, ids, removed, renamedOld, renamedNew, deleted));
-    outputs.push({ relPath, text: out });
+    outputs.push(out === text ? { relPath, text: out, module } : { relPath, text: out });
     if (writeback && out === text) continue;
     plan.files.push({ path: joinPath(outRoot, relPath), text: out, ...(writeback ? { expected: text } : {}) });
   }
@@ -339,12 +340,12 @@ async function planTsSource(
   plan.leftOutLocales = sessionLocales.filter((l) => !source.locales.includes(l));
   if (plan.leftOutLocales.length > 0) plan.leftOutSnippet = languageSnippet(plan.leftOutLocales, source.locales);
   if (writeback && plan.files.length > 0) {
-    plan.baseline = { path: joinPath(root, BASELINE_PATH), text: serializeBaseline(baselineOf(outputs)) };
+    plan.baseline = { path: joinPath(root, BASELINE_PATH), text: serializeBaseline(baselineOf(parsed(outputs))) };
   }
   if (writeback) {
     // Done once the old key is gone from the written source (a rename of a key added in Retrans
     // never mapped a source key). Unreadable files were not touched: their renames stay.
-    const after = keysOf(outputs);
+    const after = keysOf(parsed(outputs));
     const applied = Object.keys(meta.renames).filter(
       (from) => !erroredGroups.has(parseKeyId(from).ns) && !after.has(from),
     );
@@ -374,12 +375,18 @@ function renameBaseline(b: Baseline, map: Map<KeyId, KeyId>): Baseline {
   return out;
 }
 
-/** Every key id the module texts define (values, `undefined`s, read-only entries). */
-function keysOf(outputs: Array<{ relPath: string; text: string }>): Set<KeyId> {
+type Output = { relPath: string; text: string; module?: LocaleModule | null };
+
+/** Each output's module, parsed once (unchanged outputs already have theirs). */
+function parsed(outputs: Output[]): LocaleModule[] {
+  for (const o of outputs) if (o.module === undefined) o.module = parseLocaleModule(o.text, o.relPath);
+  return outputs.flatMap((o) => (o.module ? [o.module] : []));
+}
+
+/** Every key id the modules define (values, `undefined`s, read-only entries). */
+function keysOf(modules: LocaleModule[]): Set<KeyId> {
   const out = new Set<KeyId>();
-  for (const { relPath, text } of outputs) {
-    const module = parseLocaleModule(text, relPath);
-    if (!module) continue;
+  for (const module of modules) {
     for (const e of module.entries) out.add(keyId(module.group, e.key));
     for (const r of module.readOnly) out.add(keyId(module.group, r.key));
     for (const k of Object.keys(module.pairObjects ?? {})) out.add(keyId(module.group, k));
@@ -387,12 +394,10 @@ function keysOf(outputs: Array<{ relPath: string; text: string }>): Set<KeyId> {
   return out;
 }
 
-/** The baseline `importTsLocales` would record for these module texts. */
-function baselineOf(outputs: Array<{ relPath: string; text: string }>): Baseline {
+/** The baseline `importTsLocales` would record for these modules. */
+function baselineOf(modules: LocaleModule[]): Baseline {
   const out: Baseline = {};
-  for (const { relPath, text } of outputs) {
-    const module = parseLocaleModule(text, relPath);
-    if (!module) continue;
+  for (const module of modules) {
     for (const e of module.entries) {
       if (!e.undefinedLiteral) (out[keyId(module.group, e.key)] ??= {})[e.locale] = e.value;
     }
@@ -412,29 +417,36 @@ function moduleEdits(
   const { group } = module;
   const markers = session.workspace?.markers ?? {};
   const sessionLocales = session.data.locales;
-  const entry = (key: string, loc: string) => module.entries.find((e) => e.key === key && e.locale === loc);
+  // Lookups by key (the first entry per key and language, as a linear search would find).
+  const entries = new Map<string, Map<string, LocaleModule["entries"][number]>>();
+  for (const e of module.entries) {
+    const byLoc = entries.get(e.key) ?? new Map();
+    if (!byLoc.has(e.locale)) byLoc.set(e.locale, e);
+    entries.set(e.key, byLoc);
+  }
+  const readOnly = new Map<string, LocaleModule["readOnly"]>();
+  for (const r of module.readOnly) readOnly.set(r.key, [...(readOnly.get(r.key) ?? []), r]);
+  const entry = (key: string, loc: string) => entries.get(key)?.get(loc);
   const isReal = (key: string, loc: string) => {
     const e = entry(key, loc);
     return e !== undefined && !e.undefinedLiteral && !isMarker(e.value, loc);
   };
-  const hasReadOnly = (key: string) => module.readOnly.some((r) => r.key === key);
+  const hasReadOnly = (key: string) => readOnly.has(key);
   const readOnlyCell = (key: string, loc: string) =>
-    module.readOnly.some((r) => r.key === key && (module.style === "table" || r.locale === undefined || r.locale === loc));
+    (readOnly.get(key) ?? []).some((r) => module.style === "table" || r.locale === undefined || r.locale === loc);
 
-  const sourceKeys: string[] = [];
-  const addSourceKey = (k: string) => {
-    if (!sourceKeys.includes(k)) sourceKeys.push(k);
-  };
-  for (const e of module.entries) addSourceKey(e.key);
-  for (const r of module.readOnly) addSourceKey(r.key);
-  for (const k of Object.keys(module.pairObjects ?? {})) addSourceKey(k);
+  // In source order (a Set keeps insertion order).
+  const sourceKeys = new Set<string>();
+  for (const e of module.entries) sourceKeys.add(e.key);
+  for (const r of module.readOnly) sourceKeys.add(r.key);
+  for (const k of Object.keys(module.pairObjects ?? {})) sourceKeys.add(k);
 
   const wsKeys = new Set<string>();
   for (const id of ids) {
     const { key } = parseKeyId(id);
     wsKeys.add(key);
 
-    if (!sourceKeys.includes(key)) {
+    if (!sourceKeys.has(key)) {
       const values: Record<string, string> = {};
       for (const loc of module.locales) {
         const c = cell(session, id, loc);

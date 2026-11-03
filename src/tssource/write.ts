@@ -97,13 +97,19 @@ export function applyTsEdits(text: string, module: LocaleModule, edits: TsEdit[]
     inserts.set(ref, list);
   };
   const tables = module.objects.filter((o) => o.locale === null);
+  // Entries by key, in source order (large files: no linear search per edit).
+  const byKey = new Map<string, LocaleModule["entries"]>();
+  for (const e of module.entries) {
+    const list = byKey.get(e.key);
+    if (list) list.push(e);
+    else byKey.set(e.key, [e]);
+  }
+  const readOnlyKeys = new Set(module.readOnly.map((r) => r.key));
   const keyExists = (key: string) =>
-    module.entries.some((e) => e.key === key) ||
-    module.readOnly.some((r) => r.key === key) ||
-    (module.pairObjects !== undefined && key in module.pairObjects);
+    byKey.has(key) || readOnlyKeys.has(key) || (module.pairObjects !== undefined && key in module.pairObjects);
 
   const set = (key: string, locale: string, value: string) => {
-    const hits = module.entries.filter((e) => e.key === key && e.locale === locale);
+    const hits = (byKey.get(key) ?? []).filter((e) => e.locale === locale);
     if (hits.length > 0) {
       for (const e of hits) {
         const quote: Quote = e.undefinedLiteral ? "'" : e.quote;

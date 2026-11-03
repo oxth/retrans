@@ -133,12 +133,15 @@ async function syncNow(session: ProjectSession): Promise<SyncResult> {
   }
 
   const known = new Set(session.data.keyOrder);
+  const alreadyRemoved = new Set(meta.removedInSource);
   const removedNow = session.data.keyOrder.filter(
-    (id) => stored[id] !== undefined && !inSource.has(id) && !skipped(id) && !meta.removedInSource.includes(id),
+    (id) => stored[id] !== undefined && !inSource.has(id) && !skipped(id) && !alreadyRemoved.has(id),
   );
 
   // ---- apply ----
   const result: SyncResult = { sourceAvailable: true, conflicts, added: [], updated: [], removedInSource: removedNow, newGroups: [] };
+  const added = new Set<KeyId>();
+  const updated = new Set<KeyId>();
   session.batch(() => {
     for (const group of parsedGroups) {
       if (session.data.namespaces.includes(group)) continue;
@@ -150,8 +153,10 @@ async function syncNow(session: ProjectSession): Promise<SyncResult> {
         if (value === undefined) continue;
         session.insertKey(id, previousRow(src.keyOrder, id, new Set(session.data.keyOrder)));
         known.add(id);
+        added.add(id);
         result.added.push(id);
-      } else if (!result.added.includes(id) && !result.updated.includes(id)) {
+      } else if (!added.has(id) && !updated.has(id)) {
+        updated.add(id);
         result.updated.push(id);
       }
       if (!session.data.locales.includes(locale)) session.addLanguage(locale);
