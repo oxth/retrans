@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { documentDir } from "@tauri-apps/api/path";
 import { open as pickFolder } from "@tauri-apps/plugin-dialog";
 import { detectProject } from "../formats/detect";
+import { destHasFiles } from "../package/extract";
 import { createWorkspace } from "../workspace/store";
 import { LocalePicker } from "./LocalePicker";
 import { useApp } from "./store";
@@ -46,7 +47,7 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
     setBusy(true);
     setError(null);
     try {
-      if ((await fs.exists(folder)) && (await fs.listFiles(folder, 1)).length > 0) {
+      if (await destHasFiles(fs, folder)) {
         setError("Choose an empty folder.");
         setBusy(false);
         return;
@@ -92,7 +93,11 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
           {step === "location" && (
             <div className="text-sm">
               <p className="mb-1 font-medium">Location</p>
-              {folder && <p className="break-all font-mono text-xs text-gray-600">{folder}</p>}
+              {folder ? (
+                <p className="break-all font-mono text-xs text-gray-600">{folder}</p>
+              ) : (
+                <p className="text-xs text-gray-500">Choose a folder for the project.</p>
+              )}
               <button onClick={choose} className="mt-2 rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-50">
                 Choose…
               </button>

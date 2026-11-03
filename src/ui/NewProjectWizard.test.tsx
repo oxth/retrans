@@ -62,6 +62,25 @@ describe("NewProjectWizard", () => {
     expect(await fs.exists("/docs/Retrans/My App/.retrans/workspace.json")).toBe(false);
   });
 
+  it.each(["/docs/Retrans/My App/sub/a.txt", "/docs/Retrans/My App/.git/HEAD"])("refuses a folder holding only %s", async (path) => {
+    fs = new MemoryFs({ [path]: "x" });
+    useApp.setState({ fs });
+    render(<NewProjectWizard onCancel={() => {}} />);
+    await toLocation("My App");
+    await userEvent.click(await screen.findByRole("button", { name: "Create" }));
+    expect(await screen.findByText("Choose an empty folder.")).toBeInTheDocument();
+    expect(await fs.exists("/docs/Retrans/My App/.retrans/workspace.json")).toBe(false);
+  });
+
+  it("hints to choose a folder when the documents folder is unavailable", async () => {
+    const { documentDir } = await import("@tauri-apps/api/path");
+    vi.mocked(documentDir).mockRejectedValueOnce(new Error("no docs"));
+    render(<NewProjectWizard onCancel={() => {}} />);
+    await toLocation("My App");
+    expect(await screen.findByText("Choose a folder for the project.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create" })).toBeDisabled();
+  });
+
   it("creates and opens a workspace with a common group, and no format files", async () => {
     render(<NewProjectWizard onCancel={() => {}} />);
     await toLocation("My App");
