@@ -8,7 +8,7 @@
 import { isTranslated, type KeyId, keyId, parseKeyId } from "../core/model";
 import type { ProjectSession } from "../core/session";
 import { MESSAGE_SCHEMA, paraglideSettingsText } from "../formats/scaffold";
-import { type Fs, FsError, joinPath } from "../platform/fs";
+import { type Fs, FsError, joinPath, normalizePath } from "../platform/fs";
 import { isMarker, type TsImport } from "../tssource/import";
 import { type LocaleModule, parseLocaleModule } from "../tssource/parse";
 import { applyTsEdits, encodeTsString, i18nSnippet, newTableModule, type TsEdit } from "../tssource/write";
@@ -16,6 +16,8 @@ import { type Baseline, BASELINE_PATH, type ExportTarget, jsonEqual, parseBaseli
 import { applyRenames } from "./sync";
 
 export interface ExportPlan {
+  /** Every file must be under this folder: the project root (write-back), else the chosen folder. */
+  root: string;
   files: Array<{ path: string; text: string }>;
   snippets: string[];
   leftOutLocales: string[];
@@ -33,7 +35,7 @@ export interface ExportPlan {
   renamesApplied?: KeyId[];
 }
 
-const emptyPlan = (): ExportPlan => ({ files: [], snippets: [], leftOutLocales: [], warnings: [] });
+const emptyPlan = (root: string): ExportPlan => ({ root, files: [], snippets: [], leftOutLocales: [], warnings: [] });
 
 /**
  * `source` (from `importTsLocales` on the current files) is required for `ts-writeback` and
@@ -65,13 +67,41 @@ export async function writeExportPlan(fs: Fs, plan: ExportPlan): Promise<void> {
         : "Export blocked: the source files changed — sync and resolve conflicts first",
     );
   }
-  for (const f of plan.files) {
+  // Defence in depth: nothing is written unless every path stays under the plan's root.
+  const root = resolveDots(plan.root);
+  const inside = (path: string) => {
+    const p = resolveDots(path);
+    if (p === root || !p.startsWith(root === "/" ? "/" : root + "/")) {
+      throw new Error(`Refusing to write outside ${plan.root}: ${path}`);
+    }
+    return p;
+  };
+  const files = plan.files.map((f) => ({ path: inside(f.path), text: f.text }));
+  const baseline = plan.baseline && { path: inside(plan.baseline.path), text: plan.baseline.text };
+  for (const f of files) {
     const slash = f.path.lastIndexOf("/");
     if (slash > 0) await fs.mkdirp(f.path.slice(0, slash));
     await fs.writeTextAtomic(f.path, f.text);
   }
   // Last: if a file write fails, the old baseline makes the next export sync first.
-  if (plan.baseline) await fs.writeTextAtomic(plan.baseline.path, plan.baseline.text);
+  if (baseline) await fs.writeTextAtomic(baseline.path, baseline.text);
+}
+
+/** `path` normalized with `.` and `..` segments resolved (`..` never goes above the start). */
+function resolveDots(path: string): string {
+  const norm = normalizePath(path);
+  const out: string[] = [];
+  for (const seg of norm.split("/")) {
+    if (seg === ".") continue;
+    if (seg === "..") {
+      // Never above the start: "/" (out[0] === "") or a drive ("C:").
+      if (out.length > 1 || (out.length === 1 && out[0] !== "" && !/^[A-Za-z]:$/.test(out[0]))) out.pop();
+      continue;
+    }
+    out.push(seg);
+  }
+  const r = out.join("/");
+  return r === "" ? "/" : r;
 }
 
 /**
@@ -179,14 +209,14 @@ async function planTsSource(
   applyRenames(normalized, meta.renames);
   const stored = parseBaseline(await readOrNull(session.fs, joinPath(root, BASELINE_PATH)));
   if (!stored || !jsonEqual(renameBaseline(stored, renamed), normalized.baseline)) {
-    return { ...emptyPlan(), blocked: { reason: "conflicts" } };
+    return { ...emptyPlan(root), blocked: { reason: "conflicts" } };
   }
   const renamedOld = new Set(renamed.keys());
   const renamedNew = new Set(renamed.values());
 
-  const plan = emptyPlan();
   const writeback = target.kind === "ts-writeback";
   const outRoot = writeback ? root : target.dir;
+  const plan = emptyPlan(outRoot);
   const removed = new Set(meta.removedInSource);
   const rows = rowsByGroup(session);
   const sessionLocales = session.data.locales;
@@ -435,7 +465,7 @@ function mapLocaleModule(locales: string[]): string {
 }
 
 function planTsModules(session: ProjectSession, dir: string): ExportPlan {
-  const plan = emptyPlan();
+  const plan = emptyPlan(dir);
   const locales = session.data.locales;
   const rows = rowsByGroup(session);
   const groups = session.data.namespaces.filter((g) => (rows.get(g) ?? []).length > 0);
@@ -453,9 +483,9 @@ function planTsModules(session: ProjectSession, dir: string): ExportPlan {
 function planI18next(session: ProjectSession, dir: string, namespaces: "per-group" | "single"): ExportPlan {
   if (namespaces === "single") {
     const dups = duplicateKeys(session);
-    if (dups.length > 0) return { ...emptyPlan(), blocked: { reason: "duplicates", keys: dups } };
+    if (dups.length > 0) return { ...emptyPlan(dir), blocked: { reason: "duplicates", keys: dups } };
   }
-  const plan = emptyPlan();
+  const plan = emptyPlan(dir);
   const rows = rowsByGroup(session);
   const flat = (ids: KeyId[], locale: string) => {
     const out: Record<string, unknown> = {};
@@ -500,8 +530,8 @@ function toParaglide(text: string, onModifier: () => void): string {
 
 function planParaglide(session: ProjectSession, dir: string): ExportPlan {
   const dups = duplicateKeys(session);
-  if (dups.length > 0) return { ...emptyPlan(), blocked: { reason: "duplicates", keys: dups } };
-  const plan = emptyPlan();
+  if (dups.length > 0) return { ...emptyPlan(dir), blocked: { reason: "duplicates", keys: dups } };
+  const plan = emptyPlan(dir);
   const warned = new Set<string>();
   for (const locale of session.data.locales) {
     const out: Record<string, unknown> = { $schema: MESSAGE_SCHEMA };

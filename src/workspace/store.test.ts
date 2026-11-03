@@ -185,6 +185,22 @@ describe("workspace store", () => {
     expect(parseBaseline(null)).toBeNull();
   });
 
+  it("an absolute or `..` source folder is invalid: kept out of `source`, written back unchanged", () => {
+    const meta = (localesDir: string) => j({ retransWorkspace: 1, name: "x", source: { type: "ts", localesDir } });
+    for (const bad of ["/etc", "\\\\server\\share", "C:\\Users\\x", "c:/x", "..", "../x", "src/../../x", "src\\..\\x"]) {
+      const m = parseWorkspaceMeta(meta(bad))!;
+      expect(m.source, bad).toBeUndefined();
+      expect(m.invalidSource, bad).toEqual({ type: "ts", localesDir: bad });
+      expect(JSON.parse(serializeWorkspaceMeta(m)).source, bad).toEqual({ type: "ts", localesDir: bad });
+      expect(JSON.parse(serializeWorkspaceMeta(m)).invalidSource, bad).toBeUndefined();
+    }
+    for (const good of [".", "src/locales", "./src/i18n", "a..b/c"]) {
+      const m = parseWorkspaceMeta(meta(good))!;
+      expect(m.source, good).toEqual({ type: "ts", localesDir: good });
+      expect(m.invalidSource, good).toBeUndefined();
+    }
+  });
+
   it("meta and baseline serialize with sorted keys and round-trip", () => {
     const m: WorkspaceMeta = {
       retransWorkspace: 1, name: "N", source: { type: "ts", localesDir: "src/locales" },

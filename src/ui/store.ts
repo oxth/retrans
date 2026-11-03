@@ -24,6 +24,7 @@ export interface PendingRecovery { journal: Journal; path: string }
 export type UiConflict = Conflict & { origin?: "source" };
 
 export const SOURCE_MISSING_MESSAGE = "Source files not found — showing the saved workspace.";
+export const SOURCE_INVALID_MESSAGE = "The workspace's source folder setting is invalid — showing the saved workspace.";
 
 export interface AppState {
   fs: Fs;

@@ -164,6 +164,24 @@ describe("workspace cells", () => {
     expect(useApp.getState().sourceMissing).toBe(true);
   });
 
+  it("an invalid source folder setting shows its own banner and is never synced from", async () => {
+    const { fs, session } = await openWs(async (fs) => {
+      const path = "/project/.retrans/workspace.json";
+      const meta = JSON.parse(await fs.readText(path));
+      meta.source.localesDir = "../elsewhere";
+      await fs.writeTextAtomic(path, JSON.stringify(meta));
+    }, { waitSync: false });
+    expect(
+      await screen.findByText("The workspace's source folder setting is invalid — showing the saved workspace."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Source files not found — showing the saved workspace.")).toBeNull();
+    expect(session.workspace!.source).toBeUndefined();
+    // Saving keeps the setting as it was in the file.
+    session.setText(keyId("common", "email"), "en", "E-mail");
+    expect(await useApp.getState().save()).toBe(true);
+    expect(JSON.parse(await fs.readText("/project/.retrans/workspace.json")).source).toEqual({ type: "ts", localesDir: "../elsewhere" });
+  });
+
   it("source conflicts block Save and are resolved through the sync", async () => {
     const id = keyId("button", "button_save");
     const { session } = await openWs(async (fs) => {

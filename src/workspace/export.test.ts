@@ -302,6 +302,31 @@ describe("planExport: ts-writeback", () => {
   });
 });
 
+describe("writeExportPlan: output root", () => {
+  it("refuses, before writing anything, a planned file outside the output root", async () => {
+    const w = await setup();
+    w.session.setText(keyId("button", "button_ok"), "en", "Okay");
+    const plan = await planExport(w.session, { kind: "ts-writeback" }, await w.source());
+    expect(plan.root).toBe(w.root);
+    const before = await w.fixtureFiles();
+    for (const path of [`${w.root}/src/../../etc/passwd`, "/etc/passwd", `${w.root}2/x.ts`, `${w.root}/./../x.ts`]) {
+      const bad = { ...plan, files: [...plan.files, { path, text: "x" }] };
+      await expect(writeExportPlan(w.fs, bad)).rejects.toThrow(`Refusing to write outside ${w.root}: ${path}`);
+    }
+    expect(await w.fixtureFiles()).toEqual(before);
+    expect(await w.fs.exists("/etc/passwd")).toBe(false);
+
+    const json = await planExport(w.session, { kind: "i18next-json", dir: OUT, namespaces: "per-group" });
+    expect(json.root).toBe(OUT);
+    const out = { ...json, files: [{ path: `${OUT}/en/../../evil.json`, text: "{}" }, ...json.files] };
+    await expect(writeExportPlan(w.fs, out)).rejects.toThrow("Refusing to write outside");
+    expect(await w.fs.exists(OUT)).toBe(false);
+    // In-root paths that only look odd are fine.
+    await writeExportPlan(w.fs, { ...json, files: [{ path: `${OUT}/./en/x/../a.json`, text: "{}" }] });
+    expect(await w.fs.exists(`${OUT}/en/a.json`)).toBe(true);
+  });
+});
+
 describe("same-named locale files", () => {
   it("the later file by path is never imported, synced or written", async () => {
     const R = "/p";

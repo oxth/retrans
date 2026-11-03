@@ -25,6 +25,11 @@ export interface WorkspaceMeta {
   retransWorkspace: 1;
   name: string;
   source?: TsSourceRef;
+  /**
+   * A `source` whose `localesDir` is absolute or leaves the project (`..`): never used, but
+   * written back as `source` so the file keeps it. Set only by parseWorkspaceMeta.
+   */
+  invalidSource?: TsSourceRef;
   drafts: Record<KeyId, Record<string, string>>;
   markers: Record<KeyId, Record<string, string>>;
   removedInSource: KeyId[];
@@ -97,7 +102,16 @@ function parseTarget(v: unknown): ExportTarget | undefined {
   }
 }
 
-/** null for a missing file or anything that isn't a version-1 workspace meta. Never throws. */
+/** A root-relative folder that stays inside the root: not absolute (`/`, `\\`, `C:`), no `..` segment. */
+export function isSafeLocalesDir(dir: string): boolean {
+  if (/^[\\/]/.test(dir) || /^[A-Za-z]:/.test(dir)) return false;
+  return !dir.split(/[\\/]/).includes("..");
+}
+
+/**
+ * null for a missing file or anything that isn't a version-1 workspace meta. Never throws. An
+ * unsafe `source.localesDir` (see isSafeLocalesDir) goes to `invalidSource`, not `source`.
+ */
 export function parseWorkspaceMeta(text: string | null): WorkspaceMeta | null {
   const raw = parseJsonText(text);
   if (!isRecord(raw) || raw.retransWorkspace !== 1 || typeof raw.name !== "string") return null;
@@ -113,7 +127,8 @@ export function parseWorkspaceMeta(text: string | null): WorkspaceMeta | null {
   };
   const src = raw.source;
   if (isRecord(src) && src.type === "ts" && typeof src.localesDir === "string") {
-    meta.source = { type: "ts", localesDir: src.localesDir };
+    if (isSafeLocalesDir(src.localesDir)) meta.source = { type: "ts", localesDir: src.localesDir };
+    else meta.invalidSource = { type: "ts", localesDir: src.localesDir };
   }
   const target = isRecord(raw.lastExport) ? parseTarget(raw.lastExport.target) : undefined;
   if (target) meta.lastExport = { target };
@@ -142,7 +157,8 @@ export const WORKSPACE_META_ERROR =
 
 /** Sorted keys, 2-space indent, trailing newline (same style as serializeState). */
 export function serializeWorkspaceMeta(m: WorkspaceMeta): string {
-  return serialize(m);
+  const { invalidSource, ...rest } = m;
+  return serialize(invalidSource && !rest.source ? { ...rest, source: invalidSource } : rest);
 }
 
 /** null for a missing or malformed file. Never throws. */

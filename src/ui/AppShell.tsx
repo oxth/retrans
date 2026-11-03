@@ -13,7 +13,7 @@ import { SharePage } from "./SharePage";
 import { SettingsPage } from "./SettingsPage";
 import { type Page, Sidebar } from "./Sidebar";
 import { UnsavedPrompt } from "./UnsavedPrompt";
-import { SOURCE_MISSING_MESSAGE, useApp, useSessionVersion } from "./store";
+import { SOURCE_INVALID_MESSAGE, SOURCE_MISSING_MESSAGE, useApp, useSessionVersion } from "./store";
 import { keepKey } from "../workspace/actions";
 import { TableView } from "./TableView";
 import { activeModel, useMt } from "./mt-store";
@@ -166,8 +166,10 @@ export function AppShell() {
           </button>
         </div>
         <LoadErrors session={session} />
-        {sourceMissing && (
-          <div role="status" className="bg-amber-50 px-4 py-2 text-sm text-amber-900">{SOURCE_MISSING_MESSAGE}</div>
+        {(sourceMissing || session.workspace?.invalidSource) && (
+          <div role="status" className="bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            {session.workspace?.invalidSource ? SOURCE_INVALID_MESSAGE : SOURCE_MISSING_MESSAGE}
+          </div>
         )}
         {error && (
           <div role="alert" className="flex items-center justify-between gap-3 bg-red-50 px-4 py-2 text-sm text-red-700">

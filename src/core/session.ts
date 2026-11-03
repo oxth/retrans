@@ -809,15 +809,16 @@ export class ProjectSession {
       ];
       return;
     }
+    // Compared in file form (as metaBaseline is), e.g. an invalid source is `source` there.
     const base = (this.metaBaseline ? JSON.parse(this.metaBaseline) : {}) as Record<string, unknown>;
-    const mine = local as unknown as Record<string, unknown>;
-    const theirs = disk as unknown as Record<string, unknown>;
+    const mine = JSON.parse(serializeWorkspaceMeta(local)) as Record<string, unknown>;
+    const theirs = JSON.parse(serializeWorkspaceMeta(disk)) as Record<string, unknown>;
     const merged: Record<string, unknown> = {};
     for (const k of new Set([...Object.keys(mine), ...Object.keys(theirs), ...Object.keys(base)])) {
       const v = jsonEqual(mine[k], base[k]) ? theirs[k] : mine[k];
       if (v !== undefined) merged[k] = v;
     }
-    this.wsMeta = merged as unknown as WorkspaceMeta;
+    this.wsMeta = parseWorkspaceMeta(JSON.stringify(merged)) ?? disk;
     this.metaBaseline = serializeWorkspaceMeta(disk);
     this.metaDiskText = text;
   }
@@ -895,7 +896,7 @@ export class ProjectSession {
 
   /** Meta fields changed since the last load/save (all of them when the meta was never saved). */
   private metaPatch(): NonNullable<Journal["workspaceMeta"]> {
-    const cur = structuredClone(this.wsMeta!) as unknown as Record<string, unknown>;
+    const cur = JSON.parse(serializeWorkspaceMeta(this.wsMeta!)) as Record<string, unknown>; // file form
     if (this.metaBaseline === null) return cur as Partial<WorkspaceMeta>;
     const base = JSON.parse(this.metaBaseline) as Record<string, unknown>;
     const out: Record<string, unknown> = {};
@@ -940,7 +941,7 @@ export class ProjectSession {
     if (added.size) this.setKeyOrder([...this.data.keyOrder, ...added]);
     if (this.wsMeta && j.workspaceMeta) {
       // The journal's meta changes win; anything that doesn't parse as meta is ignored.
-      const merged: Record<string, unknown> = { ...this.wsMeta };
+      const merged = JSON.parse(serializeWorkspaceMeta(this.wsMeta)) as Record<string, unknown>; // file form
       for (const [k, v] of Object.entries(j.workspaceMeta)) {
         if (v === null) delete merged[k];
         else merged[k] = v;
