@@ -10,14 +10,14 @@
   <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
   <!-- the drawing below is the 100-unit design scaled to the tile: x' = 100 + 8.24 * (x - 4) / 0.92 -->
   <g transform="translate(100 100) scale(8.9565) translate(-4 -4)">
-    <path d="M22 50 A28 28 0 0 1 72 32" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round"/>
-    <path d="M66 21 L79 33 L62 38 Z" fill="#ffffff" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
-    <path d="M78 50 A28 28 0 0 1 28 68" fill="none" stroke="#99f6e4" stroke-width="8" stroke-linecap="round"/>
-    <path d="M34 79 L21 67 L38 62 Z" fill="#99f6e4" stroke="#99f6e4" stroke-width="1.5" stroke-linejoin="round"/>
-    <g fill="none" stroke="#ffffff" stroke-width="3.5">
-      <circle cx="50" cy="50" r="15"/>
-      <ellipse cx="50" cy="50" rx="6.5" ry="15"/>
-      <path d="M35 50 H65 M38 42 H62 M38 58 H62" stroke-linecap="round"/>
+    <path d="M21.02 57.76 A30 30 0 0 1 65.00 24.02" fill="none" stroke="#ffffff" stroke-width="7.5" stroke-linecap="round"/>
+    <path d="M69.50 16.23 L74.64 31.32 L60.50 31.81 Z" fill="#ffffff" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M78.98 42.24 A30 30 0 0 1 35.00 75.98" fill="none" stroke="#99f6e4" stroke-width="7.5" stroke-linecap="round"/>
+    <path d="M30.50 83.77 L25.36 68.68 L39.50 68.19 Z" fill="#99f6e4" stroke="#99f6e4" stroke-width="2" stroke-linejoin="round"/>
+    <g fill="none" stroke="#ffffff" stroke-width="3.2">
+      <circle cx="50" cy="50" r="12.5"/>
+      <ellipse cx="50" cy="50" rx="5.38" ry="12.5"/>
+      <path d="M37.50 50 H62.50 M39.38 43.38 H60.62 M39.38 56.62 H60.62" stroke-linecap="round"/>
     </g>
   </g>
 </svg>
