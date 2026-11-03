@@ -164,6 +164,7 @@ export function AppShell() {
               missingCount={missingCount}
               namespaces={session.data.namespaces}
               showNamespaces={session.data.format === "next-i18next"}
+              nsLabel={session.workspace ? "Group" : "Namespace"}
               targetLocales={targets}
               hidden={hidden}
               onToggleLocale={toggleLocale}

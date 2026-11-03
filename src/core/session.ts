@@ -19,6 +19,8 @@ import type { Journal } from "./recovery";
 import { planReload } from "./session-reload";
 import { parseState, reconcile, serializeState, STATE_PATH, type StateEntry, type StateFile } from "./state-file";
 import { cellMeta, recordCleared, recordEdit, recordReviewed, renameInState } from "./status";
+import { serializeWorkspaceMeta, WORKSPACE_META_PATH, type WorkspaceMeta } from "../workspace/meta";
+import { workspaceAdapter } from "../workspace/store";
 
 export { KeyError } from "./session-helpers";
 
@@ -82,11 +84,15 @@ export class ProjectSession {
   private batchDepth = 0;
   private batchEmitted = false;
   private dirtyCache: { version: number; cells: Array<{ id: KeyId; locale: string }> } | null = null;
+  /** Workspace meta (null for plain projects); written by save() when it differs from metaBaseline. */
+  private wsMeta: WorkspaceMeta | null;
+  private metaBaseline: string | null; // serialized meta as loaded / last saved
+  private metaDiskText: string | null = null; // raw workspace.json as loaded / last written (stale check)
 
   private constructor(
     fs: Fs, root: string, adapter: FormatAdapter, opts: ProjectOptions,
     load: { data: ProjectData; files: LoadedFile[]; errors: FileError[] }, state: StateFile,
-    stateText: string | null, stateError: string | undefined,
+    stateText: string | null, stateError: string | undefined, workspace: WorkspaceMeta | null,
   ) {
     this.fs = fs;
     this.root = root;
@@ -100,14 +106,34 @@ export class ProjectSession {
     this.stateDiskText = stateText;
     this.stateError = stateError;
     this.errors = this.withStateError(load.errors);
+    this.wsMeta = workspace ? structuredClone(workspace) : null;
+    this.metaBaseline = workspace ? serializeWorkspaceMeta(workspace) : null;
   }
 
   static async open(fs: Fs, root: string, d: DetectResult, opts: ProjectOptions): Promise<ProjectSession> {
-    const adapter = d.format === "paraglide" ? paraglideAdapter : nextI18nextAdapter;
+    const adapter = d.workspace ? workspaceAdapter : d.format === "paraglide" ? paraglideAdapter : nextI18nextAdapter;
     const load = await adapter.load(fs, root, opts);
     const stateText = await readOrNull(fs, joinPath(root, STATE_PATH));
     const { state, error } = parseState(stateText);
-    return new ProjectSession(fs, root, adapter, opts, load, state, stateText, error);
+    const s = new ProjectSession(fs, root, adapter, opts, load, state, stateText, error, d.workspace ?? null);
+    if (d.workspace) s.metaDiskText = await readOrNull(fs, joinPath(root, WORKSPACE_META_PATH));
+    return s;
+  }
+
+  /** The workspace meta (.retrans/workspace.json); null when this isn't a workspace. */
+  get workspace(): WorkspaceMeta | null {
+    return this.wsMeta;
+  }
+
+  /** Workspace only: merge `patch` into the meta; written by the next save(). */
+  setWorkspaceMeta(patch: Partial<WorkspaceMeta>): void {
+    if (!this.wsMeta) throw new Error("This project is not a workspace");
+    this.wsMeta = { ...this.wsMeta, ...patch, retransWorkspace: 1 };
+    this.emit();
+  }
+
+  private metaDirty(): boolean {
+    return this.wsMeta !== null && serializeWorkspaceMeta(this.wsMeta) !== this.metaBaseline;
   }
 
   // ---- reading ---------------------------------------------------------------------------
@@ -182,7 +208,7 @@ export class ProjectSession {
   }
 
   isDirty(): boolean {
-    if (this.creates.size || this.removed.size || this.localesChanged) return true;
+    if (this.creates.size || this.removed.size || this.localesChanged || this.metaDirty()) return true;
     if (this.dirtyCells().length) return true;
     return this.stateTouched && serializeState(reconcile(this.state, this.data)) !== this.stateBaseline;
   }
@@ -329,7 +355,7 @@ export class ProjectSession {
     this.setKeyOrder(this.data.keyOrder);
     this.localesChanged = true;
     this.emit();
-    return this.data.format === "next-i18next" ? { configSnippet: localesSnippet(locales) } : {};
+    return this.data.format === "next-i18next" && !this.wsMeta ? { configSnippet: localesSnippet(locales) } : {};
   }
 
   removeLanguage(locale: string): void {
@@ -476,6 +502,19 @@ export class ProjectSession {
       } catch (err) {
         this.localesChanged = true;
         throw err;
+      }
+    }
+
+    if (this.wsMeta && this.metaDirty()) {
+      const text = serializeWorkspaceMeta(this.wsMeta);
+      const path = joinPath(this.root, WORKSPACE_META_PATH);
+      if ((await readOrNull(this.fs, path)) !== this.metaDiskText) {
+        res.stale.push(WORKSPACE_META_PATH); // changed on disk: don't clobber it; stays dirty
+      } else {
+        await this.fs.writeTextAtomic(path, text);
+        res.written.push(WORKSPACE_META_PATH);
+        this.metaBaseline = text;
+        this.metaDiskText = text;
       }
     }
 

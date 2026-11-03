@@ -37,7 +37,7 @@ export function OpenProjectDialog({ root, detected, savedBase, onCancel }: Props
           <dd>{detected.format === "paraglide" ? "Paraglide" : "next-i18next"}</dd>
           <dt className="text-gray-500">Languages</dt>
           <dd>{detected.locales.join(", ") || "none"}</dd>
-          <dt className="text-gray-500">Namespaces</dt>
+          <dt className="text-gray-500">{detected.workspace ? "Groups" : "Namespaces"}</dt>
           <dd>{detected.namespaces.filter(Boolean).join(", ") || "none"}</dd>
           <dt className="text-gray-500">Keys</dt>
           <dd>{detected.keyCount} keys</dd>

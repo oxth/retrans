@@ -1,0 +1,133 @@
+import type { KeyId } from "../core/model";
+
+export const WORKSPACE_META_PATH = ".retrans/workspace.json";
+export const WORKSPACE_DIR = ".retrans/workspace";
+export const BASELINE_PATH = ".retrans/source-baseline.json";
+
+/** The TypeScript locale files a workspace was imported from. `localesDir` is root-relative. */
+export interface TsSourceRef {
+  type: "ts";
+  localesDir: string;
+}
+
+export type ExportTarget =
+  | { kind: "ts-writeback" }
+  | { kind: "ts-copy"; dir: string }
+  | { kind: "ts-modules"; dir: string }
+  | { kind: "i18next-json"; dir: string; namespaces: "per-group" | "single" }
+  | { kind: "paraglide"; dir: string };
+
+export interface ExportSettings {
+  target: ExportTarget;
+}
+
+export interface WorkspaceMeta {
+  retransWorkspace: 1;
+  name: string;
+  source?: TsSourceRef;
+  drafts: Record<KeyId, Record<string, string>>;
+  markers: Record<KeyId, Record<string, string>>;
+  removedInSource: KeyId[];
+  duplicates: string[];
+  lastExport?: ExportSettings;
+}
+
+/** Key id -> locale -> source text, as last imported from / exported to the source. */
+export type Baseline = Record<KeyId, Record<string, string>>;
+
+type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function parseJsonText(text: string | null): unknown {
+  if (text === null) return undefined;
+  try {
+    return JSON.parse(text.startsWith("﻿") ? text.slice(1) : text);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Record<string, Record<string, string>>, dropping anything that isn't. */
+function stringTable(v: unknown): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  if (!isRecord(v)) return out;
+  for (const [id, cells] of Object.entries(v)) {
+    if (!isRecord(cells)) continue;
+    const row: Record<string, string> = {};
+    for (const [loc, s] of Object.entries(cells)) if (typeof s === "string") row[loc] = s;
+    if (Object.keys(row).length) out[id] = row;
+  }
+  return out;
+}
+
+const stringList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+
+function parseTarget(v: unknown): ExportTarget | undefined {
+  if (!isRecord(v)) return undefined;
+  const dir = typeof v.dir === "string" ? v.dir : undefined;
+  switch (v.kind) {
+    case "ts-writeback":
+      return { kind: "ts-writeback" };
+    case "ts-copy":
+    case "ts-modules":
+    case "paraglide":
+      return dir === undefined ? undefined : { kind: v.kind, dir };
+    case "i18next-json":
+      return dir !== undefined && (v.namespaces === "per-group" || v.namespaces === "single")
+        ? { kind: "i18next-json", dir, namespaces: v.namespaces }
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
+/** null for a missing file or anything that isn't a version-1 workspace meta. Never throws. */
+export function parseWorkspaceMeta(text: string | null): WorkspaceMeta | null {
+  const raw = parseJsonText(text);
+  if (!isRecord(raw) || raw.retransWorkspace !== 1 || typeof raw.name !== "string") return null;
+  const meta: WorkspaceMeta = {
+    retransWorkspace: 1,
+    name: raw.name,
+    drafts: stringTable(raw.drafts),
+    markers: stringTable(raw.markers),
+    removedInSource: stringList(raw.removedInSource),
+    duplicates: stringList(raw.duplicates),
+  };
+  const src = raw.source;
+  if (isRecord(src) && src.type === "ts" && typeof src.localesDir === "string") {
+    meta.source = { type: "ts", localesDir: src.localesDir };
+  }
+  const target = isRecord(raw.lastExport) ? parseTarget(raw.lastExport.target) : undefined;
+  if (target) meta.lastExport = { target };
+  return meta;
+}
+
+function sorted(v: Json): Json {
+  if (Array.isArray(v)) return v.map(sorted);
+  if (v !== null && typeof v === "object") {
+    const o: { [k: string]: Json } = {};
+    for (const k of Object.keys(v).sort()) if (v[k] !== undefined) o[k] = sorted(v[k]);
+    return o;
+  }
+  return v;
+}
+
+const serialize = (v: unknown) => JSON.stringify(sorted(v as Json), null, 2) + "\n";
+
+/** Sorted keys, 2-space indent, trailing newline (same style as serializeState). */
+export function serializeWorkspaceMeta(m: WorkspaceMeta): string {
+  return serialize(m);
+}
+
+/** null for a missing or malformed file. Never throws. */
+export function parseBaseline(text: string | null): Baseline | null {
+  const raw = parseJsonText(text);
+  return isRecord(raw) ? stringTable(raw) : null;
+}
+
+export function serializeBaseline(b: Baseline): string {
+  return serialize(b);
+}

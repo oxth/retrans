@@ -4,6 +4,7 @@ import { MANIFEST_PATH, parseManifest } from "../package/manifest";
 import type { DetectResult } from "./adapter";
 import { nextI18nextAdapter } from "./next-i18next";
 import { paraglideAdapter } from "./paraglide";
+import { detectWorkspace } from "../workspace/store";
 
 async function readManifestText(fs: Fs, root: string): Promise<string | null> {
   try {
@@ -15,8 +16,9 @@ async function readManifestText(fs: Fs, root: string): Promise<string | null> {
 }
 
 /**
- * A translator package manifest picks the format and base language. Otherwise: Paraglide first
- * (throws if its settings.json is malformed), then next-i18next, else null.
+ * A translator package manifest picks the format and base language. Otherwise: a Retrans workspace
+ * (.retrans/workspace.json), then Paraglide (throws if its settings.json is malformed), then
+ * next-i18next, else null.
  */
 export async function detectProject(fs: Fs, root: string): Promise<DetectResult | null> {
   const manifest = parseManifest(await readManifestText(fs, root));
@@ -26,5 +28,9 @@ export async function detectProject(fs: Fs, root: string): Promise<DetectResult 
     if (!result) throw new Error("This file isn't a Retrans package or project.");
     return result.locales.includes(manifest.baseLocale) ? { ...result, baseLocale: manifest.baseLocale } : result;
   }
-  return (await paraglideAdapter.detect(fs, root)) ?? (await nextI18nextAdapter.detect(fs, root));
+  return (
+    (await detectWorkspace(fs, root)) ??
+    (await paraglideAdapter.detect(fs, root)) ??
+    (await nextI18nextAdapter.detect(fs, root))
+  );
 }

@@ -109,7 +109,16 @@ const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 async function detect(fs: Fs, root: string): Promise<DetectResult | null> {
   const cfg = await readConfig(fs, root);
-  const localesPath = cfg?.localePath ?? DEFAULT_LOCALES_PATH;
+  return detectAt(fs, root, cfg?.localePath ?? DEFAULT_LOCALES_PATH, cfg);
+}
+
+/**
+ * Detection over the `<locale>/<ns>.json` layout at `localesPath` (root-relative). Without a
+ * config, null when no files are found. Locales sorted by name; baseLocale only from the config.
+ */
+export async function detectAt(
+  fs: Fs, root: string, localesPath: string, cfg: StaticConfig | null = null,
+): Promise<DetectResult | null> {
   const entries = await listEntries(fs, root, localesPath);
   if (entries.length === 0 && !cfg) return null;
 

@@ -9,6 +9,8 @@ export interface ToolbarProps {
   missingCount: number;
   namespaces: string[];
   showNamespaces: boolean;
+  /** Workspaces call namespaces "groups". */
+  nsLabel?: "Namespace" | "Group";
   targetLocales: string[];
   hidden: Set<string>;
   onToggleLocale: (l: string) => void;
@@ -51,8 +53,8 @@ export function Toolbar(p: ToolbarProps) {
         <option value="reviewed">Reviewed</option>
       </select>
       {p.showNamespaces && (
-        <select aria-label="Namespace" className={field} value={f.ns} onChange={(e) => p.onFilter({ ns: e.target.value })}>
-          <option value="all">All namespaces</option>
+        <select aria-label={p.nsLabel ?? "Namespace"} className={field} value={f.ns} onChange={(e) => p.onFilter({ ns: e.target.value })}>
+          <option value="all">{p.nsLabel === "Group" ? "All groups" : "All namespaces"}</option>
           {p.namespaces.map((n) => (
             <option key={n} value={n}>{n}</option>
           ))}

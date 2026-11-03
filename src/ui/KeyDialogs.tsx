@@ -18,6 +18,7 @@ function keyMessage(e: unknown): string {
 export function AddKeyDialog({ session, onClose }: { session: ProjectSession; onClose: () => void }) {
   const { namespaces, format, baseLocale } = session.data;
   const [ns, setNs] = useState(namespaces[0] ?? "");
+  const nsLabel = session.workspace ? "Group" : "Namespace";
   const [key, setKey] = useState("");
   const [text, setText] = useState("");
   const [plural, setPlural] = useState(false);
@@ -36,8 +37,8 @@ export function AddKeyDialog({ session, onClose }: { session: ProjectSession; on
       <form onSubmit={submit} className="space-y-3 text-sm">
         {format === "next-i18next" && (
           <label className="block">
-            <span className="mb-1 block text-xs text-gray-500">Namespace</span>
-            <select aria-label="Namespace" className={inputCls} value={ns} onChange={(e) => setNs(e.target.value)}>
+            <span className="mb-1 block text-xs text-gray-500">{nsLabel}</span>
+            <select aria-label={nsLabel} className={inputCls} value={ns} onChange={(e) => setNs(e.target.value)}>
               {namespaces.map((n) => (
                 <option key={n} value={n}>{n}</option>
               ))}
