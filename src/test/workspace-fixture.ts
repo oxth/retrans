@@ -57,5 +57,6 @@ export async function openFixtureWorkspace(): Promise<{
 
   const d = (await detectProject(fs, root))!;
   const session = await ProjectSession.open(fs, root, d, { baseLocale: "th", localesPath: d.localesPath });
+  session.setSourceReadOnly(imported.readOnly); // as the import (and every sync) does
   return { fs, session, root, localesDir, imported };
 }

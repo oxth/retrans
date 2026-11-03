@@ -12,7 +12,8 @@ import { SharePage } from "./SharePage";
 import { SettingsPage } from "./SettingsPage";
 import { type Page, Sidebar } from "./Sidebar";
 import { UnsavedPrompt } from "./UnsavedPrompt";
-import { useApp, useSessionVersion } from "./store";
+import { SOURCE_MISSING_MESSAGE, useApp, useSessionVersion } from "./store";
+import { keepKey } from "../workspace/actions";
 import { TableView } from "./TableView";
 import { activeModel, useMt } from "./mt-store";
 import { type FilterState, Toolbar } from "./Toolbar";
@@ -25,6 +26,7 @@ export function AppShell() {
   const version = useSessionVersion();
   const session = useApp((s) => s.session);
   const error = useApp((s) => s.error);
+  const sourceMissing = useApp((s) => s.sourceMissing);
   const requestClose = useApp((s) => s.requestClose);
   const [page, setPage] = useState<Page>("translations");
   const [filter, setFilter] = useState<FilterState>(INITIAL);
@@ -125,7 +127,12 @@ export function AppShell() {
     [],
   );
 
-  const onRowAction = useCallback((row: Row, kind: "rename" | "delete") => setDialog({ kind, row }), []);
+  const onRowAction = useCallback((row: Row, kind: "rename" | "delete" | "keep") => {
+    if (kind === "keep") {
+      const s = live.current.session;
+      if (s) keepKey(s, row.id);
+    } else setDialog({ kind, row });
+  }, []);
 
   if (!session) return null;
   const toggleLocale = (l: string) =>
@@ -150,6 +157,9 @@ export function AppShell() {
           </button>
         </div>
         <LoadErrors session={session} />
+        {sourceMissing && (
+          <div role="status" className="bg-amber-50 px-4 py-2 text-sm text-amber-900">{SOURCE_MISSING_MESSAGE}</div>
+        )}
         {error && (
           <div role="alert" className="flex items-center justify-between gap-3 bg-red-50 px-4 py-2 text-sm text-red-700">
             <span>{error}</span>

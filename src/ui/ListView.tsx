@@ -4,6 +4,8 @@ import type { Row } from "../core/rows";
 import type { ProjectSession } from "../core/session";
 import { Cell, type EditActions } from "./Cell";
 import { RowMenu } from "./RowMenu";
+import { RowWarnings } from "./Warnings";
+import { duplicateGroups } from "../workspace/actions";
 
 export interface ViewProps {
   session: ProjectSession;
@@ -12,8 +14,11 @@ export interface ViewProps {
   version: number;
   editing: { id: string; locale: string } | null;
   actions: EditActions;
-  onRowAction?: (row: Row, action: "rename" | "delete") => void;
+  onRowAction?: (row: Row, action: "rename" | "delete" | "keep") => void;
 }
+
+/** True when this workspace row's key was removed from the TypeScript source. */
+export const isRemovedInSource = (session: ProjectSession, id: string) => !!session.workspace?.removedInSource.includes(id);
 
 export function ListView({ session, rows, locales, version, editing, actions, onRowAction }: ViewProps) {
   const parent = useRef<HTMLDivElement>(null);
@@ -40,6 +45,7 @@ export function ListView({ session, rows, locales, version, editing, actions, on
         {virt.getVirtualItems().map((vi) => {
           const row = rows[vi.index];
           const base = session.value(row.id, session.data.baseLocale);
+          const removed = isRemovedInSource(session, row.id);
           return (
             <div
               key={vi.key}
@@ -53,7 +59,12 @@ export function ListView({ session, rows, locales, version, editing, actions, on
                 <div className="flex items-start gap-1">
                   <div className="min-w-0 flex-1 break-all font-mono font-semibold text-gray-700">{row.key}</div>
                   {onRowAction && (
-                    <RowMenu name={row.key} onRename={() => onRowAction(row, "rename")} onDelete={() => onRowAction(row, "delete")} />
+                    <RowMenu
+                      name={row.key}
+                      onRename={() => onRowAction(row, "rename")}
+                      onDelete={() => onRowAction(row, "delete")}
+                      onKeep={removed ? () => onRowAction(row, "keep") : undefined}
+                    />
                   )}
                 </div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-gray-400">
@@ -62,6 +73,7 @@ export function ListView({ session, rows, locales, version, editing, actions, on
                     <span className="rounded bg-indigo-50 px-1 text-indigo-700">plural · {row.pluralCategory}</span>
                   )}
                   {base?.kind === "complex" && <span className="rounded bg-gray-100 px-1 text-gray-600">complex</span>}
+                  <RowWarnings duplicateOf={duplicateGroups(session, row.id)} removedInSource={removed} />
                 </div>
               </div>
               <div className="min-w-0 flex-1 space-y-0.5 pr-3">

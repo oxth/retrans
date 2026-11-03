@@ -29,5 +29,6 @@ export function normalizePath(p: string): string {
 }
 
 export function joinPath(...parts: string[]): string {
-  return normalizePath(parts.filter((p) => p !== "").join("/"));
+  // A "." part (e.g. a workspace whose locales folder is its root) adds nothing.
+  return normalizePath(parts.filter((p) => p !== "" && p !== ".").join("/"));
 }

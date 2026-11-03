@@ -32,7 +32,7 @@ export function missingItems(session: ProjectSession, locale: string, ns: string
   });
   const items: BatchItem[] = [];
   for (const { id } of rows) {
-    if (isTranslated(session.value(id, locale))) continue;
+    if (isTranslated(session.value(id, locale)) || session.readOnlyReason(id, locale) !== null) continue;
     const source = sourceText(session, id);
     if (source !== null) items.push({ id, source });
   }

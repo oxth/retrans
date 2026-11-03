@@ -6,7 +6,8 @@ import { ProjectSession } from "../core/session";
 import type { Conflict } from "../core/merge";
 import { clearJournal, type Journal, journalPath, readJournal, writeJournal } from "../core/recovery";
 import { parseState, STATE_PATH } from "../core/state-file";
-import { isRelevantChange } from "../core/watch-filter";
+import { isRelevantChange, isSourceChange } from "../core/watch-filter";
+import { resolveSyncConflict, syncFromSource } from "../workspace/sync";
 import { BASELINE_PATH, WORKSPACE_META_PATH } from "../workspace/meta";
 import { type Fs, FsError, joinPath } from "../platform/fs";
 import { tauriFs } from "../platform/tauri-fs";
@@ -15,13 +16,24 @@ import { watchDir } from "../platform/watch";
 
 export interface PendingRecovery { journal: Journal; path: string }
 
+/**
+ * A conflict shown in the Resolve conflicts dialog. `origin: "source"`: changed both in the
+ * workspace and in the TypeScript source (from syncFromSource; resolved with resolveSyncConflict).
+ * Otherwise: changed both here and in the workspace files on disk (session.resolveConflict).
+ */
+export type UiConflict = Conflict & { origin?: "source" };
+
+export const SOURCE_MISSING_MESSAGE = "Source files not found — showing the saved workspace.";
+
 export interface AppState {
   fs: Fs;
   session: ProjectSession | null;
   /** What detection found for the open project (before state.json overrides). */
   detected: DetectResult | null;
   version: number;
-  conflicts: Conflict[];
+  conflicts: UiConflict[];
+  /** Workspace imported from TypeScript whose source folder is gone (or has no locale modules). */
+  sourceMissing: boolean;
   recovery: PendingRecovery | null;
   error: string | null;
   /**
@@ -29,7 +41,12 @@ export interface AppState {
    * ("proceed": the caller of confirmUnsaved goes on, e.g. installing an update).
    */
   closePrompt: { then: "project" | "window" } | { then: "proceed"; resolve: (go: boolean) => void } | null;
-  openProject(root: string, d: DetectResult, opts: ProjectOptions): Promise<void>;
+  /**
+   * Opens `root`. `prebuilt`: a session already made in memory (an imported TypeScript project,
+   * see ProjectSession.fromImport) instead of loading one from disk. A workspace with a source is
+   * synced from it right after opening, and again whenever its source folder changes.
+   */
+  openProject(root: string, d: DetectResult, opts: ProjectOptions, prebuilt?: ProjectSession): Promise<void>;
   closeProject(): Promise<void>;
   restoreRecovery(): Promise<void>;
   discardRecovery(): Promise<void>;
@@ -42,7 +59,7 @@ export interface AppState {
   answerClosePrompt(choice: "save" | "discard" | "cancel"): Promise<void>;
   /** True when there's nothing unsaved, or after the user saved or discarded; false on Cancel. */
   confirmUnsaved(): Promise<boolean>;
-  resolveConflict(c: Conflict, pick: "mine" | "theirs"): void;
+  resolveConflict(c: UiConflict, pick: "mine" | "theirs"): void;
   resolveAllConflicts(pick: "mine" | "theirs"): void;
 }
 
@@ -114,6 +131,12 @@ export async function savedBaseLocale(fs: Fs, root: string, d: DetectResult): Pr
   return b && d.locales.includes(b) ? b : null;
 }
 
+/** File conflicts brought up to date with `more` added; source conflicts are kept as they are. */
+function withFileConflicts(session: ProjectSession, list: UiConflict[], more: Conflict[]): UiConflict[] {
+  const source = list.filter((c) => c.origin === "source");
+  return [...session.refreshConflicts([...list.filter((c) => c.origin !== "source"), ...more]), ...source];
+}
+
 let openGen = 0;
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -123,29 +146,25 @@ export const useApp = create<AppState>((set, get) => ({
   detected: null,
   version: 0,
   conflicts: [],
+  sourceMissing: false,
   recovery: null,
   error: null,
   closePrompt: null,
 
-  async openProject(root, d, opts) {
+  async openProject(root, d, opts, prebuilt) {
     const { fs } = get();
     const my = ++openGen;
     const stale = () => my !== openGen;
     await teardown();
-    // .retrans/state.json may override the locales path (Settings). The base language comes from
-    // `opts` (detected, or picked/persisted when detection returned null) and is never overridden.
-    const { state: st } = parseState(await readState(fs, root));
-    const effective: ProjectOptions = {
-      baseLocale: opts.baseLocale,
-      // A workspace's files always live in .retrans/workspace.
-      localesPath: d.workspace ? d.localesPath : (st.project.localesPath ?? opts.localesPath),
-    };
-    const session = await ProjectSession.open(fs, root, d, effective);
+    const session = prebuilt ?? (await openSession(fs, root, d, opts));
     if (stale()) return;
-    if (d.baseLocale === null && st.project.baseLocale !== opts.baseLocale) {
-      // Ask once (spec §7.1): remember the user's pick.
-      await session.pinBaseLocale(opts.baseLocale).catch((e) => console.warn("could not record base language", e));
-      if (stale()) return;
+    if (!prebuilt && d.baseLocale === null) {
+      const { state: st } = parseState(await readState(fs, root));
+      if (st.project.baseLocale !== opts.baseLocale) {
+        // Ask once (spec §7.1): remember the user's pick.
+        await session.pinBaseLocale(opts.baseLocale).catch((e) => console.warn("could not record base language", e));
+        if (stale()) return;
+      }
     }
     const name = root.split("/").filter(Boolean).pop() ?? root;
     try {
@@ -168,7 +187,24 @@ export const useApp = create<AppState>((set, get) => ({
       set((s) => ({ version: s.version + 1 }));
       if (session.isDirty()) scheduleJournal(session, fs);
     });
-    set({ session, detected: d, conflicts: [], recovery, error: null, version: 0, closePrompt: null });
+    set({ session, detected: d, conflicts: [], sourceMissing: false, recovery, error: null, version: 0, closePrompt: null });
+
+    const sourceDir = session.workspace?.source?.localesDir;
+    const sync = () => {
+      syncFromSource(session).then(
+        (r) => {
+          if (get().session !== session) return;
+          if (!r.sourceAvailable) return set({ sourceMissing: true });
+          // Each sync reports every open source conflict: they replace the previous ones.
+          const fresh: UiConflict[] = r.conflicts.map((c) => ({ ...c, origin: "source" }));
+          set((s) => ({ sourceMissing: false, conflicts: [...s.conflicts.filter((c) => c.origin !== "source"), ...fresh] }));
+        },
+        (e) => {
+          if (get().session === session) set({ error: `Sync from source failed: ${msg(e)}` });
+        },
+      );
+    };
+    if (sourceDir !== undefined) sync();
 
     try {
       const scope = {
@@ -176,10 +212,12 @@ export const useApp = create<AppState>((set, get) => ({
         extraPaths: d.workspace ? [WORKSPACE_META_PATH, BASELINE_PATH] : undefined,
       };
       const stop = await watchDir(root, (paths) => {
-        if (get().session !== session || !isRelevantChange(paths, scope)) return;
+        if (get().session !== session) return;
+        if (sourceDir !== undefined && isSourceChange(paths, root, sourceDir)) sync();
+        if (!isRelevantChange(paths, scope)) return;
         session.reloadFromDisk().then(
           (c) => {
-            if (get().session === session) set((s) => ({ conflicts: session.refreshConflicts([...s.conflicts, ...c]) }));
+            if (get().session === session) set((s) => ({ conflicts: withFileConflicts(session, s.conflicts, c) }));
           },
           (e) => {
             if (get().session === session) set({ error: `Reload failed: ${msg(e)}` });
@@ -199,7 +237,7 @@ export const useApp = create<AppState>((set, get) => ({
   async closeProject() {
     openGen++;
     await teardown();
-    set({ session: null, detected: null, conflicts: [], recovery: null, error: null, version: 0, closePrompt: null });
+    set({ session: null, detected: null, conflicts: [], sourceMissing: false, recovery: null, error: null, version: 0, closePrompt: null });
   },
 
   async restoreRecovery() {
@@ -207,7 +245,7 @@ export const useApp = create<AppState>((set, get) => ({
     if (!session || !recovery) return;
     try {
       const c = session.applyJournal(recovery.journal);
-      set((s) => ({ recovery: null, conflicts: session.refreshConflicts([...s.conflicts, ...c]) }));
+      set((s) => ({ recovery: null, conflicts: withFileConflicts(session, s.conflicts, c) }));
     } catch (e) {
       set({ recovery: null, error: `Could not restore unsaved changes: ${msg(e)}` });
       await dropJournal(fs, recovery.path).catch(() => {});
@@ -233,7 +271,7 @@ export const useApp = create<AppState>((set, get) => ({
       let r = await session.save();
       if (r.stale.length) {
         const c = await session.reloadFromDisk();
-        if (current()) set((s) => ({ conflicts: session.refreshConflicts([...s.conflicts, ...c]) }));
+        if (current()) set((s) => ({ conflicts: withFileConflicts(session, s.conflicts, c) }));
         if (c.length) return false;
         r = await session.save();
         if (r.stale.length) {
@@ -291,16 +329,38 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   resolveConflict(c, pick) {
-    get().session?.resolveConflict(c, pick);
-    set((s) => ({ conflicts: s.conflicts.filter((x) => x.id !== c.id || x.locale !== c.locale) }));
+    const { session } = get();
+    if (session) resolveOne(session, c, pick);
+    set((s) => ({ conflicts: s.conflicts.filter((x) => x.id !== c.id || x.locale !== c.locale || x.origin !== c.origin) }));
   },
 
   resolveAllConflicts(pick) {
     const { session, conflicts } = get();
-    for (const c of conflicts) session?.resolveConflict(c, pick);
+    if (session) session.batch(() => { for (const c of conflicts) resolveOne(session, c, pick); });
     set({ conflicts: [] });
   },
 }));
+
+function resolveOne(session: ProjectSession, c: UiConflict, pick: "mine" | "theirs"): void {
+  const { origin, ...conflict } = c;
+  if (origin === "source") resolveSyncConflict(session, conflict, pick);
+  else session.resolveConflict(conflict, pick);
+}
+
+/**
+ * Loads a project from disk. .retrans/state.json may override the locales path (Settings). The
+ * base language comes from `opts` (detected, or picked/persisted when detection returned null)
+ * and is never overridden.
+ */
+async function openSession(fs: Fs, root: string, d: DetectResult, opts: ProjectOptions): Promise<ProjectSession> {
+  const { state: st } = parseState(await readState(fs, root));
+  const effective: ProjectOptions = {
+    baseLocale: opts.baseLocale,
+    // A workspace's files always live in .retrans/workspace.
+    localesPath: d.workspace ? d.localesPath : (st.project.localesPath ?? opts.localesPath),
+  };
+  return ProjectSession.open(fs, root, d, effective);
+}
 
 async function finishClose(then: "project" | "window", closeProject: () => Promise<void>): Promise<void> {
   if (then === "project") await closeProject();

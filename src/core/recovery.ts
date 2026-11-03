@@ -2,6 +2,7 @@ import { type Fs, FsError, joinPath, normalizePath } from "../platform/fs";
 import { hashText } from "./hash";
 import type { KeyId, MessageValue } from "./model";
 import type { StateFile } from "./state-file";
+import type { WorkspaceMeta } from "../workspace/meta";
 
 /** Unsaved edits of one project, written periodically so a crash loses nothing. */
 export interface Journal {
@@ -14,6 +15,12 @@ export interface Journal {
   /** Cells whose status entry differed from the last saved state when the journal was written. */
   stateCells: Array<[KeyId, string]>;
   state: StateFile;
+  /**
+   * Workspace only: meta fields changed since the last save (null = field removed), e.g. drafts
+   * accepted or removed-in-source keys kept. The pending source baseline is never journaled: a
+   * sync on open recomputes it.
+   */
+  workspaceMeta?: { [K in keyof WorkspaceMeta]?: WorkspaceMeta[K] | null };
 }
 
 export function journalPath(appDataDir: string, root: string): string {
@@ -35,7 +42,8 @@ function isJournal(v: unknown): v is Journal {
     v.cells.every((c) => Array.isArray(c) && c.length === 4 && typeof c[0] === "string" && typeof c[1] === "string") &&
     Array.isArray(v.stateCells) &&
     v.stateCells.every((c) => Array.isArray(c) && c.length === 2 && typeof c[0] === "string" && typeof c[1] === "string") &&
-    isObj(v.state) && isObj(v.state.entries) && isObj(v.state.project)
+    isObj(v.state) && isObj(v.state.entries) && isObj(v.state.project) &&
+    (v.workspaceMeta === undefined || isObj(v.workspaceMeta))
   );
 }
 

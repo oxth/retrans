@@ -67,7 +67,8 @@ function copyRow(table: Record<KeyId, Record<string, string>>, from: Record<KeyI
  * source value is taken; both changed differently → a conflict that keeps the workspace value.
  * Keys gone from the source are only marked removed. Files that can't be read are left out
  * entirely: their keys are neither changed nor marked removed, and keep their baseline.
- * The baseline then becomes the current source, except for conflict cells.
+ * The baseline then becomes the current source, except for conflict cells. The source's read-only
+ * entries (computed in code) are handed to the session (setSourceReadOnly).
  */
 export function syncFromSource(session: ProjectSession): Promise<SyncResult> {
   // One sync at a time per session, so two runs never merge against the same baseline.
@@ -186,6 +187,8 @@ async function syncNow(session: ProjectSession): Promise<SyncResult> {
     for (const id of Object.keys(stored)) if (skipped(id)) copyRow(next, stored, id);
     session.setPendingBaseline(serializeBaseline(next) === persistedText ? null : next);
     lastSync.set(session, { source: src.baseline, markers: src.markers, drafts: src.drafts, next });
+    // After the merge: a cell that just became computed in code still took the source's change.
+    session.setSourceReadOnly(src.readOnly);
   });
   return result;
 }

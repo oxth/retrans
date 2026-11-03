@@ -22,7 +22,8 @@ export interface TsImport {
   baseline: Baseline;
   /** Keys present in more than one group, sorted. */
   duplicates: string[];
-  readOnly: Array<{ id: KeyId; reason: string }>;
+  /** `locale` is set when only that language's entry is read-only (split style); else the whole key. */
+  readOnly: Array<{ id: KeyId; reason: string; locale?: string }>;
   /** Files that failed to read or parse; they are skipped. */
   errors: Array<{ relPath: string; message: string }>;
 }
@@ -76,6 +77,39 @@ export async function findLocalesDir(fs: Fs, root: string): Promise<string | nul
     }
   }
   return null;
+}
+
+/**
+ * Where to import from when the user picked `chosen`. `localesDir` is always relative to `root`,
+ * where the workspace (.retrans/) will live:
+ * - a project root holding one of the usual locales folders → that folder;
+ * - the locales folder itself, at one of the usual places (e.g. `<project>/src/assets/locales`)
+ *   → the project around it becomes the root;
+ * - any other folder with locale modules directly in it → that folder is the root, localesDir ".".
+ */
+export async function resolveTsSource(fs: Fs, chosen: string): Promise<{ root: string; localesDir: string } | null> {
+  const dir = await findLocalesDir(fs, chosen);
+  if (dir) return { root: chosen, localesDir: dir };
+  const norm = chosen.replace(/\\/g, "/").replace(/\/+$/, "");
+  for (const cand of CANDIDATES) {
+    if (!norm.endsWith("/" + cand)) continue;
+    const root = norm.slice(0, norm.length - cand.length - 1) || "/";
+    if ((await findLocalesDir(fs, root)) === cand) return { root, localesDir: cand };
+  }
+  for (const rel of (await candidateFiles(fs, chosen)).filter((r) => !r.includes("/"))) {
+    try {
+      if (parseLocaleModule(await fs.readText(joinPath(chosen, rel)), rel)) return { root: chosen, localesDir: "." };
+    } catch {
+      // not evidence either way
+    }
+  }
+  return null;
+}
+
+/** Keys with no value in any language that aren't read-only (they'd otherwise have no row). Sorted. */
+export function emptyKeysOf(imp: TsImport): KeyId[] {
+  const readOnly = new Set(imp.readOnly.map((r) => r.id));
+  return imp.keyOrder.filter((id) => !imp.values.get(id)?.size && !readOnly.has(id)).sort();
 }
 
 export async function importTsLocales(
@@ -165,7 +199,9 @@ export async function importTsLocales(
     }
 
     for (const r of module.readOnly) {
-      out.readOnly.push({ id: keyId(group, r.key), reason: r.locale ? `${r.locale}: ${r.reason}` : r.reason });
+      const item: TsImport["readOnly"][number] = { id: keyId(group, r.key), reason: r.locale ? `${r.locale}: ${r.reason}` : r.reason };
+      if (r.locale && module.style === "split") item.locale = r.locale;
+      out.readOnly.push(item);
     }
   }
 

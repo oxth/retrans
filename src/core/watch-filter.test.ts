@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isRelevantChange } from "./watch-filter";
+import { isRelevantChange, isSourceChange } from "./watch-filter";
 
 describe("isRelevantChange (#5)", () => {
   const next = (paths: string[], root = "/p", localesPath = "public/locales") =>
@@ -48,5 +48,20 @@ describe("isRelevantChange (#5)", () => {
     expect(ws(["/p/.retrans/source-baseline.json"])).toBe(true);
     expect(ws(["/p/.retrans/workspace/th/common.json"])).toBe(true);
     expect(ws(["/p/.retrans/other.json"])).toBe(false);
+  });
+});
+
+describe("isSourceChange (workspace TS source)", () => {
+  it("paths under the source dir (or its ancestors) count; for a workspace scope they are relevant", () => {
+    expect(isSourceChange(["/p/src/assets/locales/button.tsx"], "/p", "src/assets/locales")).toBe(true);
+    expect(isSourceChange(["/p/src/assets"], "/p", "src/assets/locales")).toBe(true);
+    expect(isSourceChange(["/p/src/app.tsx"], "/p", "src/assets/locales")).toBe(false);
+    expect(isSourceChange(["/p/.retrans/workspace/en/a.json"], "/p", "src/assets/locales")).toBe(false);
+    // "." = the root itself, except the workspace's own files
+    expect(isSourceChange(["/p/button.tsx"], "/p", ".")).toBe(true);
+    expect(isSourceChange(["/p/.retrans/workspace.json"], "/p", ".")).toBe(false);
+    const scope = { root: "/p", format: "next-i18next" as const, localesPath: ".retrans/workspace", sourceDir: "src/assets/locales" };
+    expect(isRelevantChange(["/p/src/assets/locales/common.ts"], scope)).toBe(true);
+    expect(isRelevantChange(["/p/src/app.tsx"], scope)).toBe(false);
   });
 });

@@ -1,6 +1,12 @@
 import { useState } from "react";
 
-export function RowMenu({ name, onRename, onDelete }: { name: string; onRename: () => void; onDelete: () => void }) {
+/**
+ * Per-row actions. `onKeep` is set for a workspace key removed in source: Delete is then
+ * labelled "Delete key" and Keep clears the mark.
+ */
+export function RowMenu({ name, onRename, onDelete, onKeep }: {
+  name: string; onRename: () => void; onDelete: () => void; onKeep?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const item = "block w-full px-3 py-1 text-left text-sm hover:bg-gray-100";
   return (
@@ -20,7 +26,10 @@ export function RowMenu({ name, onRename, onDelete }: { name: string; onRename: 
       {open && (
         <div role="menu" className="absolute left-0 z-30 mt-1 w-28 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
           <button role="menuitem" className={item} onClick={() => { setOpen(false); onRename(); }}>Rename</button>
-          <button role="menuitem" className={`${item} text-red-600`} onClick={() => { setOpen(false); onDelete(); }}>Delete</button>
+          {onKeep && <button role="menuitem" className={item} onClick={() => { setOpen(false); onKeep(); }}>Keep</button>}
+          <button role="menuitem" className={`${item} text-red-600`} onClick={() => { setOpen(false); onDelete(); }}>
+            {onKeep ? "Delete key" : "Delete"}
+          </button>
         </div>
       )}
     </span>

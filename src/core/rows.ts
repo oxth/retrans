@@ -98,7 +98,7 @@ export function nextMissing(
     const idx = (((start + step) % total) + total) % total;
     const row = rows[Math.floor(idx / m)];
     const locale = locales[idx % m];
-    if (!isApplicable(s.data, row.id, locale)) continue;
+    if (!isApplicable(s.data, row.id, locale) || s.readOnlyReason(row.id, locale) !== null) continue;
     if (!isTranslated(s.value(row.id, locale))) return { id: row.id, locale };
   }
   return null;

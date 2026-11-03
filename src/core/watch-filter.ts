@@ -24,15 +24,40 @@ export interface WatchScope {
   localesPath: string;
   /** More root-relative files that count (e.g. a workspace's meta and baseline). */
   extraPaths?: string[];
+  /** Workspace imported from TypeScript: its root-relative source folder (`source.localesDir`) counts too. */
+  sourceDir?: string;
+}
+
+/**
+ * True when a watcher batch touches a workspace's TypeScript source folder (root-relative
+ * `sourceDir`; "." is the root itself, minus .retrans/), or removes/moves one of its ancestors.
+ */
+export function isSourceChange(paths: string[], root: string, sourceDir: string): boolean {
+  const r = norm(root);
+  const dir = trimRel(sourceDir) === "." ? "" : trimRel(sourceDir);
+  for (const raw of paths) {
+    const p = norm(raw);
+    if (p !== r && !p.startsWith(r + "/")) continue;
+    const rel = p === r ? "" : p.slice(r.length + 1);
+    if (!dir) {
+      if (rel !== ".retrans" && !rel.startsWith(".retrans/")) return true;
+      continue;
+    }
+    if (rel === dir || rel.startsWith(dir + "/")) return true;
+    if (rel === "" || dir.startsWith(rel + "/")) return true; // an ancestor moved or was removed
+  }
+  return false;
 }
 
 /**
  * True when a watcher batch can affect the open project: a path inside (or an ancestor of) the
- * locales directory, project.inlang/settings.json, or .retrans/state.json. For Paraglide the
+ * locales directory, project.inlang/settings.json, or .retrans/state.json (and, for a workspace
+ * with `sourceDir`, its TypeScript source folder; see isSourceChange). For Paraglide the
  * locales directory is the part of pathPattern before "{locale}"; when that is the root itself,
  * only paths matching the pattern count.
  */
 export function isRelevantChange(paths: string[], scope: WatchScope): boolean {
+  if (scope.sourceDir !== undefined && isSourceChange(paths, scope.root, scope.sourceDir)) return true;
   const root = norm(scope.root);
   const pattern = trimRel(scope.localesPath);
   let dir = pattern;
