@@ -180,6 +180,7 @@ describe("workspace store", () => {
     expect(m).toEqual({
       retransWorkspace: 1, name: "x", drafts: {}, markers: { "common::a": { th: "y" } },
       removedInSource: ["common::b"], duplicates: [], emptyKeys: ["common::z"], renames: { "common::a": "common::b" },
+      deletedKeys: [],
     });
     expect(parseBaseline("nope")).toBeNull();
     expect(parseBaseline(null)).toBeNull();
@@ -205,6 +206,7 @@ describe("workspace store", () => {
     const m: WorkspaceMeta = {
       retransWorkspace: 1, name: "N", source: { type: "ts", localesDir: "src/locales" },
       drafts: { "common::a": { en: "draft" } }, markers: {}, removedInSource: [], duplicates: ["a"], emptyKeys: ["common::e"], renames: { "common::old": "common::new" },
+      deletedKeys: ["common::gone"],
       lastExport: { target: { kind: "i18next-json", dir: "out", namespaces: "single" } },
     };
     const text = serializeWorkspaceMeta(m);

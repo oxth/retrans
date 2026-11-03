@@ -57,6 +57,7 @@ export async function buildPackage(
   if (meta) {
     const packaged = structuredClone(meta);
     delete packaged.source;
+    delete packaged.invalidSource;
     delete packaged.lastExport;
     out.set(WORKSPACE_META_PATH, serializeWorkspaceMeta(packaged));
   } else if (session.data.format === "paraglide") {

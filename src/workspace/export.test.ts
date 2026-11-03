@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { keyId, type MessageValue } from "../core/model";
+import { ProjectSession } from "../core/session";
+import { detectProject } from "../formats/detect";
 import { joinPath } from "../platform/fs";
 import { MemoryFs } from "../platform/memory-fs";
 import { importTsLocales } from "../tssource/import";
@@ -35,6 +37,12 @@ async function writeBack(w: Awaited<ReturnType<typeof setup>>, s: typeof w.sessi
   const again = await planExport(s, { kind: "ts-writeback" }, re);
   expect(again.blocked).toBeUndefined();
   return plan;
+}
+
+/** The workspace as saved on disk, opened again. */
+async function openSaved(w: { fs: MemoryFs; root: string }) {
+  const d = (await detectProject(w.fs, w.root))!;
+  return ProjectSession.open(w.fs, w.root, d, { baseLocale: "th", localesPath: d.localesPath });
 }
 
 const file = (plan: { files: Array<{ path: string; text: string }> }, path: string) =>
@@ -299,6 +307,92 @@ describe("planExport: ts-writeback", () => {
     expect(plan.files).toEqual([]);
     await expect(writeExportPlan(w.fs, plan)).rejects.toThrow();
     expect(await w.fs.readText(path)).toContain("'Okay!'");
+  });
+});
+
+describe("deleting rows of keys the source has", () => {
+  const ONLY_EN = keyId("common", "only_en");
+
+  it("an empty key (th: undefined, en: marker) stays deleted through sync and is removed by write-back", async () => {
+    const w = await setup();
+    const s = w.session;
+    expect(s.data.keyOrder).toContain(ONLY_EN); // an empty-key row
+    s.deleteKey(ONLY_EN);
+    expect(s.workspace!.deletedKeys).toEqual([ONLY_EN]);
+    expect(s.toJournal().workspaceMeta?.deletedKeys).toEqual([ONLY_EN]); // journaled
+    // Sync never brings it back, nor marks it removed in source.
+    const r = await syncFromSource(s);
+    expect(r).toMatchObject({ added: [], removedInSource: [], conflicts: [] });
+    expect(s.data.keyOrder).not.toContain(ONLY_EN);
+    expect(s.workspace!.emptyKeys).not.toContain(ONLY_EN);
+    await s.save();
+    const reopened = await openSaved(w);
+    expect(reopened.workspace!.deletedKeys).toEqual([ONLY_EN]);
+    expect(reopened.data.keyOrder).not.toContain(ONLY_EN);
+
+    const plan = await planExport(s, { kind: "ts-writeback" }, await w.source());
+    expect(plan.blocked).toBeUndefined();
+    expect(plan.files.map((f) => f.path)).toEqual([`${w.root}/${w.localesDir}/common.ts`]);
+    expect(plan.files[0].text).not.toContain("only_en");
+    expect(plan.deletedApplied).toEqual([ONLY_EN]);
+    await writeExportPlan(w.fs, plan);
+    recordWriteBack(s, plan);
+    expect(s.workspace!.deletedKeys).toEqual([]);
+    const post = await syncFromSource(s);
+    expect(post).toMatchObject({ added: [], updated: [], removedInSource: [], conflicts: [] });
+    await s.save();
+    const again = await planExport(s, { kind: "ts-writeback" }, await w.source());
+    expect(again.blocked).toBeUndefined();
+    expect(again.files).toEqual([]);
+  });
+
+  it("a split-style empty key is removed from every language object", async () => {
+    const R = "/p";
+    const path = `${R}/loc/form.ts`;
+    const fs = new MemoryFs({
+      [path]: "export const formTH = {\n  title: 'หัวข้อ',\n  hint: undefined,\n};\n\nexport const formEN = {\n  title: 'Title',\n  hint: 'Hint (EN)',\n};\n",
+    });
+    const s = await openWorkspaceFrom(fs, R, "loc");
+    const hint = keyId("form", "hint");
+    expect(s.data.keyOrder).toEqual([keyId("form", "title"), hint]);
+    s.deleteKey(hint);
+    expect(s.workspace!.deletedKeys).toEqual([hint]);
+    await syncFromSource(s);
+    expect(s.data.keyOrder).toEqual([keyId("form", "title")]);
+    await s.save();
+    const plan = await planExport(s, { kind: "ts-writeback" }, await importTsLocales(fs, R, "loc", "th"));
+    expect(plan.blocked).toBeUndefined();
+    await writeExportPlan(fs, plan);
+    recordWriteBack(s, plan);
+    expect(await fs.readText(path)).toBe(
+      "export const formTH = {\n  title: 'หัวข้อ',\n};\n\nexport const formEN = {\n  title: 'Title',\n};\n",
+    );
+    expect(s.workspace!.deletedKeys).toEqual([]);
+  });
+
+  it("a key with real values is recorded too; a renamed key by its source id; re-adding the id forgets it", async () => {
+    const w = await setup();
+    const s = w.session;
+    const ok = keyId("button", "button_ok");
+    const okay = s.renameKey(ok, "button_okay");
+    s.deleteKey(okay);
+    s.deleteKey(keyId("button", "button_save"));
+    expect(s.workspace!.deletedKeys).toEqual([ok, keyId("button", "button_save")]);
+    // A key only added in Retrans isn't recorded.
+    const mine = s.addKey("button", "button_mine", "ของฉัน");
+    s.deleteKey(mine);
+    expect(s.workspace!.deletedKeys).toEqual([ok, keyId("button", "button_save")]);
+    s.addKey("button", "button_save", "บันทึก");
+    expect(s.workspace!.deletedKeys).toEqual([ok]);
+
+    await syncFromSource(s);
+    await s.save();
+    const plan = await planExport(s, { kind: "ts-writeback" }, await w.source());
+    expect(plan.blocked).toBeUndefined();
+    const button = plan.files.find((f) => f.path.endsWith("button.tsx"))!.text;
+    expect(button).not.toContain("button_ok");
+    expect(button).toContain("button_save: 'บันทึก'");
+    expect(plan.deletedApplied).toEqual([ok]);
   });
 });
 

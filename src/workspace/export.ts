@@ -13,7 +13,7 @@ import { isMarker, type TsImport } from "../tssource/import";
 import { type LocaleModule, parseLocaleModule } from "../tssource/parse";
 import { applyTsEdits, encodeTsString, i18nSnippet, newTableModule, type TsEdit } from "../tssource/write";
 import { type Baseline, BASELINE_PATH, type ExportTarget, jsonEqual, parseBaseline, serializeBaseline } from "./meta";
-import { applyRenames } from "./sync";
+import { applyRenames, dropDeletedKeys } from "./sync";
 
 export interface ExportPlan {
   /** Every file must be under this folder: the project root (write-back), else the chosen folder. */
@@ -33,6 +33,8 @@ export interface ExportPlan {
    * them from the meta once the plan is written.
    */
   renamesApplied?: KeyId[];
+  /** ts-writeback only: the `meta.deletedKeys` now gone from the source; `recordWriteBack` clears them. */
+  deletedApplied?: KeyId[];
 }
 
 const emptyPlan = (root: string): ExportPlan => ({ root, files: [], snippets: [], leftOutLocales: [], warnings: [] });
@@ -110,10 +112,15 @@ function resolveDots(path: string): string {
  */
 export function recordWriteBack(session: ProjectSession, plan: ExportPlan): void {
   const meta = session.workspace;
-  if (!meta || !plan.renamesApplied?.length) return;
-  const done = new Set(plan.renamesApplied);
-  const renames = Object.fromEntries(Object.entries(meta.renames).filter(([from]) => !done.has(from)));
-  session.setWorkspaceMeta({ renames });
+  if (!meta) return;
+  if (plan.renamesApplied?.length) {
+    const done = new Set(plan.renamesApplied);
+    session.setWorkspaceMeta({ renames: Object.fromEntries(Object.entries(meta.renames).filter(([from]) => !done.has(from))) });
+  }
+  if (plan.deletedApplied?.length) {
+    const done = new Set(plan.deletedApplied);
+    session.setWorkspaceMeta({ deletedKeys: session.workspace!.deletedKeys.filter((id) => !done.has(id)) });
+  }
 }
 
 // ---- workspace reading -------------------------------------------------------------------
@@ -205,10 +212,15 @@ async function planTsSource(
   // Renames done in Retrans: the old source key is written as remove-old + add-new. Compare in
   // workspace ids, as sync does (a baseline saved after a sync is keyed by the new ids).
   const renamed = activeRenames(source, meta.renames);
+  // Keys deleted in Retrans count as gone from the source, as in sync (with the row they were renamed to).
+  const deleted = new Set(meta.deletedKeys);
+  const gone = new Set([...deleted, ...meta.deletedKeys.flatMap((id) => (meta.renames[id] ? [meta.renames[id]] : []))]);
   const normalized: TsImport = { ...source };
+  dropDeletedKeys(normalized, meta.deletedKeys);
   applyRenames(normalized, meta.renames);
   const stored = parseBaseline(await readOrNull(session.fs, joinPath(root, BASELINE_PATH)));
-  if (!stored || !jsonEqual(renameBaseline(stored, renamed), normalized.baseline)) {
+  const storedNow = stored && Object.fromEntries(Object.entries(renameBaseline(stored, renamed)).filter(([id]) => !gone.has(id)));
+  if (!storedNow || !jsonEqual(storedNow, normalized.baseline)) {
     return { ...emptyPlan(root), blocked: { reason: "conflicts" } };
   }
   const renamedOld = new Set(renamed.keys());
@@ -224,7 +236,7 @@ async function planTsSource(
   const outputs: Array<{ relPath: string; text: string }> = [];
   for (const { relPath, module, text } of source.modules.values()) {
     const ids = (rows.get(module.group) ?? []).filter((id) => !removed.has(id));
-    const out = applyTsEdits(text, module, moduleEdits(session, module, ids, removed, renamedOld, renamedNew));
+    const out = applyTsEdits(text, module, moduleEdits(session, module, ids, removed, renamedOld, renamedNew, deleted));
     outputs.push({ relPath, text: out });
     if (writeback && out === text) continue;
     plan.files.push({ path: joinPath(outRoot, relPath), text: out });
@@ -275,6 +287,8 @@ async function planTsSource(
       (from) => !erroredGroups.has(parseKeyId(from).ns) && !after.has(from),
     );
     if (applied.length > 0) plan.renamesApplied = applied;
+    const deletedDone = meta.deletedKeys.filter((id) => !erroredGroups.has(parseKeyId(id).ns) && !after.has(id));
+    if (deletedDone.length > 0) plan.deletedApplied = deletedDone;
   }
   return plan;
 }
@@ -330,7 +344,7 @@ function baselineOf(outputs: Array<{ relPath: string; text: string }>): Baseline
  */
 function moduleEdits(
   session: ProjectSession, module: LocaleModule, ids: KeyId[], removed: Set<KeyId>,
-  renamedOld: Set<KeyId>, renamedNew: Set<KeyId>,
+  renamedOld: Set<KeyId>, renamedNew: Set<KeyId>, deleted: Set<KeyId>,
 ): TsEdit[] {
   const edits: TsEdit[] = [];
   const { group } = module;
@@ -409,11 +423,11 @@ function moduleEdits(
   }
 
   // Keys deleted in the workspace. A key with no real value in the source (only markers or
-  // `undefined`) has no workspace row to begin with, so it is never treated as deleted.
+  // `undefined`) goes only when its row was deleted (meta.deletedKeys) or renamed.
   for (const key of sourceKeys) {
     if (wsKeys.has(key) || removed.has(keyId(group, key)) || hasReadOnly(key)) continue;
-    // A renamed key's old name goes even when it only had markers (its row moved to the new name).
-    if (renamedOld.has(keyId(group, key)) || module.locales.some((loc) => isReal(key, loc))) edits.push({ kind: "remove", key });
+    const id = keyId(group, key);
+    if (deleted.has(id) || renamedOld.has(id) || module.locales.some((loc) => isReal(key, loc))) edits.push({ kind: "remove", key });
   }
   return edits;
 }

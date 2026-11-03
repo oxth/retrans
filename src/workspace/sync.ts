@@ -94,6 +94,7 @@ async function syncNow(session: ProjectSession): Promise<SyncResult> {
   const src = await importTsLocales(fs, root, localesDir, session.data.baseLocale);
   if (src.modules.size === 0) return unavailable();
   if (!session.workspace) return unavailable();
+  dropDeletedKeys(src, session.workspace.deletedKeys);
   applyRenames(src, session.workspace.renames);
   const persistedText = await readOrNull(fs, joinPath(root, BASELINE_PATH));
   // Everything below is synchronous, so the workspace can't change underneath the merge.
@@ -193,6 +194,7 @@ async function syncNow(session: ProjectSession): Promise<SyncResult> {
     lastSync.set(session, { source: src.baseline, markers: src.markers, drafts: src.drafts, next });
     // After the merge: a cell that just became computed in code still took the source's change.
     session.setSourceReadOnly(src.readOnly);
+    session.setSourceKeys(src.keyOrder);
   });
   return result;
 }
@@ -243,12 +245,35 @@ export function applyRenames(imp: TsImport, renames: Record<KeyId, KeyId>): void
   imp.markers = renameRows(imp.markers, renames, map);
   imp.drafts = renameRows(imp.drafts, renames, map);
   imp.readOnly = imp.readOnly.map((r) => ({ ...r, id: id(r.id) }));
+  imp.duplicates = duplicatesOf(imp.keyOrder);
+}
+
+/**
+ * Leaves the keys deleted in Retrans (`meta.deletedKeys`, source ids) out of an import, as if the
+ * source didn't have them: sync never brings them back. Call before applyRenames. Mutates `imp`.
+ */
+export function dropDeletedKeys(imp: TsImport, deleted: KeyId[]): void {
+  if (!deleted.length) return;
+  const drop = new Set(deleted);
+  if (!imp.keyOrder.some((id) => drop.has(id))) return;
+  const keep = <T>(t: Record<KeyId, T>) => Object.fromEntries(Object.entries(t).filter(([id]) => !drop.has(id))) as Record<KeyId, T>;
+  imp.keyOrder = imp.keyOrder.filter((id) => !drop.has(id));
+  imp.values = new Map([...imp.values].filter(([id]) => !drop.has(id)));
+  imp.baseline = keep(imp.baseline);
+  imp.markers = keep(imp.markers);
+  imp.drafts = keep(imp.drafts);
+  imp.readOnly = imp.readOnly.filter((r) => !drop.has(r.id));
+  imp.duplicates = duplicatesOf(imp.keyOrder);
+}
+
+/** Keys present in more than one group, sorted. */
+function duplicatesOf(ids: KeyId[]): string[] {
   const groups = new Map<string, Set<string>>();
-  for (const k of imp.keyOrder) {
+  for (const k of ids) {
     const { ns, key } = parseKeyId(k);
     groups.set(key, (groups.get(key) ?? new Set()).add(ns));
   }
-  imp.duplicates = [...groups].filter(([, gs]) => gs.size > 1).map(([k]) => k).sort();
+  return [...groups].filter(([, gs]) => gs.size > 1).map(([k]) => k).sort();
 }
 
 /** A table keyed by source ids with renamed rows moved to their new id (an existing new-id row wins). */

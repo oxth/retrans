@@ -41,6 +41,11 @@ export interface WorkspaceMeta {
    * source ids through it; write-back (Task 8) turns each into remove-old + add-new, then clears it.
    */
   renames: Record<KeyId, KeyId>;
+  /**
+   * Source keys (source ids, before any rename) whose rows were deleted in Retrans. Sync never
+   * brings them back; write-back removes them from the source files, then clears them.
+   */
+  deletedKeys: KeyId[];
   lastExport?: ExportSettings;
 }
 
@@ -124,6 +129,7 @@ export function parseWorkspaceMeta(text: string | null): WorkspaceMeta | null {
     duplicates: stringList(raw.duplicates),
     emptyKeys: stringList(raw.emptyKeys),
     renames: stringMap(raw.renames),
+    deletedKeys: stringList(raw.deletedKeys),
   };
   const src = raw.source;
   if (isRecord(src) && src.type === "ts" && typeof src.localesDir === "string") {

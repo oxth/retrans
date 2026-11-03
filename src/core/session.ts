@@ -20,7 +20,7 @@ import { planReload } from "./session-reload";
 import { parseState, reconcile, serializeState, STATE_PATH, type StateEntry, type StateFile } from "./state-file";
 import { cellMeta, recordCleared, recordEdit, recordReviewed, renameInState } from "./status";
 import {
-  type Baseline, BASELINE_PATH, jsonEqual, parseWorkspaceMeta, serializeBaseline, serializeWorkspaceMeta,
+  type Baseline, BASELINE_PATH, jsonEqual, parseBaseline, parseWorkspaceMeta, serializeBaseline, serializeWorkspaceMeta,
   WORKSPACE_DIR, WORKSPACE_META_ERROR, WORKSPACE_META_PATH, type WorkspaceMeta,
 } from "../workspace/meta";
 import { emptyKeysOf, type TsImport } from "../tssource/import";
@@ -107,6 +107,11 @@ export class ProjectSession {
   private pendingBase: Baseline | null = null;
   /** Workspace only: source entries computed in code (from the import / last sync); never editable here. */
   private roCells: SourceReadOnly[] = [];
+  /**
+   * Workspace only: the keys (workspace ids) the TS source has, from the import / last sync (on
+   * open: the stored baseline's keys). Deleting one records it in meta.deletedKeys.
+   */
+  private sourceIds = new Set<KeyId>();
 
   private constructor(
     fs: Fs, root: string, adapter: FormatAdapter, opts: ProjectOptions,
@@ -137,6 +142,9 @@ export class ProjectSession {
     const s = new ProjectSession(fs, root, adapter, opts, load, state, stateText, error, d.workspace ?? null);
     if (d.workspace) {
       s.metaDiskText = await readOrNull(fs, joinPath(root, WORKSPACE_META_PATH));
+      if (d.workspace.source) {
+        s.sourceIds = new Set(Object.keys(parseBaseline(await readOrNull(fs, joinPath(root, BASELINE_PATH))) ?? {}));
+      }
       s.addExtraRows();
     }
     return s;
@@ -170,6 +178,7 @@ export class ProjectSession {
       duplicates: [...imp.duplicates],
       emptyKeys: emptyKeysOf(imp),
       renames: {},
+      deletedKeys: [],
     };
     const s = new ProjectSession(fs, root, workspaceAdapter, opts, { data, files: [], errors: [] }, state, stateText, error, meta);
     s.disk = new Map(); // nothing on disk yet: every value is unsaved
@@ -180,6 +189,7 @@ export class ProjectSession {
     }
     s.pendingBase = structuredClone(imp.baseline);
     s.roCells = imp.readOnly.map((r) => ({ ...r }));
+    s.sourceIds = new Set(imp.keyOrder);
     s.state.project.baseLocale = base;
     s.stateTouched = true;
     s.setKeyOrder(keyOrder);
@@ -190,6 +200,11 @@ export class ProjectSession {
   readOnlyReason(id: KeyId, locale: string): string | null {
     for (const r of this.roCells) if (r.id === id && (r.locale === undefined || r.locale === locale)) return r.reason;
     return null;
+  }
+
+  /** Workspace only: every key (workspace id) the TS source has now (from a sync). */
+  setSourceKeys(ids: Iterable<KeyId>): void {
+    if (this.wsMeta) this.sourceIds = new Set(ids);
   }
 
   /** Workspace only: the source's read-only entries (from a sync); they get rows even without values. */
@@ -420,6 +435,10 @@ export class ProjectSession {
     this.assertWritable(base, ns);
     const ids = keys.map((k) => keyId(ns, k));
     for (const id of ids) this.put(id, base, { kind: "text", text: baseText });
+    if (this.wsMeta?.deletedKeys.some((d) => ids.includes(d))) {
+      // Added again: no longer a deleted source key.
+      this.wsMeta = { ...this.wsMeta, deletedKeys: this.wsMeta.deletedKeys.filter((d) => !ids.includes(d)) };
+    }
     this.setKeyOrder([...this.data.keyOrder, ...ids]);
     this.emit();
     return opts?.plural ? keyId(ns, `${key}_other`) : ids[0];
@@ -503,6 +522,7 @@ export class ProjectSession {
       if (to === origin) delete renames[origin];
       else renames[origin] = to;
     }
+    this.sourceIds = new Set([...this.sourceIds].map((id) => pairs.get(id) ?? id));
     this.wsMeta = {
       ...meta,
       renames,
@@ -516,9 +536,20 @@ export class ProjectSession {
   /** A deleted key leaves the workspace meta too (so it doesn't come back as a row or a mark). */
   private forgetInMeta(drop: Set<KeyId>): void {
     const meta = this.wsMeta!;
+    // A key the source has stays deleted: recorded by its source id (before any rename).
+    const deleted = [...meta.deletedKeys];
+    if (meta.source) {
+      for (const id of drop) {
+        const inSource = this.sourceIds.has(id) || meta.emptyKeys.includes(id) || this.roCells.some((r) => r.id === id);
+        if (!inSource || meta.removedInSource.includes(id)) continue; // gone from the source already
+        const origin = Object.keys(meta.renames).find((k) => meta.renames[k] === id) ?? id;
+        if (!deleted.includes(origin)) deleted.push(origin);
+      }
+    }
     const without = <T>(table: Record<KeyId, T>) =>
       Object.fromEntries(Object.entries(table).filter(([id]) => !drop.has(id))) as Record<KeyId, T>;
     const patch: Partial<WorkspaceMeta> = {
+      deletedKeys: deleted,
       removedInSource: meta.removedInSource.filter((id) => !drop.has(id)),
       emptyKeys: meta.emptyKeys.filter((id) => !drop.has(id)),
       drafts: without(meta.drafts),
