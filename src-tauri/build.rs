@@ -58,9 +58,11 @@ fn clang_runtime_dir() -> Option<PathBuf> {
 }
 
 /// Windows builds llama.cpp with `dynamic-backends`: `llama.dll`/`ggml*.dll` plus one
-/// `ggml-cpu-*.dll` per CPU variant. Mirror them into `llama-dlls/`, which the Windows bundle
-/// installs next to the exe (see tauri.windows.conf.json). Only changed DLLs are copied and stale
-/// ones removed, so an unchanged build leaves the folder (and the bundle inputs) alone.
+/// `ggml-cpu-*.dll` per CPU variant. Mirror them, plus the VC++ runtime DLLs they import (they are
+/// built with the default dynamic CRT, /MD), into `llama-dlls/`, which the Windows bundle installs
+/// next to the exe (see tauri.windows.conf.json), so a clean machine needs no VC++ redistributable.
+/// Only changed DLLs are copied and stale ones removed, so an unchanged build leaves the folder
+/// (and the bundle inputs) alone.
 fn stage_llama_dlls_on_windows() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
@@ -82,9 +84,54 @@ fn stage_llama_dlls_on_windows() {
         }
     }
 
+    let crt: Vec<PathBuf> = match vc_runtime_dir() {
+        Some(dir) => build_stage::VC_CRT_DLLS.iter().map(|n| dir.join(n)).collect(),
+        None => {
+            let msg = "VC++ runtime DLLs (msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll) not found in \
+                       %VCToolsRedistDir%, the Visual Studio install or System32; the app won't start on a \
+                       machine without the VC++ redistributable";
+            println!("cargo:warning={msg}");
+            if std::env::var("PROFILE").as_deref() == Ok("release") {
+                panic!("{msg}");
+            }
+            Vec::new()
+        }
+    };
+
     let dest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("llama-dlls");
-    let report = build_stage::sync_dlls(&[&shared, &backends], &dest).expect("stage llama.cpp DLLs");
+    let report = build_stage::sync_dlls(&[&shared, &backends], &crt, &dest).expect("stage llama.cpp DLLs");
     if report.found == 0 {
         panic!("no llama.cpp DLLs found in {} or {}", shared.display(), backends.display());
     }
+}
+
+/// The x64 VC++ runtime folder to ship from: `%VCToolsRedistDir%`, `%VCINSTALLDIR%`, the newest
+/// Visual Studio with the C++ tools (vswhere), then System32 (see build_stage::find_vc_crt).
+fn vc_runtime_dir() -> Option<PathBuf> {
+    println!("cargo:rerun-if-env-changed=VCToolsRedistDir");
+    println!("cargo:rerun-if-env-changed=VCINSTALLDIR");
+    let env_dir = |k: &str| std::env::var_os(k).map(PathBuf::from);
+    let found = build_stage::find_vc_crt(
+        env_dir("VCToolsRedistDir"),
+        env_dir("VCINSTALLDIR"),
+        vswhere_install_dir(),
+        env_dir("SystemRoot").map(|r| r.join("System32")),
+    );
+    if let Some(dir) = &found {
+        println!("cargo:rerun-if-changed={}", dir.display());
+    }
+    found
+}
+
+fn vswhere_install_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("ProgramFiles(x86)").map(PathBuf::from)?;
+    let vswhere = base.join("Microsoft Visual Studio").join("Installer").join("vswhere.exe");
+    let out = Command::new(vswhere)
+        .args(["-latest", "-products", "*", "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"])
+        .args(["-property", "installationPath"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let path = String::from_utf8_lossy(&out.stdout).lines().next()?.trim().to_string();
+    (!path.is_empty()).then(|| PathBuf::from(path))
 }

@@ -95,7 +95,8 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       # A clean Windows 10+ machine has no VC++ redistributable: retrans.exe and every shipped DLL
-      # may import only Windows' own DLLs (the UCRT included) and each other.
+      # may import only Windows' own DLLs (the UCRT included) and each other. The VC++ runtime
+      # (msvcp140, vcruntime140, vcruntime140_1) is shipped app-locally by build.rs.
       - name: Check retrans.exe and the shipped DLLs need no VC++ redistributable
         if: runner.os == 'Windows'
         shell: pwsh
@@ -104,6 +105,9 @@ jobs:
           $dlls = @(Get-ChildItem src-tauri/llama-dlls -Filter *.dll)
           if ($dlls.Count -eq 0) { Write-Error 'No DLLs staged in src-tauri/llama-dlls' }
           $shipped = @($dlls | ForEach-Object { $_.Name.ToLowerInvariant() })
+          foreach ($crt in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+            if ($shipped -notcontains $crt) { Write-Host "::error::$crt is not staged in src-tauri/llama-dlls"; exit 1 }
+          }
           $sys32 = Join-Path $env:SystemRoot 'System32'
           # Present on the runner's System32 but NOT on a clean machine: the VC++ redistributable.
           $redist = '^(msvcp|vcruntime|vcomp|concrt|vccorlib|msvcr)\d|^ucrtbased\.dll$'
@@ -126,7 +130,7 @@ jobs:
           }
           Write-Host 'No VC++ redistributable dependencies.'
 
-      - name: Check llama.cpp DLLs sit next to retrans.exe in the installer
+      - name: Check llama.cpp and VC++ runtime DLLs sit next to retrans.exe in the installer
         if: runner.os == 'Windows'
         shell: bash
         run: |
@@ -151,5 +155,8 @@ jobs:
           printf '%s\n' "$names" | grep -ix 'llama\.dll' >/dev/null || missing="$missing llama.dll"
           printf '%s\n' "$names" | grep -iE '^ggml.*\.dll$' | grep -ivE '^ggml-cpu-' >/dev/null || missing="$missing ggml*.dll"
           printf '%s\n' "$names" | grep -iE '^ggml-cpu-.+\.dll$' >/dev/null || missing="$missing ggml-cpu-*.dll"
+          for crt in msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            printf '%s\n' "$names" | grep -ixF "$crt" >/dev/null || missing="$missing $crt"
+          done
           if [ -n "$missing" ]; then echo "::error::Missing next to retrans.exe:$missing"; exit 1; fi
-          echo "All llama.cpp DLLs present."
+          echo "All llama.cpp and VC++ runtime DLLs present."
