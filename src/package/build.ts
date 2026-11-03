@@ -2,6 +2,7 @@ import { detectStyle, setAt } from "../core/json-text";
 import type { ProjectSession } from "../core/session";
 import { serializeState, STATE_PATH, type StateFile } from "../core/state-file";
 import { FsError, joinPath } from "../platform/fs";
+import { serializeWorkspaceMeta, WORKSPACE_META_PATH } from "../workspace/meta";
 import { MANIFEST_PATH, parseManifest, serializeManifest, snapshotCells, type PackageManifest } from "./manifest";
 
 export class ExportError extends Error {}
@@ -21,6 +22,11 @@ async function readOrNull(session: ProjectSession, rel: string): Promise<string 
 /**
  * Files of a translator package: a complete, openable project limited to the base locale plus the
  * chosen targets. The session must be clean so the loaded text equals what is on disk.
+ *
+ * A workspace package holds the workspace itself (`.retrans/workspace/**`, its meta and
+ * state.json) but no TypeScript sources and no source baseline. Its meta has no `source`, so the
+ * translator's copy never syncs (and never marks keys removed in source); the last export target
+ * (a path on the developer's machine) is left out too.
  */
 export async function buildPackage(
   session: ProjectSession,
@@ -47,7 +53,13 @@ export async function buildPackage(
   }
   out.set(STATE_PATH, serializeState({ version: 1, project: { ...session.state.project }, entries }));
 
-  if (session.data.format === "paraglide") {
+  const meta = session.workspace;
+  if (meta) {
+    const packaged = structuredClone(meta);
+    delete packaged.source;
+    delete packaged.lastExport;
+    out.set(WORKSPACE_META_PATH, serializeWorkspaceMeta(packaged));
+  } else if (session.data.format === "paraglide") {
     const text = await readOrNull(session, SETTINGS_PATH);
     if (text !== null) out.set(SETTINGS_PATH, setAt(text, ["locales"], included, detectStyle(text)));
   } else {

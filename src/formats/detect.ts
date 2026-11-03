@@ -16,13 +16,20 @@ async function readManifestText(fs: Fs, root: string): Promise<string | null> {
 }
 
 /**
- * A translator package manifest picks the format and base language. Otherwise: a Retrans workspace
+ * A translator package manifest picks the format and base language (a package of a workspace opens
+ * as that workspace). Otherwise: a Retrans workspace
  * (.retrans/workspace.json), then Paraglide (throws if its settings.json is malformed), then
  * next-i18next, else null.
  */
 export async function detectProject(fs: Fs, root: string): Promise<DetectResult | null> {
   const manifest = parseManifest(await readManifestText(fs, root));
   if (manifest) {
+    // A package built from a workspace holds the workspace itself (.retrans/workspace.json).
+    const ws = await detectWorkspace(fs, root);
+    if (ws) {
+      const base = manifest.baseLocale;
+      return ws.locales.includes(base) ? { ...ws, baseLocale: base, locales: [base, ...ws.locales.filter((l) => l !== base)] } : ws;
+    }
     const adapter = manifest.format === "paraglide" ? paraglideAdapter : nextI18nextAdapter;
     const result = await adapter.detect(fs, root);
     if (!result) throw new Error("This file isn't a Retrans package or project.");
