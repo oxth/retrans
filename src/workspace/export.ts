@@ -13,15 +13,24 @@ import { isMarker, type TsImport } from "../tssource/import";
 import { type LocaleModule, parseLocaleModule } from "../tssource/parse";
 import { applyTsEdits, encodeTsString, i18nSnippet, newTableModule, type TsEdit } from "../tssource/write";
 import { type Baseline, BASELINE_PATH, type ExportTarget, jsonEqual, parseBaseline, serializeBaseline } from "./meta";
+import { applyRenames } from "./sync";
 
 export interface ExportPlan {
   files: Array<{ path: string; text: string }>;
   snippets: string[];
   leftOutLocales: string[];
+  /** ts-writeback / ts-copy: how to add the `leftOutLocales` to the code (when there are any). */
+  leftOutSnippet?: string;
   warnings: string[];
   blocked?: { reason: "duplicates"; keys: string[] } | { reason: "conflicts" };
   /** ts-writeback only: the source baseline after this export, written after the files. */
   baseline?: { path: string; text: string };
+  /**
+   * ts-writeback only: the old (source) ids of `meta.renames` entries this write-back carries out
+   * (old key removed, new key written) or that never mapped a source key. `recordWriteBack` drops
+   * them from the meta once the plan is written.
+   */
+  renamesApplied?: KeyId[];
 }
 
 const emptyPlan = (): ExportPlan => ({ files: [], snippets: [], leftOutLocales: [], warnings: [] });
@@ -63,6 +72,18 @@ export async function writeExportPlan(fs: Fs, plan: ExportPlan): Promise<void> {
   }
   // Last: if a file write fails, the old baseline makes the next export sync first.
   if (plan.baseline) await fs.writeTextAtomic(plan.baseline.path, plan.baseline.text);
+}
+
+/**
+ * After `writeExportPlan` of a write-back: the renames it carried out leave the meta (written by
+ * the next save), since the source now has the new keys.
+ */
+export function recordWriteBack(session: ProjectSession, plan: ExportPlan): void {
+  const meta = session.workspace;
+  if (!meta || !plan.renamesApplied?.length) return;
+  const done = new Set(plan.renamesApplied);
+  const renames = Object.fromEntries(Object.entries(meta.renames).filter(([from]) => !done.has(from)));
+  session.setWorkspaceMeta({ renames });
 }
 
 // ---- workspace reading -------------------------------------------------------------------
@@ -151,8 +172,17 @@ async function planTsSource(
   const meta = session.workspace;
   if (!meta?.source) throw new Error("This workspace has no TypeScript source");
   const root = session.data.root;
+  // Renames done in Retrans: the old source key is written as remove-old + add-new. Compare in
+  // workspace ids, as sync does (a baseline saved after a sync is keyed by the new ids).
+  const renamed = activeRenames(source, meta.renames);
+  const normalized: TsImport = { ...source };
+  applyRenames(normalized, meta.renames);
   const stored = parseBaseline(await readOrNull(session.fs, joinPath(root, BASELINE_PATH)));
-  if (!stored || !jsonEqual(stored, source.baseline)) return { ...emptyPlan(), blocked: { reason: "conflicts" } };
+  if (!stored || !jsonEqual(renameBaseline(stored, renamed), normalized.baseline)) {
+    return { ...emptyPlan(), blocked: { reason: "conflicts" } };
+  }
+  const renamedOld = new Set(renamed.keys());
+  const renamedNew = new Set(renamed.values());
 
   const plan = emptyPlan();
   const writeback = target.kind === "ts-writeback";
@@ -164,7 +194,7 @@ async function planTsSource(
   const outputs: Array<{ relPath: string; text: string }> = [];
   for (const { relPath, module, text } of source.modules.values()) {
     const ids = (rows.get(module.group) ?? []).filter((id) => !removed.has(id));
-    const out = applyTsEdits(text, module, moduleEdits(session, module, ids, removed));
+    const out = applyTsEdits(text, module, moduleEdits(session, module, ids, removed, renamedOld, renamedNew));
     outputs.push({ relPath, text: out });
     if (writeback && out === text) continue;
     plan.files.push({ path: joinPath(outRoot, relPath), text: out });
@@ -202,11 +232,52 @@ async function planTsSource(
   if (newGroups.length > 0) plan.snippets.push(i18nSnippet(newGroups, srcLocales));
 
   plan.leftOutLocales = sessionLocales.filter((l) => !source.locales.includes(l));
-  if (plan.leftOutLocales.length > 0) plan.snippets.push(languageSnippet(plan.leftOutLocales, source.locales));
+  if (plan.leftOutLocales.length > 0) plan.leftOutSnippet = languageSnippet(plan.leftOutLocales, source.locales);
   if (writeback && plan.files.length > 0) {
     plan.baseline = { path: joinPath(root, BASELINE_PATH), text: serializeBaseline(baselineOf(outputs)) };
   }
+  if (writeback) {
+    // Done once the old key is gone from the written source (a rename of a key added in Retrans
+    // never mapped a source key). Unreadable files were not touched: their renames stay.
+    const after = keysOf(outputs);
+    const applied = Object.keys(meta.renames).filter(
+      (from) => !erroredGroups.has(parseKeyId(from).ns) && !after.has(from),
+    );
+    if (applied.length > 0) plan.renamesApplied = applied;
+  }
   return plan;
+}
+
+/** `renames` entries that map a source key (the same rule as sync's applyRenames): old id -> new id. */
+function activeRenames(source: TsImport, renames: Record<KeyId, KeyId>): Map<KeyId, KeyId> {
+  const inSource = new Set(source.keyOrder);
+  const map = new Map<KeyId, KeyId>();
+  for (const [from, to] of Object.entries(renames)) if (inSource.has(from) && !inSource.has(to)) map.set(from, to);
+  return map;
+}
+
+/** A baseline keyed by source ids with renamed rows moved to their new id (an existing new-id row wins). */
+function renameBaseline(b: Baseline, map: Map<KeyId, KeyId>): Baseline {
+  const out: Baseline = { ...b };
+  for (const [from, to] of map) {
+    if (!(from in out)) continue;
+    if (!(to in out)) out[to] = out[from];
+    delete out[from];
+  }
+  return out;
+}
+
+/** Every key id the module texts define (values, `undefined`s, read-only entries). */
+function keysOf(outputs: Array<{ relPath: string; text: string }>): Set<KeyId> {
+  const out = new Set<KeyId>();
+  for (const { relPath, text } of outputs) {
+    const module = parseLocaleModule(text, relPath);
+    if (!module) continue;
+    for (const e of module.entries) out.add(keyId(module.group, e.key));
+    for (const r of module.readOnly) out.add(keyId(module.group, r.key));
+    for (const k of Object.keys(module.pairObjects ?? {})) out.add(keyId(module.group, k));
+  }
+  return out;
 }
 
 /** The baseline `importTsLocales` would record for these module texts. */
@@ -226,9 +297,13 @@ function baselineOf(outputs: Array<{ relPath: string; text: string }>): Baseline
  * The edits that make `module` match the workspace rows `ids` (its group, removed-in-source keys
  * already dropped). At most one edit kind per key, and nothing for read-only values.
  */
-function moduleEdits(session: ProjectSession, module: LocaleModule, ids: KeyId[], removed: Set<KeyId>): TsEdit[] {
+function moduleEdits(
+  session: ProjectSession, module: LocaleModule, ids: KeyId[], removed: Set<KeyId>,
+  renamedOld: Set<KeyId>, renamedNew: Set<KeyId>,
+): TsEdit[] {
   const edits: TsEdit[] = [];
   const { group } = module;
+  const markers = session.workspace?.markers ?? {};
   const sessionLocales = session.data.locales;
   const entry = (key: string, loc: string) => module.entries.find((e) => e.key === key && e.locale === loc);
   const isReal = (key: string, loc: string) => {
@@ -257,6 +332,8 @@ function moduleEdits(session: ProjectSession, module: LocaleModule, ids: KeyId[]
       for (const loc of module.locales) {
         const c = cell(session, id, loc);
         if (c && c !== "complex") values[loc] = c.text;
+        // A renamed key keeps the marker its old key had in the source.
+        else if (c === undefined && renamedNew.has(id) && markers[id]?.[loc] !== undefined) values[loc] = markers[id][loc];
       }
       if (Object.keys(values).length > 0) edits.push({ kind: "add", key, values });
       continue;
@@ -304,7 +381,8 @@ function moduleEdits(session: ProjectSession, module: LocaleModule, ids: KeyId[]
   // `undefined`) has no workspace row to begin with, so it is never treated as deleted.
   for (const key of sourceKeys) {
     if (wsKeys.has(key) || removed.has(keyId(group, key)) || hasReadOnly(key)) continue;
-    if (module.locales.some((loc) => isReal(key, loc))) edits.push({ kind: "remove", key });
+    // A renamed key's old name goes even when it only had markers (its row moved to the new name).
+    if (renamedOld.has(keyId(group, key)) || module.locales.some((loc) => isReal(key, loc))) edits.push({ kind: "remove", key });
   }
   return edits;
 }

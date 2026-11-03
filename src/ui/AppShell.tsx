@@ -6,6 +6,7 @@ import type { EditActions } from "./Cell";
 import { ListView } from "./ListView";
 import { AddKeyDialog, DeleteKeyDialog, RenameKeyDialog } from "./KeyDialogs";
 import { ConflictDialog } from "./ConflictDialog";
+import { ExportDialog } from "./ExportDialog";
 import { LanguagesPage } from "./LanguagesPage";
 import { LoadErrors } from "./LoadErrors";
 import { SharePage } from "./SharePage";
@@ -33,7 +34,7 @@ export function AppShell() {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [viewMode, setMode] = useState<"list" | "table">("list");
   const root = session?.data.root;
-  const [dialog, setDialog] = useState<{ kind: "add" } | { kind: "translate" } | { kind: "rename" | "delete"; row: Row } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "add" | "translate" | "export" } | { kind: "rename" | "delete"; row: Row } | null>(null);
   const hasModel = useMt(useShallow((s) => activeModel(s))) !== null;
   const dirty = !!session && (version >= 0 ? session.isDirty() : false);
 
@@ -148,6 +149,14 @@ export function AppShell() {
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-8 shrink-0 items-center justify-end gap-3 border-b border-gray-100 px-4 text-xs">
           {dirty && <span className="font-medium text-amber-700">• Unsaved</span>}
+          {session.workspace && (
+            <button
+              className="rounded border border-gray-300 px-2 py-0.5 hover:bg-gray-50"
+              onClick={() => setDialog({ kind: "export" })}
+            >
+              Export…
+            </button>
+          )}
           <button
             className="rounded border border-gray-300 px-2 py-0.5 hover:bg-gray-50 disabled:opacity-40"
             disabled={!dirty}
@@ -203,6 +212,7 @@ export function AppShell() {
       {dialog?.kind === "translate" && <TranslateMissingDialog session={session} defaultLocale={visible[0]} onClose={() => setDialog(null)} />}
       {dialog?.kind === "rename" && <RenameKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
       {dialog?.kind === "delete" && <DeleteKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "export" && <ExportDialog session={session} onClose={() => setDialog(null)} />}
       <ConflictDialog />
       <UnsavedPrompt />
     </div>

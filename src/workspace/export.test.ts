@@ -4,8 +4,9 @@ import { joinPath } from "../platform/fs";
 import { MemoryFs } from "../platform/memory-fs";
 import { importTsLocales } from "../tssource/import";
 import { openFixtureWorkspace } from "../test/workspace-fixture";
-import { planExport, writeExportPlan } from "./export";
-import { serializeBaseline } from "./meta";
+import { planExport, recordWriteBack, writeExportPlan } from "./export";
+import { BASELINE_PATH, parseBaseline, parseWorkspaceMeta, serializeBaseline, WORKSPACE_META_PATH } from "./meta";
+import { syncFromSource } from "./sync";
 
 const OUT = "/out";
 
@@ -38,6 +39,103 @@ async function writeBack(w: Awaited<ReturnType<typeof setup>>, s: typeof w.sessi
 
 const file = (plan: { files: Array<{ path: string; text: string }> }, path: string) =>
   plan.files.find((f) => f.path === path)?.text;
+
+describe("planExport: renames", () => {
+  const BUTTON = (w: { root: string; localesDir: string }) => `${w.root}/${w.localesDir}/button.tsx`;
+
+  it("rename → sync → save → write-back moves the key; renames cleared; second export is a no-op", async () => {
+    const w = await setup();
+    const s = w.session;
+    const before = await w.fixtureFiles();
+    const to = s.renameKey(keyId("button", "button_ok"), "button_okay");
+    expect(s.workspace!.renames).toEqual({ [keyId("button", "button_ok")]: to });
+    const r = await syncFromSource(s);
+    expect(r.conflicts).toEqual([]);
+    expect(r.added).toEqual([]);
+    expect((await s.save()).stale).toEqual([]);
+    expect(s.isDirty()).toBe(false);
+    // The saved baseline is keyed by the new id.
+    const saved = parseBaseline(await w.fs.readText(`${w.root}/${BASELINE_PATH}`))!;
+    expect(saved[to]).toEqual({ th: "ตกลง", en: "OK" });
+
+    const plan = await planExport(s, { kind: "ts-writeback" }, await w.source());
+    expect(plan.blocked).toBeUndefined();
+    expect(plan.files.map((f) => f.path)).toEqual([BUTTON(w)]);
+    const text = plan.files[0].text;
+    expect(text).not.toContain("button_ok:");
+    expect(text).toContain("  button_okay: 'ตกลง',\n};");
+    expect(text).toContain("  button_okay: 'OK',\n};");
+    expect(plan.renamesApplied).toEqual([keyId("button", "button_ok")]);
+    expect(Object.keys(parseBaseline(plan.baseline!.text)!)).toContain(to);
+    expect(Object.keys(parseBaseline(plan.baseline!.text)!)).not.toContain(keyId("button", "button_ok"));
+
+    await writeExportPlan(w.fs, plan);
+    recordWriteBack(s, plan);
+    expect(s.workspace!.renames).toEqual({});
+    await s.save();
+    expect(parseWorkspaceMeta(await w.fs.readText(`${w.root}/${WORKSPACE_META_PATH}`))!.renames).toEqual({});
+    // Only button.tsx changed.
+    const after = await w.fixtureFiles();
+    for (const f of Object.keys(before)) if (!f.endsWith("button.tsx")) expect(after[f]).toBe(before[f]);
+
+    const re = await w.source();
+    expect(re.errors).toEqual([]);
+    expect(re.keyOrder).toContain(to);
+    const again = await planExport(s, { kind: "ts-writeback" }, re);
+    expect(again.blocked).toBeUndefined();
+    expect(again.files).toEqual([]);
+    expect(again.renamesApplied ?? []).toEqual([]);
+  });
+
+  it("rename without a sync is not blocked either", async () => {
+    const w = await setup();
+    const s = w.session;
+    s.renameKey(keyId("change-password", "current_pw"), "current_password");
+    const plan = await planExport(s, { kind: "ts-writeback" }, await w.source());
+    expect(plan.blocked).toBeUndefined();
+    const cp = file(plan, `${w.root}/${w.localesDir}/change-password.ts`)!;
+    expect(cp).not.toContain("current_pw:");
+    expect(cp).toContain("current_password: 'รหัสผ่านปัจจุบัน'");
+    expect(cp).toContain("current_password: 'Current password'");
+  });
+
+  it("a renamed key keeps its untranslated marker", async () => {
+    const w = await setup();
+    const s = w.session;
+    const to = s.renameKey(keyId("button", "button_delete"), "button_remove");
+    const plan = await writeBack(w, s);
+    const text = file(plan, BUTTON(w))!;
+    expect(text).not.toContain("button_delete");
+    expect(text).toContain("  button_remove: 'ลบ',\n};");
+    expect(text).toContain("  button_remove: 'ลบ (EN)',\n};");
+    expect(plan.renamesApplied).toEqual([keyId("button", "button_delete")]);
+    const re = await w.source();
+    expect(re.markers[to]).toEqual({ en: "ลบ (EN)" });
+  });
+
+  it("ts-copy writes the rename but leaves the renames (the source still has the old key)", async () => {
+    const w = await setup();
+    const s = w.session;
+    s.renameKey(keyId("common", "email"), "email_address");
+    const plan = await planExport(s, { kind: "ts-copy", dir: OUT }, await w.source());
+    expect(plan.blocked).toBeUndefined();
+    const common = file(plan, `${OUT}/${w.localesDir}/common.ts`)!;
+    expect(common).not.toContain("  email:");
+    expect(common).toContain("email_address: { th: 'อีเมล', en: 'Email' }");
+    expect(plan.renamesApplied).toBeUndefined();
+  });
+
+  it("a rename of a key added in Retrans is a no-op mapping, cleared by write-back", async () => {
+    const w = await setup();
+    const s = w.session;
+    const id = s.addKey("button", "button_new", "ใหม่");
+    const to = s.renameKey(id, "button_newer");
+    expect(s.workspace!.renames).toEqual({ [id]: to });
+    const plan = await writeBack(w, s);
+    expect(file(plan, BUTTON(w))).toContain("  button_newer: 'ใหม่',\n};");
+    expect(plan.renamesApplied).toEqual([id]);
+  });
+});
 
 describe("planExport: ts-writeback", () => {
   it("writeback with no edits writes nothing", async () => {
@@ -124,7 +222,8 @@ describe("planExport: ts-writeback", () => {
     const plan = await writeBack(w, s);
     expect(plan.leftOutLocales).toEqual(["ja"]);
     expect(plan.files).toEqual([]);
-    expect(plan.snippets.join("\n")).toContain("'th' | 'en' | 'ja'");
+    expect(plan.leftOutSnippet).toContain("'th' | 'en' | 'ja'");
+    expect(plan.snippets.join("\n")).not.toContain("'th' | 'en' | 'ja'");
   });
 
   it("marker cells stay markers", async () => {

@@ -7,7 +7,7 @@ import type { Conflict } from "../core/merge";
 import { clearJournal, type Journal, journalPath, readJournal, writeJournal } from "../core/recovery";
 import { parseState, STATE_PATH } from "../core/state-file";
 import { isRelevantChange, isSourceChange } from "../core/watch-filter";
-import { resolveSyncConflict, syncFromSource } from "../workspace/sync";
+import { resolveSyncConflict, syncFromSource, type SyncResult } from "../workspace/sync";
 import { BASELINE_PATH, WORKSPACE_META_PATH } from "../workspace/meta";
 import { type Fs, FsError, joinPath } from "../platform/fs";
 import { tauriFs } from "../platform/tauri-fs";
@@ -61,6 +61,12 @@ export interface AppState {
   confirmUnsaved(): Promise<boolean>;
   resolveConflict(c: UiConflict, pick: "mine" | "theirs"): void;
   resolveAllConflicts(pick: "mine" | "theirs"): void;
+  /**
+   * Runs syncFromSource on `session` and, while it is still the open one, shows the outcome:
+   * its source conflicts replace the previous ones; a missing source sets `sourceMissing`.
+   * Rejects when the sync fails.
+   */
+  syncSource(session: ProjectSession): Promise<SyncResult>;
 }
 
 const JOURNAL_DELAY_MS = 1000;
@@ -205,18 +211,9 @@ export const useApp = create<AppState>((set, get) => ({
 
     const sourceDir = session.workspace?.source?.localesDir;
     const sync = () => {
-      syncFromSource(session).then(
-        (r) => {
-          if (get().session !== session) return;
-          if (!r.sourceAvailable) return set({ sourceMissing: true });
-          // Each sync reports every open source conflict: they replace the previous ones.
-          const fresh: UiConflict[] = r.conflicts.map((c) => ({ ...c, origin: "source" }));
-          set((s) => ({ sourceMissing: false, conflicts: [...s.conflicts.filter((c) => c.origin !== "source"), ...fresh] }));
-        },
-        (e) => {
-          if (get().session === session) set({ error: `Sync from source failed: ${msg(e)}` });
-        },
-      );
+      get().syncSource(session).catch((e) => {
+        if (get().session === session) set({ error: `Sync from source failed: ${msg(e)}` });
+      });
     };
     if (sourceDir !== undefined) {
       if (recovery) deferredSync = sync; // runs after Restore / Discard
@@ -356,6 +353,19 @@ export const useApp = create<AppState>((set, get) => ({
     const { session } = get();
     if (session) resolveOne(session, c, pick);
     set((s) => ({ conflicts: s.conflicts.filter((x) => x.id !== c.id || x.locale !== c.locale || x.origin !== c.origin) }));
+  },
+
+  async syncSource(session) {
+    const r = await syncFromSource(session);
+    if (get().session !== session) return r;
+    if (!r.sourceAvailable) {
+      set({ sourceMissing: true });
+      return r;
+    }
+    // Each sync reports every open source conflict: they replace the previous ones.
+    const fresh: UiConflict[] = r.conflicts.map((c) => ({ ...c, origin: "source" }));
+    set((s) => ({ sourceMissing: false, conflicts: [...s.conflicts.filter((c) => c.origin !== "source"), ...fresh] }));
+    return r;
   },
 
   resolveAllConflicts(pick) {
