@@ -141,7 +141,7 @@ describe("workspace cells", () => {
     const id = keyId("common", "logout");
     await waitFor(() => expect(row(id)).toHaveTextContent("Removed in source"));
     await userEvent.click(within(row(id)).getByRole("button", { name: "Actions for logout" }));
-    await userEvent.click(screen.getByRole("menuitem", { name: "Keep" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Keep (will be written back to your code)" }));
     expect(session.workspace!.removedInSource).toEqual([]);
     expect(row(id)).not.toHaveTextContent("Removed in source");
     expect(session.data.keyOrder).toContain(id);
