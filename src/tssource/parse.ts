@@ -20,6 +20,12 @@ export interface TsEntry {
   /** `[start, end)` of the whole literal, quotes included. */
   range: [number, number];
   quote: Quote;
+  /**
+   * The source value is the identifier `undefined` (e.g. `{ th: undefined, en: '…' }`).
+   * `value` is "", `range` covers the `undefined` token and `quote` is `'` (used when a
+   * writer replaces the token with a literal). Import treats the cell as missing.
+   */
+  undefinedLiteral?: true;
 }
 
 export interface TsObjectRef {
@@ -187,6 +193,17 @@ function classify(
       value: value.value,
       range: [value.start, value.end],
       quote: quote as Quote,
+    });
+    return;
+  }
+  if (value.type === "Identifier" && value.name === "undefined") {
+    entries.push({
+      key,
+      locale,
+      value: "",
+      range: [value.start, value.end],
+      quote: "'",
+      undefinedLiteral: true,
     });
     return;
   }

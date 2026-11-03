@@ -20,6 +20,11 @@ const entry = (mod: LocaleModule, key: string, locale: string): TsEntry | undefi
 function expectExactRanges(text: string, mod: LocaleModule) {
   for (const e of mod.entries) {
     const raw = text.slice(e.range[0], e.range[1]);
+    if (e.undefinedLiteral) {
+      expect(raw).toBe("undefined");
+      expect(e.value).toBe("");
+      continue;
+    }
     expect(raw[0]).toBe(e.quote);
     expect(raw[raw.length - 1]).toBe(e.quote);
     // The raw literals in the fixtures are valid JS string literals.
@@ -77,6 +82,12 @@ describe("parseLocaleModule", () => {
     // Pair with only th.
     expect(entry(mod, "zone_name", "th")!.value).toBe("ชื่อโซน");
     expect(entry(mod, "zone_name", "en")).toBeUndefined();
+    // `th: undefined` is an editable (missing) entry, not a read-only item.
+    const und = entry(mod, "only_en", "th")!;
+    expect(und).toMatchObject({ value: "", quote: "'", undefinedLiteral: true });
+    expect(text.slice(und.range[0], und.range[1])).toBe("undefined");
+    expect(entry(mod, "only_en", "en")!.value).toBe("Only EN (EN)");
+    expect(entry(mod, "only_en", "en")!.undefinedLiteral).toBeUndefined();
 
     const zone = mod.pairObjects!.zone_name;
     expect(zone).toBeDefined();
@@ -93,6 +104,7 @@ describe("parseLocaleModule", () => {
       "support_file_csv_xlsx",
       "change_pw",
       "zone_name",
+      "only_en",
       "logout",
     ]);
 
@@ -152,6 +164,15 @@ describe("parseLocaleModule", () => {
       { key: "b", reason: expect.any(String) },
     ]);
     expect(Object.keys(tm.pairObjects!)).toEqual(["a"]);
+  });
+
+  it("an `undefined` value is a missing entry in both styles", () => {
+    const src = "export const xEN = { u: undefined, w: 'W' };";
+    const m = parseLocaleModule(src, "x.ts")!;
+    expect(m.readOnly).toEqual([]);
+    const u = m.entries.find((e) => e.key === "u")!;
+    expect(u).toEqual({ key: "u", locale: "en", value: "", range: [24, 33], quote: "'", undefinedLiteral: true });
+    expect(src.slice(u.range[0], u.range[1])).toBe("undefined");
   });
 
   it("helper and non-locale files return null", () => {

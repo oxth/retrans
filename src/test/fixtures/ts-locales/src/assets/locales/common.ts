@@ -16,6 +16,7 @@ const common = {
   },
   change_pw: { th: 'เปลี่ยนรหัสผ่าน', en: "Change Password" },
   zone_name: { th: 'ชื่อโซน' },
+  only_en: { th: undefined, en: 'Only EN (EN)' },
   logout: { th: 'ออกจากระบบ', en: 'Logout' },
 };
 
