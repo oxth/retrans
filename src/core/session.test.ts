@@ -384,6 +384,32 @@ describe("ProjectSession", () => {
     expect(st.get("th")).toEqual({ done: 3, total: 9 });
   });
 
+  it("batch emits once at the end, nested batches included, and still emits when fn throws", async () => {
+    const { s } = await openFx("next-nested");
+    let calls = 0;
+    s.subscribe(() => calls++);
+    const out = s.batch(() => {
+      s.setText(c("title"), "th", "x");
+      s.batch(() => s.markReviewed(c("title"), "th"));
+      expect(calls).toBe(0);
+      expect(s.dirtyCells()).toEqual([{ id: c("title"), locale: "th" }]);
+      return 7;
+    });
+    expect(out).toBe(7);
+    expect(calls).toBe(1);
+    expect(() =>
+      s.batch(() => {
+        s.setText(c("title"), "th", "y");
+        throw new Error("boom");
+      }),
+    ).toThrow("boom");
+    expect(calls).toBe(2);
+    s.setText(c("title"), "th", "z");
+    expect(calls).toBe(3);
+    s.batch(() => {});
+    expect(calls).toBe(3);
+  });
+
   it("subscribe fires after every mutation and version increments", async () => {
     const { s } = await openFx("next-nested");
     let calls = 0;
@@ -466,5 +492,14 @@ describe("ProjectSession", () => {
     s.setProjectSetting({ localesPath: undefined });
     await s.save();
     expect((await json(fs, STATE_PATH)).project.localesPath).toBeUndefined();
+  });
+});
+
+describe("ProjectSession project id", () => {
+  it("setProjectSetting({ id }) marks state touched and persists on save", async () => {
+    const { fs, s } = await openFx("next-nested");
+    s.setProjectSetting({ id: "p-9" });
+    await s.save();
+    expect((await json(fs, STATE_PATH)).project.id).toBe("p-9");
   });
 });

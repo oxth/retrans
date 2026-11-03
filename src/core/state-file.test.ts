@@ -5,6 +5,13 @@ import { parseState, reconcile, serializeState, type StateFile } from "./state-f
 const fb = { baseLocale: "en" };
 
 describe("state-file", () => {
+  it("round-trips project.id through state.json and reconcile", () => {
+    const { state } = parseState('{"version":1,"project":{"id":"p-1"},"entries":{}}');
+    expect(state.project.id).toBe("p-1");
+    expect(serializeState(state)).toContain('"id": "p-1"');
+    const data = { baseLocale: "en", locales: ["en"], keyOrder: [], values: new Map() } as unknown as ProjectData;
+    expect(reconcile(state, data).project.id).toBe("p-1");
+  });
   it("serializeState is stable and sorted", () => {
     const a: StateFile = { version: 1, project: fb, entries: { "b::x": { th: { s: "translated", h: "1" } }, "a::y": { th: { s: "reviewed", h: "2" }, fr: { s: "translated", h: "3", m: true } } } };
     const b: StateFile = { entries: { "a::y": { fr: { m: true, h: "3", s: "translated" }, th: { h: "2", s: "reviewed" } }, "b::x": { th: { h: "1", s: "translated" } } }, project: fb, version: 1 };

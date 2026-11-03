@@ -14,8 +14,8 @@ describe("isRelevantChange (#5)", () => {
     expect(next(["/p/src/app.tsx", "/p/public/locales/th/common.json"])).toBe(true);
     expect(next(["/p/public/locales"])).toBe(true);
     expect(next(["/p/public"])).toBe(true); // an ancestor moved/removed
-    expect(next(["/p/.paratrans/state.json"])).toBe(true);
-    expect(next(["/p/.paratrans/other.json"])).toBe(false);
+    expect(next(["/p/.retrans/state.json"])).toBe(true);
+    expect(next(["/p/.retrans/other.json"])).toBe(false);
     expect(next(["/p/project.inlang/settings.json"])).toBe(true);
     expect(next([])).toBe(false);
   });

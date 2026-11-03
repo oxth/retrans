@@ -8,6 +8,7 @@ import { AddKeyDialog, DeleteKeyDialog, RenameKeyDialog } from "./KeyDialogs";
 import { ConflictDialog } from "./ConflictDialog";
 import { LanguagesPage } from "./LanguagesPage";
 import { LoadErrors } from "./LoadErrors";
+import { SharePage } from "./SharePage";
 import { SettingsPage } from "./SettingsPage";
 import { type Page, Sidebar } from "./Sidebar";
 import { UnsavedPrompt } from "./UnsavedPrompt";
@@ -135,7 +136,7 @@ export function AppShell() {
     });
 
   return (
-    <div className="flex h-screen bg-white text-gray-900">
+    <div className="flex min-h-0 flex-1 bg-white text-gray-900">
       <Sidebar session={session} stats={stats} page={page} onPage={setPage} onClose={() => void requestClose("project")} />
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-8 shrink-0 items-center justify-end gap-3 border-b border-gray-100 px-4 text-xs">
@@ -181,6 +182,8 @@ export function AppShell() {
           </>
         ) : page === "languages" ? (
           <LanguagesPage session={session} stats={stats} />
+        ) : page === "share" ? (
+          <SharePage session={session} />
         ) : (
           <SettingsPage session={session} />
         )}

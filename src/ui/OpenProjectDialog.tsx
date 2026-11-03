@@ -5,7 +5,7 @@ import { useApp } from "./store";
 interface Props {
   root: string;
   detected: DetectResult;
-  /** Base language remembered in .paratrans/state.json when detection can't tell. */
+  /** Base language remembered in .retrans/state.json when detection can't tell. */
   savedBase?: string | null;
   onCancel(): void;
 }

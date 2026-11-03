@@ -28,7 +28,7 @@ pub fn write_atomic(path: &Path, content: &str) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
     let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".paratrans-tmp");
+    tmp.push(".retrans-tmp");
     let tmp = PathBuf::from(tmp);
     let res = (|| {
         let mut f = fs::File::create(&tmp)?;
@@ -104,12 +104,12 @@ mod tests {
 
     #[test]
     fn atomic_write_replaces_existing() {
-        let dir = std::env::temp_dir().join(format!("paratrans-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("retrans-test-{}", std::process::id()));
         let file = dir.join("sub").join("a.json");
         write_atomic(&file, "one").unwrap();
         write_atomic(&file, "two").unwrap();
         assert_eq!(fs::read_to_string(&file).unwrap(), "two");
-        assert!(!dir.join("sub").join("a.json.paratrans-tmp").exists());
+        assert!(!dir.join("sub").join("a.json.retrans-tmp").exists());
         assert_eq!(list_files_impl(&dir, 1).unwrap(), Vec::<String>::new());
         assert_eq!(list_files_impl(&dir, 2).unwrap(), vec!["sub/a.json"]);
         let _ = fs::remove_dir_all(&dir);
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn remove_path_refuses_directories() {
-        let dir = std::env::temp_dir().join(format!("paratrans-rm-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("retrans-rm-{}", std::process::id()));
         let file = dir.join("a.json");
         write_atomic(&file, "x").unwrap();
         let err = remove_path(dir.to_string_lossy().into_owned()).unwrap_err();

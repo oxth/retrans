@@ -4,6 +4,7 @@ import { getDefaultViewMode, setDefaultViewMode } from "../platform/prefs";
 import { btnGhost, btnPrimary, inputCls } from "./Dialog";
 import { MtSettings } from "./MtSettings";
 import { useApp } from "./store";
+import { UpdateSettings } from "./UpdateBanner";
 
 export function SettingsPage({ session }: { session: ProjectSession }) {
   const [mode, setMode] = useState<"list" | "table">("list");
@@ -57,7 +58,7 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
               const next = p && p !== detectedPath ? p : undefined;
               session.setProjectSetting({ localesPath: next });
               if (!next) setPath(detectedPath);
-              setNote(next || override ? "Will be written to .paratrans/state.json on the next save." : "Using the detected path.");
+              setNote(next || override ? "Will be written to .retrans/state.json on the next save." : "Using the detected path.");
             }}
           >
             Save setting
@@ -80,6 +81,10 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
       <section className="space-y-3">
         <h2 className="text-base font-semibold">Machine translation</h2>
         <MtSettings session={session} />
+      </section>
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold">Updates</h2>
+        <UpdateSettings />
       </section>
       {note && <div role="status" className="text-xs text-gray-600">{note}</div>}
     </div>

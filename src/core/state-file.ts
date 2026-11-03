@@ -4,13 +4,13 @@ export interface StateEntry { s: "translated" | "reviewed"; h: string; m?: true 
 export interface StateFile {
   version: 1;
   /**
-   * Explicit user overrides only: a Settings-page locales path, and the base language the user
-   * picked when detection couldn't tell. Detected values are never stored here.
+   * Explicit user choices (a Settings-page locales path, the base language the user picked when
+   * detection couldn't tell) plus the project's stable id. Detected values are never stored here.
    */
-  project: { baseLocale?: string; localesPath?: string };
+  project: { baseLocale?: string; localesPath?: string; id?: string };
   entries: Record<KeyId, Record<string, StateEntry>>;
 }
-export const STATE_PATH = ".paratrans/state.json";
+export const STATE_PATH = ".retrans/state.json";
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 
@@ -41,6 +41,7 @@ export function parseState(text: string | null): { state: StateFile; error?: str
   const project = {
     ...(typeof p.baseLocale === "string" ? { baseLocale: p.baseLocale } : {}),
     ...(typeof p.localesPath === "string" ? { localesPath: p.localesPath } : {}),
+    ...(typeof p.id === "string" ? { id: p.id } : {}),
   };
   const entries: StateFile["entries"] = {};
   if (isRecord(raw.entries)) {

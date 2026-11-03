@@ -4,6 +4,7 @@ import { StartScreen } from "./ui/StartScreen";
 import { AppShell } from "./ui/AppShell";
 import { useApp } from "./ui/store";
 import { useMt } from "./ui/mt-store";
+import { UpdateBanner } from "./ui/UpdateBanner";
 
 function RecoveryPrompt() {
   const { recovery, restoreRecovery, discardRecovery } = useApp();
@@ -56,12 +57,18 @@ export default function App() {
     void useMt.getState().init();
   }, []);
   const session = useApp((s) => s.session);
-  return session ? (
-    <>
-      <AppShell />
-      <RecoveryPrompt />
-    </>
-  ) : (
-    <StartScreen />
+  // One window-high column: the update banner takes its row and the page fills the rest.
+  return (
+    <div className="flex h-screen flex-col">
+      <UpdateBanner />
+      {session ? (
+        <>
+          <AppShell />
+          <RecoveryPrompt />
+        </>
+      ) : (
+        <StartScreen />
+      )}
+    </div>
   );
 }

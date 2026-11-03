@@ -1,13 +1,13 @@
-# Paratrans — Design
+# Retrans — Design
 
 Date: 2026-10-30
 Status: Draft for review
 
 ## 1. Intent
 
-Paratrans is a free desktop app for managing translation files for web projects that use **next-i18next** or **Paraglide (inlang)**.
+Retrans is a free desktop app for managing translation files for web projects that use **next-i18next** or **Paraglide (inlang)**.
 
-**Why it exists.** In projects with many languages, the JSON translation files drift apart. A key gets added to one language and missed in another, and nobody notices until a raw key or blank text shows up on the frontend. Tolgee solves this well, but its free plan caps usage and the owner can't pay. Paratrans aims for the same everyday experience (a friendly grid, missing translations impossible to miss, review status, machine suggestions) while being completely free, with no usage limits, no account, and no server.
+**Why it exists.** In projects with many languages, the JSON translation files drift apart. A key gets added to one language and missed in another, and nobody notices until a raw key or blank text shows up on the frontend. Tolgee solves this well, but its free plan caps usage and the owner can't pay. Retrans aims for the same everyday experience (a friendly grid, missing translations impossible to miss, review status, machine suggestions) while being completely free, with no usage limits, no account, and no server.
 
 **Who it serves.**
 - **Developer (owner):** opens or creates the project's translation folder, adds and renames keys, and commits the resulting files to git.
@@ -17,7 +17,7 @@ Paratrans is a free desktop app for managing translation files for web projects 
 
 ## 2. Goals (version 1)
 
-1. Desktop app for **macOS and Windows**, offline first.
+1. Desktop app for **macOS (Apple Silicon) and Windows**, offline first.
 2. **Open an existing project folder** and automatically detect next-i18next or Paraglide.
 3. **Create a new project**: choose format, base language, target languages, and (for next-i18next) the first namespace, then generate the right folder structure.
 4. A Tolgee-like translation screen with **List view and Table view, switchable**.
@@ -61,8 +61,8 @@ Paratrans is a free desktop app for managing translation files for web projects 
 **My calls (the builder may revisit with good reason):**
 - **Tauri 2** (Rust back end) with a **React + TypeScript + Vite** front end. This keeps installers small and gives direct file-system access.
 - A virtualized grid, so projects with thousands of keys stay smooth.
-- The UI follows Tolgee's *layout and workflow* but uses Paratrans's own visual identity. Don't copy Tolgee's branding, logo, or assets.
-- Working name **Paratrans**.
+- The UI follows Tolgee's *layout and workflow* but uses Retrans's own visual identity. Don't copy Tolgee's branding, logo, or assets.
+- Working name **Retrans**.
 
 ## 6. Core data model
 
@@ -88,7 +88,7 @@ Format adapters handle **read → model** and **model → write**, and are respo
 
 ### 7.1 next-i18next
 
-- **Detection:** a `.paratrans/package.json` manifest if present (translator packages, §8.6), otherwise a `next-i18next.config.(js|mjs|cjs|ts)` file and/or a `public/locales/{locale}/{namespace}.json` layout. The user can override the locales path in project settings if detection fails. Read locales and default locale from the config where it can be parsed statically; otherwise infer them from folder names and ask the user to confirm the base language once.
+- **Detection:** a `.retrans/package.json` manifest if present (translator packages, §8.6), otherwise a `next-i18next.config.(js|mjs|cjs|ts)` file and/or a `public/locales/{locale}/{namespace}.json` layout. The user can override the locales path in project settings if detection fails. Read locales and default locale from the config where it can be parsed statically; otherwise infer them from folder names and ask the user to confirm the base language once.
 - **Keys:** support both **nested objects** and **flat dotted keys**, and preserve whichever style each file already uses. Show keys in the UI as dotted paths (`home.title`).
 - **Plurals:** recognize i18next v4 JSON plural suffixes (`_zero`, `_one`, `_two`, `_few`, `_many`, `_other`). In the UI, group them under one logical key with sub-fields. When adding a language, offer the plural forms that language needs (Thai needs only `_other`; English needs `_one` and `_other`). Use `Intl.PluralRules`.
 - **Context suffixes** (such as `_male`) and **nesting** (`$t(other.key)`) are kept as ordinary keys and text in v1, with no special UI.
@@ -112,11 +112,11 @@ Format adapters handle **read → model** and **model → write**, and are respo
 
 ### 7.4 Status side file
 
-- next-i18next and Paraglide files can't hold metadata, so review status lives in **`.paratrans/state.json`** at the project root. It's meant to be committed to git alongside the translations.
+- next-i18next and Paraglide files can't hold metadata, so review status lives in **`.retrans/state.json`** at the project root. It's meant to be committed to git alongside the translations.
 - Per key per locale it stores `status`, `sourceHash` (a hash of the base-language text when that translation was last confirmed), and `machine` (true if accepted from machine translation and not since edited).
 - Make the format stable and diff-friendly: sorted keys and one entry per line where practical, so merges are tolerable.
 - On load, reconcile with the files: entries for keys that no longer exist are pruned. A translation present in the files with no state entry counts as Translated.
-- If the file is missing (a project used outside Paratrans), everything still works, and statuses are derived as above.
+- If the file is missing (a project used outside Retrans), everything still works, and statuses are derived as above.
 
 ## 8. Features
 
@@ -159,8 +159,8 @@ Format adapters handle **read → model** and **model → write**, and are respo
 - **Add key:** namespace (next-i18next), dotted path, base text; optionally a plural key.
 - **Rename key:** applies to every language file and the state file; reject collisions.
 - **Delete key:** with confirmation; removes it from all languages.
-- **Add language:** creates its empty files and records it in `.paratrans/state.json`. For Paraglide, it also updates the `locales` array in `settings.json` (plain JSON, so it's safe to edit). **Remove language:** with confirmation; deletes its files.
-- **Never edit JS/TS code (my call).** Paratrans never rewrites `next-i18next.config.*` or `next.config.*`. After adding or removing a next-i18next language, it shows the updated `locales` line with a Copy button and a note telling the developer to paste it into their config. Detection treats folder names under the locales path as the source of truth for which languages exist. This avoids a code-editing component and the risk of mangling config files.
+- **Add language:** creates its empty files and records it in `.retrans/state.json`. For Paraglide, it also updates the `locales` array in `settings.json` (plain JSON, so it's safe to edit). **Remove language:** with confirmation; deletes its files.
+- **Never edit JS/TS code (my call).** Retrans never rewrites `next-i18next.config.*` or `next.config.*`. After adding or removing a next-i18next language, it shows the updated `locales` line with a Copy button and a note telling the developer to paste it into their config. Detection treats folder names under the locales path as the source of truth for which languages exist. This avoids a code-editing component and the risk of mangling config files.
 - **Add namespace** (next-i18next).
 - Moving keys between namespaces is **not in v1**.
 
@@ -173,7 +173,7 @@ Format adapters handle **read → model** and **model → write**, and are respo
 ### 8.6 Import / Export
 
 - In v1, **opening the folder is the import**, and **saving is the export**.
-- **Translator package (my call).** "Export for translator" writes a `.zip` that **is a complete, openable project**. It holds the locale files in their normal layout, `.paratrans/state.json`, the Paraglide `project.inlang/settings.json` or a copy of the next-i18next config, and a small `.paratrans/package.json` manifest (format, base locale, locales, export time, source project id). The translator opens the zip (or its unzipped folder) like any project; the manifest guarantees detection even without the dev setup. The export can optionally be limited to selected languages.
+- **Translator package (my call).** "Export for translator" writes a `.zip` that **is a complete, openable project**. It holds the locale files in their normal layout, `.retrans/state.json`, the Paraglide `project.inlang/settings.json` or a copy of the next-i18next config, and a small `.retrans/package.json` manifest (format, base locale, locales, export time, source project id). The translator opens the zip (or its unzipped folder) like any project; the manifest guarantees detection even without the dev setup. The export can optionally be limited to selected languages.
 - **Importing a package back** shows a per-key, per-locale diff: new, changed, and conflicting values **and statuses**. The translator's Reviewed and `machine` flags travel with their values. Changes to different keys merge automatically. When both sides changed the same key and locale, the user picks one. Status conflicts follow the chosen value.
 - Importing a plain folder of locale files (no manifest) also works and merges values only.
 
@@ -204,7 +204,7 @@ Format adapters handle **read → model** and **model → write**, and are respo
 - The default is chosen for **Thai ↔ English**, and both TranslateGemma and Qwen3 support Thai.
 - **Excluded for licensing:** NLLB-200 and Aya Expanse (non-commercial), and Hunyuan-MT (regional restrictions).
 - **Gemma license handling:** official Google repositories are gated on Hugging Face. Show the Gemma terms in the app with an **Accept & download** button, and download from a public, ungated GGUF build. An ungated community build exists for the 4B model (`42ailab/TranslateGemma-4B-GGUF`, Q4_K_M ≈ 2.49 GB, checked 2026-10-30). Pin each download by exact file URL and SHA-256 checksum.
-- **Fallback (my call):** if the builder can't find a trustworthy ungated GGUF for a TranslateGemma entry (one that loads in the bundled llama.cpp and gives sensible Thai↔English output), that entry is dropped and **Qwen3 4B Instruct (Apache 2.0, ~2.5 GB)** becomes the Recommended default. Paratrans **never hosts model files itself**: no mirror, no infrastructure, no cost.
+- **Fallback (my call):** if the builder can't find a trustworthy ungated GGUF for a TranslateGemma entry (one that loads in the bundled llama.cpp and gives sensible Thai↔English output), that entry is dropped and **Qwen3 4B Instruct (Apache 2.0, ~2.5 GB)** becomes the Recommended default. Retrans **never hosts model files itself**: no mirror, no infrastructure, no cost.
 - Keep the catalog as data (a JSON file shipped with the app, updatable with app releases) so models can be swapped without code changes.
 - Use each model's own recommended prompt template. TranslateGemma has a specific translation template; Qwen3 uses a short instruction prompt with thinking disabled.
 
@@ -215,7 +215,7 @@ Format adapters handle **read → model** and **model → write**, and are respo
 
 ## 10. Distribution
 
-- **GitHub Actions** builds macOS (Apple Silicon + Intel, or universal) and Windows x64 installers on tag push. **GitHub Releases** hosts them.
+- **GitHub Actions** builds macOS (Apple Silicon only) and Windows x64 installers on tag push. **GitHub Releases** hosts them. Intel Macs are not supported (owner decision, 2026-11-02).
 - **Auto-update** via Tauri's updater, which uses a free update-signing key that is separate from OS code signing.
 - **Unsigned for OS purposes.** The README and the download page explain the first-launch steps: macOS right-click → Open (or the System Settings "Open Anyway"); Windows SmartScreen → More info → Run anyway.
 - Network use is limited to update checks and model downloads. There is no telemetry in v1.
@@ -238,5 +238,5 @@ Format adapters handle **read → model** and **model → write**, and are respo
 - UI component library and styling approach, theme (light/dark), icons.
 - State management, grid library, and file-watching library.
 - How llama.cpp is integrated (§9.3), within the size and acceleration constraints.
-- Exact `.paratrans/state.json` schema, within §7.4's rules.
+- Exact `.retrans/state.json` schema, within §7.4's rules.
 - Keyboard shortcuts beyond those listed.

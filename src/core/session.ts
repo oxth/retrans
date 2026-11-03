@@ -17,7 +17,7 @@ import {
 } from "./session-helpers";
 import type { Journal } from "./recovery";
 import { planReload } from "./session-reload";
-import { parseState, reconcile, serializeState, STATE_PATH, type StateFile } from "./state-file";
+import { parseState, reconcile, serializeState, STATE_PATH, type StateEntry, type StateFile } from "./state-file";
 import { cellMeta, recordCleared, recordEdit, recordReviewed, renameInState } from "./status";
 
 export { KeyError } from "./session-helpers";
@@ -71,13 +71,16 @@ export class ProjectSession {
   private stateBaseline: string; // serialized reconciled state as loaded / last saved
   private stateTouched = false;
   private stateDiskText: string | null; // raw state.json as loaded / last written (stale check)
-  /** Set while .paratrans/state.json on disk can't be parsed: it is then never written. */
+  /** Set while .retrans/state.json on disk can't be parsed: it is then never written. */
   private stateError: string | undefined;
   private creates = new Map<string, { locale: string; ns: string }>(); // relPath -> pending create
   private removed = new Map<string, LoadedFile>(); // relPath -> pending delete
   private localesChanged = false;
   private saving: Promise<unknown> = Promise.resolve();
   private listeners = new Set<() => void>();
+  /** Nesting depth of batch(); listeners are held while > 0. */
+  private batchDepth = 0;
+  private batchEmitted = false;
   private dirtyCache: { version: number; cells: Array<{ id: KeyId; locale: string }> } | null = null;
 
   private constructor(
@@ -109,7 +112,7 @@ export class ProjectSession {
 
   // ---- reading ---------------------------------------------------------------------------
 
-  /** True while .paratrans/state.json can't be parsed (it is then never written). */
+  /** True while .retrans/state.json can't be parsed (it is then never written). */
   get stateMalformed(): boolean {
     return this.stateError !== undefined;
   }
@@ -117,6 +120,22 @@ export class ProjectSession {
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  /**
+   * Run `fn` with change notifications held; listeners then fire once if anything changed (also
+   * when `fn` throws). Nested batches notify only when the outermost one ends.
+   */
+  batch<T>(fn: () => T): T {
+    this.batchDepth++;
+    try {
+      return fn();
+    } finally {
+      if (--this.batchDepth === 0 && this.batchEmitted) {
+        this.batchEmitted = false;
+        this.notify();
+      }
+    }
   }
 
   value(id: KeyId, locale: string): MessageValue | undefined {
@@ -139,6 +158,12 @@ export class ProjectSession {
     if (missing.length) out.push({ kind: "placeholder-missing", names: missing });
     if (extra.length) out.push({ kind: "placeholder-extra", names: extra });
     return out;
+  }
+
+  /** False when the file holding this cell couldn't be read: edits to it are refused. */
+  isWritable(id: KeyId, locale: string): boolean {
+    const relPath = this.adapter.filePath(this.opts, locale, parseKeyId(id).ns);
+    return !this.files.find((f) => f.relPath === relPath)?.readOnly;
   }
 
   stats(): Map<string, { done: number; total: number }> {
@@ -190,6 +215,24 @@ export class ProjectSession {
     } else {
       this.put(id, locale, { kind: "text", text });
       recordEdit(this.data, this.state, id, locale, !!opts?.machine);
+    }
+    this.stateTouched = true;
+    this.emit();
+  }
+
+  /**
+   * Take a cell from an imported package: its value plus the translator's status entry when the
+   * package carried one (their Reviewed / machine flags travel); otherwise a plain human edit.
+   */
+  importCell(id: KeyId, locale: string, value: MessageValue | undefined, entry: StateEntry | undefined): void {
+    this.requireCell(id, locale);
+    if (value === undefined) {
+      this.put(id, locale, undefined);
+      recordCleared(this.state, id, locale);
+    } else {
+      this.put(id, locale, value.kind === "complex" ? { kind: "complex", raw: structuredClone(value.raw) } : { ...value });
+      if (entry) (this.state.entries[id] ??= {})[locale] = { ...entry };
+      else recordEdit(this.data, this.state, id, locale, false);
     }
     this.stateTouched = true;
     this.emit();
@@ -309,7 +352,7 @@ export class ProjectSession {
 
   /**
    * Records the base language the user picked (because detection couldn't tell) in
-   * .paratrans/state.json right away, changing only `project.baseLocale` in the file, so the
+   * .retrans/state.json right away, changing only `project.baseLocale` in the file, so the
    * question is asked once. Runs in the save queue. Skipped while state.json is malformed or
    * changed on disk since it was read (the in-memory value is then written by the next save).
    */
@@ -341,12 +384,13 @@ export class ProjectSession {
     this.emit();
   }
 
-  /** Project-level setting stored in .paratrans/state.json (e.g. the locales path override). */
-  setProjectSetting(patch: { localesPath?: string | undefined }): void {
+  /** Project-level setting stored in .retrans/state.json (e.g. the locales path override, the project id). */
+  setProjectSetting(patch: { localesPath?: string | undefined; id?: string }): void {
     if ("localesPath" in patch) {
       if (patch.localesPath) this.state.project.localesPath = patch.localesPath;
       else delete this.state.project.localesPath;
     }
+    if (patch.id) this.state.project.id = patch.id;
     this.stateTouched = true;
     this.emit();
   }
@@ -631,6 +675,11 @@ export class ProjectSession {
 
   private emit(): void {
     this.version++;
+    if (this.batchDepth > 0) this.batchEmitted = true;
+    else this.notify();
+  }
+
+  private notify(): void {
     for (const fn of [...this.listeners]) fn();
   }
 

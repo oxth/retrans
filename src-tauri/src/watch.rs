@@ -17,7 +17,7 @@ fn to_slash(p: &Path) -> String {
 /// Paths we never report: dependency/VCS folders and our own atomic-write temp files.
 pub fn is_ignored(path: &str) -> bool {
     let p = path.replace('\\', "/");
-    p.contains("/node_modules/") || p.contains("/.git/") || p.ends_with(".paratrans-tmp")
+    p.contains("/node_modules/") || p.contains("/.git/") || p.ends_with(".retrans-tmp")
 }
 
 /// Build-output folders (as path segments below the watched root) that are never locale files.
@@ -78,11 +78,11 @@ mod tests {
         assert!(is_ignored("/p/node_modules/x/en.json"));
         assert!(is_ignored("/p/.git/index"));
         assert!(is_ignored("C:\\p\\.git\\HEAD"));
-        assert!(is_ignored("/p/public/locales/en/common.json.paratrans-tmp"));
+        assert!(is_ignored("/p/public/locales/en/common.json.retrans-tmp"));
         assert!(!is_ignored("/p/public/locales/en/common.json"));
         assert!(!is_ignored("/p/.gitignore"));
         assert!(!is_ignored("/p/my_node_modules_notes/en.json"));
-        assert!(!is_ignored("/p/.paratrans/state.json"));
+        assert!(!is_ignored("/p/.retrans/state.json"));
     }
 
     #[test]
@@ -97,6 +97,6 @@ mod tests {
         // the project itself may live under a folder named build/dist/target
         assert!(!is_ignored_under("/home/me/build/p", "/home/me/build/p/public/locales/en/common.json"));
         assert!(is_ignored_under("/p", "/p/node_modules/x/en.json"));
-        assert!(is_ignored_under("/p", "/p/public/locales/en/common.json.paratrans-tmp"));
+        assert!(is_ignored_under("/p", "/p/public/locales/en/common.json.retrans-tmp"));
     }
 }

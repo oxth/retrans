@@ -1,10 +1,11 @@
 import type { ProjectSession } from "../core/session";
 
-export type Page = "translations" | "languages" | "settings";
+export type Page = "translations" | "languages" | "share" | "settings";
 
 const NAV: Array<{ page: Page; label: string }> = [
   { page: "translations", label: "Translations" },
   { page: "languages", label: "Languages" },
+  { page: "share", label: "Import / Export" },
   { page: "settings", label: "Settings" },
 ];
 
@@ -21,9 +22,6 @@ export function Sidebar({ session, stats, page, onPage, onClose }: { session: Pr
             {n.label}
           </button>
         ))}
-        <button className={`${item(false)} cursor-not-allowed opacity-50`} disabled title="Coming soon">
-          Import / Export <span className="text-[10px]">(coming soon)</span>
-        </button>
       </nav>
       <div className="mt-5 space-y-2 text-xs text-gray-500">
         {session.data.locales.map((l) => {

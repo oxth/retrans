@@ -1,5 +1,5 @@
 [package]
-name = "paratrans"
+name = "retrans"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
@@ -11,7 +11,7 @@ edition = "2024"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "paratrans_lib"
+name = "retrans_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -29,11 +29,20 @@ reqwest = { version = "0.13", default-features = false, features = ["native-tls"
 sha2 = "0.11"
 futures-util = "0.3"
 tokio = { version = "1", features = ["fs", "io-util", "rt", "time", "sync", "macros"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 llama-cpp-2 = { version = "0.1.160", default-features = false, features = ["metal"] }
 
-[target.'cfg(not(target_os = "macos"))'.dependencies]
+# Windows: every CPU variant as ggml-cpu-*.dll, the best one picked at runtime. build.rs reads
+# DEP_LLAMA_BACKENDS_DIR, which only reaches direct dependents of llama-cpp-sys-2.
+[target.'cfg(target_os = "windows")'.dependencies]
+llama-cpp-2 = { version = "0.1.160", default-features = false, features = ["dynamic-backends"] }
+llama-cpp-sys-2 = "0.1.160"
+
+[target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.dependencies]
 llama-cpp-2 = { version = "0.1.160", default-features = false }
 
 [dev-dependencies]

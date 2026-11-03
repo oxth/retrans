@@ -26,7 +26,7 @@ export interface WatchScope {
 
 /**
  * True when a watcher batch can affect the open project: a path inside (or an ancestor of) the
- * locales directory, project.inlang/settings.json, or .paratrans/state.json. For Paraglide the
+ * locales directory, project.inlang/settings.json, or .retrans/state.json. For Paraglide the
  * locales directory is the part of pathPattern before "{locale}"; when that is the root itself,
  * only paths matching the pattern count.
  */
