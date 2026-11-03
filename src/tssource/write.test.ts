@@ -197,6 +197,69 @@ describe("applyTsEdits", () => {
     expect(table.out).toContain("  change_pw: { th: 'x' },\n");
   });
 
+  it("removing a pair's only language while adding another stays valid (zone_name)", () => {
+    for (const edits of [
+      [{ kind: "replace", key: "zone_name", values: { th: null, en: "Zone" } }],
+      [{ kind: "remove", key: "zone_name", locale: "th" }, { kind: "set", key: "zone_name", locale: "en", value: "Zone" }],
+    ] as TsEdit[][]) {
+      const { before, out, after } = edit("common.ts", edits);
+      expect(values(after).zone_name).toEqual({ en: "Zone" });
+      expect(out).toBe(before.replace("zone_name: { th: 'ชื่อโซน' }", "zone_name: { en: 'Zone' }"));
+    }
+  });
+
+  it("replace sets and removes languages of one key", () => {
+    const { after } = edit("common.ts", [
+      { kind: "replace", key: "support_file_jpg_png", values: { th: "x", en: null } },
+      { kind: "replace", key: "brand_new", values: { th: "ใหม่", en: null } },
+    ]);
+    expect(values(after).support_file_jpg_png).toEqual({ th: "x" });
+    expect(values(after).brand_new).toEqual({ th: "ใหม่" });
+    const split = edit("button.tsx", [{ kind: "replace", key: "button_ok", values: { th: null, en: "Okay" } }]);
+    expect(values(split.after).button_ok).toEqual({ en: "Okay" });
+  });
+
+  it("a whole-key remove plus another edit of that key throws", () => {
+    const { text, mod } = load("button.tsx");
+    expect(() =>
+      applyTsEdits(text, mod, [{ kind: "remove", key: "button_ok" }, { kind: "set", key: "button_ok", locale: "en", value: "x" }]),
+    ).toThrow(/conflicting edits/);
+    expect(() => applyTsEdits(read("dashboardMaguro.tsx"), load("dashboardMaguro.tsx").mod, [
+      { kind: "remove", key: "maguro_brand", locale: "en" },
+    ])).toThrow(/can't edit/);
+  });
+
+  it("any removal subset plus an insertion into the same object stays valid", () => {
+    const shapes = [
+      "{ a: '1', b: '2', c: '3' }",
+      "{ a: '1', b: '2', c: '3', }",
+      "{\n  a: '1',\n  b: '2',\n  c: '3',\n}",
+      "{\n  a: '1',\n  b: '2',\n  c: '3'\n}",
+      "{\n  a: '1',\n  b: '2',\n  c: '3' }",
+      "{\n  a: '1', b: '2',\n  c: '3'\n}",
+      "{ a: '1' }",
+      "{\n  a: '1', // note\n}",
+    ];
+    for (const shape of shapes) {
+      const src = `export const xTH = ${shape};\nexport const xEN = { a: 'e' };\n`;
+      const keys = [...shape.matchAll(/([abc]): '/g)].map((m) => m[1]);
+      for (let mask = 0; mask < 1 << keys.length; mask++) {
+        const gone = keys.filter((_, i) => mask & (1 << i));
+        for (const insert of [false, true]) {
+          const edits: TsEdit[] = gone.map((k) => ({ kind: "remove", key: k, locale: "th" }));
+          if (insert) edits.push({ kind: "add", key: "n", values: { th: "N" } });
+          const { after } = edit("x.ts", edits, src);
+          const th: Record<string, string> = {};
+          for (const e of after.entries) if (e.locale === "th") th[e.key] = e.value;
+          const want: Record<string, string> = {};
+          for (const k of keys) if (!gone.includes(k)) want[k] = { a: "1", b: "2", c: "3" }[k]!;
+          if (insert) want.n = "N";
+          expect(th, `${shape} − ${gone.join(",")}${insert ? " + n" : ""}`).toEqual(want);
+        }
+      }
+    }
+  });
+
   it("CRLF preserved", () => {
     const { before, out, after } = edit("change-password.ts", [
       { kind: "set", key: "current_pw", locale: "en", value: "Now" },

@@ -5,6 +5,7 @@ import { MemoryFs } from "../platform/memory-fs";
 import { importTsLocales } from "../tssource/import";
 import { openFixtureWorkspace } from "../test/workspace-fixture";
 import { planExport, writeExportPlan } from "./export";
+import { serializeBaseline } from "./meta";
 
 const OUT = "/out";
 
@@ -20,6 +21,21 @@ async function setup() {
   return { ...w, source, fixtureFiles };
 }
 
+/**
+ * Plans a write-back; unless it is blocked, writes it and re-imports the source, which must
+ * parse cleanly and match the refreshed baseline.
+ */
+async function writeBack(w: Awaited<ReturnType<typeof setup>>, s: typeof w.session) {
+  const plan = await planExport(s, { kind: "ts-writeback" }, await w.source());
+  if (plan.blocked) return plan;
+  await writeExportPlan(w.fs, plan);
+  const re = await w.source();
+  expect(re.errors).toEqual([]);
+  const again = await planExport(s, { kind: "ts-writeback" }, re);
+  expect(again.blocked).toBeUndefined();
+  return plan;
+}
+
 const file = (plan: { files: Array<{ path: string; text: string }> }, path: string) =>
   plan.files.find((f) => f.path === path)?.text;
 
@@ -27,7 +43,7 @@ describe("planExport: ts-writeback", () => {
   it("writeback with no edits writes nothing", async () => {
     const w = await setup();
     const before = await w.fixtureFiles();
-    const plan = await planExport(w.session, { kind: "ts-writeback" }, await w.source());
+    const plan = await writeBack(w, w.session);
     expect(plan.blocked).toBeUndefined();
     expect(plan.files).toEqual([]);
     expect(plan.leftOutLocales).toEqual([]);
@@ -40,7 +56,7 @@ describe("planExport: ts-writeback", () => {
     const path = `${w.root}/${w.localesDir}/button.tsx`;
     const original = await w.fs.readText(path);
     w.session.setText(keyId("button", "button_ok"), "en", "Okay");
-    const plan = await planExport(w.session, { kind: "ts-writeback" }, await w.source());
+    const plan = await writeBack(w, w.session);
     expect(plan.files.map((f) => f.path)).toEqual([path]);
     const a = original.split("\n");
     const b = plan.files[0].text.split("\n");
@@ -59,7 +75,7 @@ describe("planExport: ts-writeback", () => {
     s.addNamespace("reports");
     const r = s.addKey("reports", "report_title", "รายงาน");
     s.setText(r, "en", "Report");
-    const plan = await planExport(s, { kind: "ts-writeback" }, await w.source());
+    const plan = await writeBack(w, s);
     const button = file(plan, `${w.root}/${w.localesDir}/button.tsx`)!;
     expect(button).toContain("  button_export: 'ส่งออก',\n};\n\nexport const buttonEN");
     expect(button).toContain("  button_ok: 'OK',\n  button_export: 'Export',\n};");
@@ -79,7 +95,7 @@ describe("planExport: ts-writeback", () => {
     s.deleteKey(keyId("button", "button_save"));
     s.setText(keyId("common", "email"), "en", null);
     s.setText(keyId("change-password", "current_pw"), "en", null);
-    const plan = await planExport(s, { kind: "ts-writeback" }, await w.source());
+    const plan = await writeBack(w, s);
     const button = file(plan, `${w.root}/${w.localesDir}/button.tsx`)!;
     expect(button).not.toContain("button_save");
     expect(file(plan, `${w.root}/${w.localesDir}/common.ts`)).toContain("  email: { th: 'อีเมล' },\n");
@@ -96,7 +112,7 @@ describe("planExport: ts-writeback", () => {
     const s = w.session;
     const id = s.addKey("button", "button_gone", "หาย");
     s.setWorkspaceMeta({ removedInSource: [id] });
-    const plan = await planExport(s, { kind: "ts-writeback" }, await w.source());
+    const plan = await writeBack(w, s);
     expect(plan.files).toEqual([]);
   });
 
@@ -105,7 +121,7 @@ describe("planExport: ts-writeback", () => {
     const s = w.session;
     s.addLanguage("ja");
     s.setText(keyId("button", "button_ok"), "ja", "オーケー");
-    const plan = await planExport(s, { kind: "ts-writeback" }, await w.source());
+    const plan = await writeBack(w, s);
     expect(plan.leftOutLocales).toEqual(["ja"]);
     expect(plan.files).toEqual([]);
     expect(plan.snippets.join("\n")).toContain("'th' | 'en' | 'ja'");
@@ -117,7 +133,7 @@ describe("planExport: ts-writeback", () => {
     expect(s.value(keyId("button", "button_delete"), "en")).toBeUndefined();
     s.setText(keyId("button", "button_delete"), "th", "ลบทิ้ง");
     s.setText(keyId("button", "button_reset_password"), "th", "รีเซ็ต");
-    const plan = await planExport(s, { kind: "ts-writeback" }, await w.source());
+    const plan = await writeBack(w, s);
     const button = file(plan, `${w.root}/${w.localesDir}/button.tsx`)!;
     expect(button).toContain("  button_delete: 'ลบทิ้ง',");
     expect(button).toContain("  button_delete: 'ลบ (EN)',");
@@ -127,17 +143,59 @@ describe("planExport: ts-writeback", () => {
   it("a translated marker cell is replaced", async () => {
     const w = await setup();
     w.session.setText(keyId("button", "button_delete"), "en", "Delete");
-    const plan = await planExport(w.session, { kind: "ts-writeback" }, await w.source());
+    const plan = await writeBack(w, w.session);
     const button = file(plan, `${w.root}/${w.localesDir}/button.tsx`)!;
     expect(button).toContain("  button_delete: 'Delete',");
     expect(button).not.toContain("(EN)',\n  button_reset");
+  });
+
+  it("clearing a pair's only language while setting another stays valid (zone_name)", async () => {
+    const w = await setup();
+    const id = keyId("common", "zone_name");
+    w.session.setText(id, "en", "Zone");
+    w.session.setText(id, "th", null);
+    const plan = await writeBack(w, w.session);
+    expect(file(plan, `${w.root}/${w.localesDir}/common.ts`)).toContain("  zone_name: { en: 'Zone' },\n");
+    const re = await w.source();
+    expect(re.values.get(id)?.get("en")).toEqual(text("Zone"));
+    expect(re.values.get(id)?.get("th")).toBeUndefined();
+  });
+
+  it("after a write-back the baseline is refreshed: the next export isn't blocked and has nothing to do", async () => {
+    const w = await setup();
+    w.session.setText(keyId("button", "button_ok"), "en", "Okay");
+    const plan = await planExport(w.session, { kind: "ts-writeback" }, await w.source());
+    expect(plan.baseline?.path).toBe(`${w.root}/.retrans/source-baseline.json`);
+    await writeExportPlan(w.fs, plan);
+    const next = await planExport(w.session, { kind: "ts-writeback" }, await w.source());
+    expect(next.blocked).toBeUndefined();
+    expect(next.files).toEqual([]);
+    expect(next.baseline).toBeUndefined();
+  });
+
+  it("a group whose source file can't be read is not rewritten", async () => {
+    const w = await setup();
+    const rel = `${w.localesDir}/button.tsx`;
+    const source = await w.source();
+    source.modules.delete(rel);
+    source.errors.push({ relPath: rel, message: "boom" });
+    for (const id of Object.keys(source.baseline)) if (id.startsWith("button::")) delete source.baseline[id];
+    await w.fs.writeTextAtomic(`${w.root}/.retrans/source-baseline.json`, serializeBaseline(source.baseline));
+    w.session.setText(keyId("button", "button_ok"), "en", "Okay");
+    const plan = await planExport(w.session, { kind: "ts-writeback" }, source);
+    expect(plan.blocked).toBeUndefined();
+    expect(plan.files).toEqual([]);
+    expect(plan.warnings).toEqual([
+      `Couldn't read ${rel}; it was left unchanged.`,
+      `Couldn't read the source file of group "button"; it was not written.`,
+    ]);
   });
 
   it("blocked when source changed since baseline", async () => {
     const w = await setup();
     const path = `${w.root}/${w.localesDir}/button.tsx`;
     await w.fs.writeTextAtomic(path, (await w.fs.readText(path)).replace("'OK'", "'Okay!'"));
-    const plan = await planExport(w.session, { kind: "ts-writeback" }, await w.source());
+    const plan = await writeBack(w, w.session);
     expect(plan.blocked).toEqual({ reason: "conflicts" });
     expect(plan.files).toEqual([]);
     await expect(writeExportPlan(w.fs, plan)).rejects.toThrow();
@@ -229,13 +287,15 @@ describe("planExport: other formats", () => {
       `${OUT}/button.ts`, `${OUT}/change-password.ts`, `${OUT}/common.ts`, `${OUT}/dashboardMaguro.ts`, `${OUT}/mapLocale.ts`,
     ]);
     expect(file(plan, `${OUT}/mapLocale.ts`)).toContain("'th' | 'en'");
+    expect(file(plan, `${OUT}/button.ts`)).toContain("import { mapLocale } from './mapLocale';");
+    // New format: untranslated cells are omitted, markers included.
+    expect(file(plan, `${OUT}/button.ts`)).toContain("  button_delete: { th: 'ลบ' },");
     expect(plan.snippets.join("\n")).toContain("import { buttonTH, buttonEN } from '@/assets/locales/button';");
     await writeExportPlan(w.fs, plan);
     const re = await importTsLocales(w.fs, OUT, "", "th");
     expect(re.errors).toEqual([]);
     expect(textValues(re.values)).toEqual(textValues(s.data.values));
-    // Markers survive as markers.
-    expect(re.markers[keyId("button", "button_delete")]).toEqual({ en: "ลบ (EN)" });
+    expect(re.markers).toEqual({});
   });
 });
 

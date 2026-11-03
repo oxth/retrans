@@ -12,7 +12,13 @@ export type TsEdit =
   | { kind: "set"; key: string; locale: string; value: string }
   | { kind: "add"; key: string; values: Record<string, string> }
   /** Without `locale`: the whole key. With `locale`: only that language's property (split) or pair field (table). */
-  | { kind: "remove"; key: string; locale?: string };
+  | { kind: "remove"; key: string; locale?: string }
+  /**
+   * Several languages of one key at once: a string sets that language, `null` removes it,
+   * languages not listed are left alone. Lets a caller send one edit per key when a key
+   * needs both sets and removals.
+   */
+  | { kind: "replace"; key: string; values: Record<string, string | null> };
 
 /** Loose view of a Babel AST node; only the fields this module reads. */
 interface Node {
@@ -61,6 +67,10 @@ const hasValue = (v: string | undefined): v is string => v !== undefined && v !=
  * - `add` appends the key at the end of every language object (split) or as one
  *   `{ locale: value }` pair (table). Empty values and unknown languages are skipped.
  *   `add` on a key the file already has acts as a `set` per language.
+ * - `replace` applies a `set` per string and a per-language `remove` per `null`
+ *   (an `add` when the key is new).
+ * - A whole-key `remove` together with any other edit of that key throws. The result is
+ *   re-parsed; edits that would produce invalid syntax throw instead of returning it.
  * - `remove` deletes the property (its whole line when it sits on its own line) from
  *   every object (split) or the pair (table). With a `locale`, only that language's
  *   object (split) or that field of the key's pair (table) loses it.
@@ -148,6 +158,10 @@ export function applyTsEdits(text: string, module: LocaleModule, edits: TsEdit[]
   };
 
   const remove = (key: string, locale?: string) => {
+    if (locale !== undefined) {
+      const ro = module.readOnly.find((r) => r.key === key && (module.style === "table" || r.locale === locale));
+      if (ro) throw new Error(`can't edit ${module.group} › ${key} (${locale}): ${ro.reason}`);
+    }
     if (locale !== undefined && module.style === "table") {
       const pair = module.pairObjects?.[key];
       if (pair) queueRemoval(pair, locale);
@@ -158,9 +172,31 @@ export function applyTsEdits(text: string, module: LocaleModule, edits: TsEdit[]
     for (const ref of targets) queueRemoval(ref, key);
   };
 
+  const replace = (key: string, values: Record<string, string | null>) => {
+    if (!keyExists(key)) {
+      const vals: Record<string, string> = {};
+      for (const [loc, v] of Object.entries(values)) if (v !== null) vals[loc] = v;
+      add(key, vals);
+      return;
+    }
+    for (const [loc, v] of Object.entries(values)) {
+      if (v === null) remove(key, loc);
+      else set(key, loc, v);
+    }
+  };
+
+  // A key removed whole can't also be edited in the same call (the edits would overlap).
+  const removedWhole = new Set(edits.filter((e) => e.kind === "remove" && e.locale === undefined).map((e) => e.key));
+  for (const e of edits) {
+    if (removedWhole.has(e.key) && !(e.kind === "remove" && e.locale === undefined)) {
+      throw new Error(`conflicting edits for ${module.group} › ${e.key}: removed and edited in one call`);
+    }
+  }
+
   for (const e of edits) {
     if (e.kind === "set") set(e.key, e.locale, e.value);
     else if (e.kind === "add") add(e.key, e.values);
+    else if (e.kind === "replace") replace(e.key, e.values);
     else remove(e.key, e.locale);
   }
 
@@ -168,8 +204,14 @@ export function applyTsEdits(text: string, module: LocaleModule, edits: TsEdit[]
 
   // Removals first (per object), so insertions can see which properties remain.
   const removalRanges: Splice[] = [];
+  /** Objects whose every property is removed and that also get insertions: their inside is rewritten whole. */
+  const emptied = new Set<TsObjectRef>();
   for (const [ref, removed] of removals) {
     const props = nodeOf(ref).properties as Node[];
+    if (inserts.has(ref) && props.every((p) => removed.has(p))) {
+      emptied.add(ref);
+      continue;
+    }
     let lastWasLine = false;
     for (const p of props) {
       if (!removed.has(p)) continue;
@@ -193,6 +235,8 @@ export function applyTsEdits(text: string, module: LocaleModule, edits: TsEdit[]
   }
   splices.push(...mergeDeletions(removalRanges));
 
+  const removedAt = (pos: number) => removalRanges.some((r) => r.start <= pos && pos < r.end);
+
   for (const [ref, props] of inserts) {
     const node = nodeOf(ref);
     const all = node.properties as Node[];
@@ -200,6 +244,20 @@ export function applyTsEdits(text: string, module: LocaleModule, edits: TsEdit[]
     const remaining = all.filter((p) => !removed.has(p));
     const last = all[all.length - 1];
     const multiLine = text.slice(ref.open, ref.close).includes("\n");
+
+    if (emptied.has(ref)) {
+      // Every property goes: rewrite the inside of the braces.
+      let inner: string;
+      if (multiLine) {
+        const at = lineStart(text, ref.close);
+        const closeIndent = /^[ \t]*$/.test(text.slice(at, ref.close)) ? text.slice(at, ref.close) : "";
+        inner = eol + props.map((p) => `${ref.propIndent}${p},${eol}`).join("") + closeIndent;
+      } else {
+        inner = ` ${props.join(", ")} `;
+      }
+      splices.push({ start: ref.open + 1, end: ref.close, text: inner, seq: seq++ });
+      continue;
+    }
 
     if (all.length === 0) {
       const inner = text.slice(ref.open + 1, ref.close);
@@ -218,32 +276,40 @@ export function applyTsEdits(text: string, module: LocaleModule, edits: TsEdit[]
       continue;
     }
 
+    // The property new ones follow: the last one that stays.
+    const anchor = remaining[remaining.length - 1];
+    const c = skipBlanks(text, anchor.end);
+    const anchorComma = text[c] === "," && !removedAt(c);
+
     if (!multiLine) {
-      if (ref.trailingComma) {
-        const c = skipBlanks(text, last.end);
+      if (anchorComma && !removed.has(last)) {
         splices.push({ start: c + 1, end: c + 1, text: props.map((p) => ` ${p},`).join(""), seq: seq++ });
       } else {
-        splices.push({ start: last.end, end: last.end, text: props.map((p) => `, ${p}`).join(""), seq: seq++ });
+        splices.push({ start: anchor.end, end: anchor.end, text: props.map((p) => `, ${p}`).join(""), seq: seq++ });
       }
       continue;
     }
 
     // Multi-line: make sure the last remaining property ends with a comma.
-    if (remaining.length > 0 && !ref.trailingComma && !removed.has(last)) {
-      splices.push({ start: last.end, end: last.end, text: ",", seq: seq++ });
-    }
+    if (!anchorComma) splices.push({ start: anchor.end, end: anchor.end, text: ",", seq: seq++ });
     const at = lineStart(text, ref.close);
     if (/^[ \t]*$/.test(text.slice(at, ref.close))) {
       splices.push({ start: at, end: at, text: props.map((p) => `${ref.propIndent}${p},${eol}`).join(""), seq: seq++ });
     } else {
       // `}` shares a line with the last property: continue on new lines after it.
-      let after = last.end;
-      if (ref.trailingComma) after = skipBlanks(text, last.end) + 1;
+      const after = anchorComma ? c + 1 : anchor.end;
       splices.push({ start: after, end: after, text: props.map((p) => `${eol}${ref.propIndent}${p},`).join(""), seq: seq++ });
     }
   }
 
-  return stitch(text, splices);
+  const out = stitch(text, splices);
+  // Safety net: never hand back text that no longer parses.
+  try {
+    objectNodes(out);
+  } catch (e) {
+    throw new Error(`applyTsEdits produced invalid TypeScript for ${module.group}: ${e instanceof Error ? e.message : e}`);
+  }
+  return out;
 }
 
 /** `{ th: '…', en: '…' }` in `locales` order with only non-empty values, or null when none. */
@@ -360,11 +426,15 @@ function groupIdent(group: string): string {
   return id;
 }
 
-/** A new table-style module (fixture style: 2-space indent, single quotes, `mapLocale`). */
+/**
+ * A new table-style module (fixture style: 2-space indent, single quotes, `mapLocale`).
+ * `mapLocaleFrom` is the import specifier of the `mapLocale` helper.
+ */
 export function newTableModule(
   group: string,
   values: Record<string, Record<string, string>>,
   locales: string[],
+  mapLocaleFrom = "@/assets/locales/mapLocale",
 ): string {
   const id = groupIdent(group);
   const rows: string[] = [];
@@ -373,7 +443,7 @@ export function newTableModule(
     if (pair) rows.push(`  ${keyText(key)}: ${pair},`);
   }
   return [
-    "import { mapLocale } from '@/assets/locales/mapLocale';",
+    `import { mapLocale } from ${encodeTsString(mapLocaleFrom, "'")};`,
     "",
     `const ${id} = {`,
     ...rows,
