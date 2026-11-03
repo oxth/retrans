@@ -69,7 +69,7 @@ The macOS download is for Apple Silicon Macs (M1 and later) running macOS 11 Big
 
 Releases are not code-signed for the OS, so the system warns on first launch.
 
-- **macOS:** right-click the app and choose **Open**, then confirm. Alternatively, try to open it once, then go to **System Settings > Privacy & Security** and click **Open Anyway**.
+- **macOS:** open the app once (macOS says it can't verify the developer), then go to **System Settings > Privacy & Security**, scroll down and click **Open Anyway**. On macOS 14 and older, right-click the app and choose **Open** also works. If macOS ever says the app "is damaged", run `xattr -cr /Applications/Retrans.app` once in Terminal and open it again.
 - **Windows:** when SmartScreen appears, click **More info**, then **Run anyway**.
 
 ## Manual checklist
