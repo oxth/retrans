@@ -1,0 +1,185 @@
+/**
+ * Sync from source (spec §7): merges changes in a workspace's TypeScript locale files into the
+ * workspace, three-way per cell against the stored source baseline. Never writes source files;
+ * the only file it writes is the baseline.
+ */
+import type { Conflict } from "../core/merge";
+import { type KeyId, type MessageValue, parseKeyId, valuesEqual } from "../core/model";
+import type { ProjectSession } from "../core/session";
+import { type Fs, FsError, joinPath } from "../platform/fs";
+import { importTsLocales, isMarker } from "../tssource/import";
+import { type Baseline, BASELINE_PATH, jsonEqual, parseBaseline, serializeBaseline, type WorkspaceMeta } from "./meta";
+
+export interface SyncResult {
+  /** False when the source folder is missing or has no locale modules; nothing was changed. */
+  sourceAvailable: boolean;
+  /** Cells changed both in the source and in the workspace; the workspace keeps its value. */
+  conflicts: Conflict[];
+  /** Keys new to the workspace, now rows. */
+  added: KeyId[];
+  /** Existing rows that took at least one value from the source. */
+  updated: KeyId[];
+  /** Keys newly marked "removed in source" by this sync (they are not deleted). */
+  removedInSource: KeyId[];
+  /** Groups (namespaces) created for new source files. */
+  newGroups: string[];
+}
+
+const unavailable = (): SyncResult => ({
+  sourceAvailable: false, conflicts: [], added: [], updated: [], removedInSource: [], newGroups: [],
+});
+
+async function readOrNull(fs: Fs, path: string): Promise<string | null> {
+  try {
+    return await fs.readText(path);
+  } catch (err) {
+    if (err instanceof FsError && err.code === "NotFound") return null;
+    throw err;
+  }
+}
+
+const baseName = (relPath: string) => relPath.slice(relPath.lastIndexOf("/") + 1).replace(/\.tsx?$/, "");
+
+/** A baseline cell as a value: markers count as missing. */
+function baselineValue(b: Baseline, id: KeyId, locale: string): MessageValue | undefined {
+  const s = b[id]?.[locale];
+  return s === undefined || isMarker(s, locale) ? undefined : { kind: "text", text: s };
+}
+
+/** Sets or deletes `table[id][locale]` to match `from`. */
+function copyCell(table: Record<KeyId, Record<string, string>>, from: Record<KeyId, Record<string, string>>, id: KeyId, locale: string) {
+  const v = from[id]?.[locale];
+  if (v !== undefined) (table[id] ??= {})[locale] = v;
+  else if (table[id]) {
+    delete table[id][locale];
+    if (Object.keys(table[id]).length === 0) delete table[id];
+  }
+}
+
+function copyRow(table: Record<KeyId, Record<string, string>>, from: Record<KeyId, Record<string, string>>, id: KeyId) {
+  if (from[id]) table[id] = { ...from[id] };
+  else delete table[id];
+}
+
+/**
+ * Brings the workspace in step with its TypeScript source. Per cell (markers count as missing):
+ * source unchanged → nothing; source changed and workspace still equal to the baseline → the
+ * source value is taken; both changed differently → a conflict that keeps the workspace value.
+ * Keys gone from the source are only marked removed. Files that can't be read are left out
+ * entirely: their keys are neither changed nor marked removed, and keep their baseline.
+ * The baseline then becomes the current source, except for conflict cells.
+ */
+export async function syncFromSource(session: ProjectSession): Promise<SyncResult> {
+  const meta = session.workspace;
+  if (!meta?.source) return unavailable();
+  const { fs } = session;
+  const root = session.data.root;
+  const { localesDir } = meta.source;
+  if (!(await fs.exists(joinPath(root, localesDir)))) return unavailable();
+  const src = await importTsLocales(fs, root, localesDir, session.data.baseLocale);
+  if (src.modules.size === 0) return unavailable();
+  const baselinePath = joinPath(root, BASELINE_PATH);
+  const baselineText = await readOrNull(fs, baselinePath);
+  const stored = parseBaseline(baselineText) ?? {};
+  // Everything below is synchronous, so the workspace can't change underneath the merge.
+
+  const parsedGroups = new Set([...src.modules.values()].map((m) => m.module.group));
+  const unreadable = new Set(src.errors.map((e) => baseName(e.relPath)).filter((g) => !parsedGroups.has(g)));
+  const skipped = (id: KeyId) => unreadable.has(parseKeyId(id).ns);
+  const inSource = new Set(src.keyOrder);
+
+  // ---- plan, per cell ----
+  const conflicts: Conflict[] = [];
+  const takes: Array<{ id: KeyId; locale: string; value: MessageValue | undefined }> = [];
+  for (const id of src.keyOrder) {
+    const locales = [...new Set([...Object.keys(src.baseline[id] ?? {}), ...Object.keys(stored[id] ?? {})])];
+    for (const locale of locales) {
+      const base = baselineValue(stored, id, locale);
+      const theirs = src.values.get(id)?.get(locale);
+      if (valuesEqual(base, theirs)) continue; // source unchanged
+      const mine = session.value(id, locale);
+      if (valuesEqual(mine, theirs)) continue; // same change on both sides
+      if (valuesEqual(mine, base)) {
+        takes.push({ id, locale, value: theirs });
+      } else {
+        const c: Conflict = { id, locale };
+        if (mine) c.mine = mine;
+        if (theirs) c.theirs = theirs;
+        conflicts.push(c);
+      }
+    }
+  }
+
+  const known = new Set(session.data.keyOrder);
+  const removedNow = session.data.keyOrder.filter(
+    (id) => stored[id] !== undefined && !inSource.has(id) && !skipped(id) && !meta.removedInSource.includes(id),
+  );
+
+  // ---- apply ----
+  const result: SyncResult = { sourceAvailable: true, conflicts, added: [], updated: [], removedInSource: removedNow, newGroups: [] };
+  session.batch(() => {
+    for (const group of parsedGroups) {
+      if (session.data.namespaces.includes(group)) continue;
+      session.addNamespace(group);
+      result.newGroups.push(group);
+    }
+    for (const { id, locale, value } of takes) {
+      if (!known.has(id)) {
+        if (value === undefined) continue;
+        session.insertKey(id, previousRow(src.keyOrder, id, new Set(session.data.keyOrder)));
+        known.add(id);
+        result.added.push(id);
+      } else if (!result.added.includes(id) && !result.updated.includes(id)) {
+        result.updated.push(id);
+      }
+      if (!session.data.locales.includes(locale)) session.addLanguage(locale);
+      session.importCell(id, locale, value, undefined);
+    }
+
+    // Markers and drafts follow the source, except where the workspace keeps its own value.
+    const markers = structuredClone(src.markers);
+    const drafts = structuredClone(src.drafts);
+    for (const c of conflicts) {
+      copyCell(markers, meta.markers, c.id, c.locale);
+      copyCell(drafts, meta.drafts, c.id, c.locale);
+    }
+    for (const id of Object.keys({ ...meta.markers, ...meta.drafts })) {
+      if (!skipped(id)) continue;
+      copyRow(markers, meta.markers, id);
+      copyRow(drafts, meta.drafts, id);
+    }
+    const readOnly = new Set(src.readOnly.map((r) => r.id));
+    const emptyKeys = [
+      ...src.keyOrder.filter((id) => !src.values.get(id)?.size && !readOnly.has(id) && !session.data.values.get(id)?.size),
+      ...meta.emptyKeys.filter(skipped),
+    ].sort();
+    const patch: Partial<WorkspaceMeta> = {
+      markers,
+      drafts,
+      emptyKeys,
+      duplicates: src.duplicates,
+      removedInSource: [...meta.removedInSource.filter((id) => !inSource.has(id)), ...removedNow],
+    };
+    const current = meta as unknown as Record<string, unknown>;
+    if (Object.entries(patch).some(([k, v]) => !jsonEqual(current[k], v))) session.setWorkspaceMeta(patch);
+  });
+
+  // The new baseline: the current source, but the old cells where there's a conflict, and the
+  // old rows of unreadable files.
+  const next: Baseline = structuredClone(src.baseline);
+  for (const c of conflicts) copyCell(next, stored, c.id, c.locale);
+  for (const id of Object.keys(stored)) if (skipped(id)) copyRow(next, stored, id);
+  const nextText = serializeBaseline(next);
+  if (nextText !== baselineText) await fs.writeTextAtomic(baselinePath, nextText);
+  return result;
+}
+
+/** The nearest key before `id` in source order that is a workspace row of the same group. */
+function previousRow(sourceOrder: KeyId[], id: KeyId, rows: Set<KeyId>): KeyId | undefined {
+  const { ns } = parseKeyId(id);
+  for (let i = sourceOrder.indexOf(id) - 1; i >= 0; i--) {
+    const k = sourceOrder[i];
+    if (rows.has(k) && parseKeyId(k).ns === ns) return k;
+  }
+  return undefined;
+}

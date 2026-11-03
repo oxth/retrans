@@ -301,6 +301,22 @@ export class ProjectSession {
     return opts?.plural ? keyId(ns, `${key}_other`) : ids[0];
   }
 
+  /**
+   * Adds a row with no values yet (e.g. a key that appeared in the TS source), right after `after`
+   * when that is a row, else at the end. Fill it with importCell().
+   */
+  insertKey(id: KeyId, after?: KeyId): void {
+    const { ns, key } = parseKeyId(id);
+    validateKey(key);
+    if (!this.data.namespaces.includes(ns)) throw new KeyError("invalid", `namespace "${ns}" does not exist`);
+    checkCollision(this.data.keyOrder, ns, key);
+    const order = [...this.data.keyOrder];
+    const at = after === undefined ? -1 : order.indexOf(after);
+    order.splice(at < 0 ? order.length : at + 1, 0, id);
+    this.setKeyOrder(order);
+    this.emit();
+  }
+
   renameKey(id: KeyId, newKey: string): KeyId {
     this.requireKey(id);
     validateKey(newKey);

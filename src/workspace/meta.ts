@@ -29,6 +29,8 @@ export interface WorkspaceMeta {
   markers: Record<KeyId, Record<string, string>>;
   removedInSource: KeyId[];
   duplicates: string[];
+  /** Source keys with no value in any language (only markers / `undefined`), sorted; they have no workspace values. */
+  emptyKeys: KeyId[];
   lastExport?: ExportSettings;
 }
 
@@ -95,6 +97,7 @@ export function parseWorkspaceMeta(text: string | null): WorkspaceMeta | null {
     markers: stringTable(raw.markers),
     removedInSource: stringList(raw.removedInSource),
     duplicates: stringList(raw.duplicates),
+    emptyKeys: stringList(raw.emptyKeys),
   };
   const src = raw.source;
   if (isRecord(src) && src.type === "ts" && typeof src.localesDir === "string") {

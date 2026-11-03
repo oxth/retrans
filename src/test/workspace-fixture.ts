@@ -49,6 +49,9 @@ export async function openFixtureWorkspace(): Promise<{
     markers: imported.markers,
     drafts: imported.drafts,
     duplicates: imported.duplicates,
+    emptyKeys: imported.keyOrder
+      .filter((id) => !imported.values.get(id)?.size && !imported.readOnly.some((r) => r.id === id))
+      .sort(),
   }));
   await fs.writeTextAtomic(joinPath(root, BASELINE_PATH), serializeBaseline(imported.baseline));
 
