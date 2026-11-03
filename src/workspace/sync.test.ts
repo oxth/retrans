@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { keyId } from "../core/model";
+import { ProjectSession } from "../core/session";
+import { detectProject } from "../formats/detect";
 import { joinPath } from "../platform/fs";
 import { importTsLocales } from "../tssource/import";
 import { openFixtureWorkspace } from "../test/workspace-fixture";
 import { BASELINE_PATH, parseBaseline, WORKSPACE_DIR } from "./meta";
-import { syncFromSource } from "./sync";
+import { planExport } from "./export";
+import { resolveSyncConflict, syncFromSource } from "./sync";
 
 const text = (t: string) => ({ kind: "text", text: t });
 
@@ -17,11 +20,13 @@ async function setup() {
     expect(t.split(from).length - 1).toBe(1);
     await w.fs.writeTextAtomic(srcPath(name), t.replace(from, to));
   };
-  const baseline = async () => parseBaseline(await w.fs.readText(joinPath(w.root, BASELINE_PATH)));
+  const diskBaseline = async () => parseBaseline(await w.fs.readText(joinPath(w.root, BASELINE_PATH)));
+  /** The baseline the next sync merges against: pending (unsaved) else the file's. */
+  const baseline = async () => w.session.pendingBaseline ?? (await diskBaseline());
   const sourceBaseline = async () => (await importTsLocales(w.fs, w.root, w.localesDir, "th")).baseline;
   let emits = 0;
   w.session.subscribe(() => emits++);
-  return { ...w, edit, srcPath, baseline, sourceBaseline, emits: () => emits };
+  return { ...w, edit, srcPath, baseline, diskBaseline, sourceBaseline, emits: () => emits };
 }
 
 const SAVE = keyId("button", "button_save");
@@ -243,5 +248,111 @@ describe("syncFromSource", () => {
     expect(r.removedInSource).toEqual([]);
     expect(w.session.value(SAVE, "en")).toEqual(text("Save"));
     expect((await w.baseline())![SAVE]).toEqual(before![SAVE]);
+  });
+
+  describe("baseline is only written by save", () => {
+    const writeBackBlocked = async (w: Awaited<ReturnType<typeof setup>>, s: ProjectSession) =>
+      (await planExport(s, { kind: "ts-writeback" }, await importTsLocales(w.fs, w.root, w.localesDir, "th"))).blocked;
+    const reopen = async (w: Awaited<ReturnType<typeof setup>>) => {
+      const d = (await detectProject(w.fs, w.root))!;
+      return ProjectSession.open(w.fs, w.root, d, { baseLocale: "th", localesPath: d.localesPath });
+    };
+
+    it("sync writes no files; save writes the baseline; write-back is blocked until then", async () => {
+      const w = await setup();
+      await w.edit("button.tsx", "button_save: 'Save',", "button_save: 'Save file',");
+      const before = w.fs.snapshot();
+      await syncFromSource(w.session);
+      expect(w.fs.snapshot()).toEqual(before);
+      expect(w.session.isDirty()).toBe(true);
+      expect(await writeBackBlocked(w, w.session)).toEqual({ reason: "conflicts" });
+      const res = await w.session.save();
+      expect(res.written).toContain(BASELINE_PATH);
+      expect(w.session.pendingBaseline).toBeNull();
+      expect(w.session.isDirty()).toBe(false);
+      expect(await w.diskBaseline()).toEqual(await w.sourceBaseline());
+      expect(await writeBackBlocked(w, w.session)).toBeUndefined();
+    });
+
+    it("closing without saving: the change is reported again and write-back stays blocked", async () => {
+      const w = await setup();
+      await w.edit("button.tsx", "button_save: 'Save',", "button_save: 'Save file',");
+      await w.edit("button.tsx", "  button_ok: 'ตกลง',\n", "");
+      await w.edit("button.tsx", ",\n  button_ok: 'OK'\n", "\n");
+      await syncFromSource(w.session);
+      const s2 = await reopen(w); // "Don't save"
+      expect(await writeBackBlocked(w, s2)).toEqual({ reason: "conflicts" });
+      const r = await syncFromSource(s2);
+      expect(r.updated).toEqual([SAVE]);
+      expect(r.removedInSource).toEqual([OK]);
+      expect(s2.value(SAVE, "en")).toEqual(text("Save file"));
+    });
+
+    it("a second unsaved sync merges against the pending baseline", async () => {
+      const w = await setup();
+      w.session.setText(SAVE, "en", "Store");
+      await w.edit("button.tsx", "button_save: 'Save',", "button_save: 'Save file',");
+      await syncFromSource(w.session);
+      await w.edit("button.tsx", "button_ok: 'OK'", "button_ok: 'Okay'");
+      const r = await syncFromSource(w.session);
+      expect(r.updated).toEqual([OK]);
+      expect(r.conflicts.map((c) => c.id)).toEqual([SAVE]);
+    });
+
+    it("concurrent syncs run one after the other", async () => {
+      const w = await setup();
+      await w.edit("button.tsx", "button_save: 'Save',", "button_save: 'Save file',");
+      const [a, b] = await Promise.all([syncFromSource(w.session), syncFromSource(w.session)]);
+      expect(a.updated).toEqual([SAVE]);
+      expect(b.updated).toEqual([]);
+      expect(b.conflicts).toEqual([]);
+    });
+  });
+
+  describe("resolveSyncConflict", () => {
+    async function conflicted() {
+      const w = await setup();
+      w.session.setText(SAVE, "en", "Store");
+      await w.edit("button.tsx", "button_save: 'Save',", "button_save: 'Save file',");
+      const r = await syncFromSource(w.session);
+      expect(r.conflicts).toHaveLength(1);
+      return { w, c: r.conflicts[0] };
+    }
+
+    it("mine keeps the workspace value and the conflict is not reported again", async () => {
+      const { w, c } = await conflicted();
+      resolveSyncConflict(w.session, c, "mine");
+      expect(w.session.value(SAVE, "en")).toEqual(text("Store"));
+      expect((await w.baseline())![SAVE].en).toBe("Save file");
+      expect((await syncFromSource(w.session)).conflicts).toEqual([]);
+      await w.session.save();
+      expect(await w.diskBaseline()).toEqual(await w.sourceBaseline());
+      const plan = await planExport(w.session, { kind: "ts-writeback" }, await importTsLocales(w.fs, w.root, w.localesDir, "th"));
+      expect(plan.blocked).toBeUndefined();
+    });
+
+    it("theirs takes the source value", async () => {
+      const { w, c } = await conflicted();
+      w.session.conflicts = [c];
+      resolveSyncConflict(w.session, c, "theirs");
+      expect(w.session.value(SAVE, "en")).toEqual(text("Save file"));
+      expect(w.session.conflicts).toEqual([]);
+      expect((await syncFromSource(w.session)).conflicts).toEqual([]);
+      await w.session.save();
+      expect(await w.diskBaseline()).toEqual(await w.sourceBaseline());
+    });
+
+    it("theirs for a source marker clears the cell and adopts the marker", async () => {
+      const w = await setup();
+      w.session.setText(SAVE, "en", "Store");
+      await w.edit("button.tsx", "button_save: 'Save',", "button_save: 'Save (EN)',");
+      const r = await syncFromSource(w.session);
+      expect(r.conflicts).toEqual([{ id: SAVE, locale: "en", mine: text("Store") }]);
+      expect(w.session.workspace!.markers[SAVE]).toBeUndefined();
+      resolveSyncConflict(w.session, r.conflicts[0], "theirs");
+      expect(w.session.value(SAVE, "en")).toBeUndefined();
+      expect(w.session.workspace!.markers[SAVE]).toEqual({ en: "Save (EN)" });
+      expect((await w.baseline())![SAVE].en).toBe("Save (EN)");
+    });
   });
 });

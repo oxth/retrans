@@ -1,7 +1,7 @@
 /**
  * Sync from source (spec §7): merges changes in a workspace's TypeScript locale files into the
- * workspace, three-way per cell against the stored source baseline. Never writes source files;
- * the only file it writes is the baseline.
+ * workspace, three-way per cell against the source baseline. Writes no files: the merged values,
+ * meta and new baseline (`session.setPendingBaseline`) are all written by the next save().
  */
 import type { Conflict } from "../core/merge";
 import { type KeyId, type MessageValue, parseKeyId, valuesEqual } from "../core/model";
@@ -69,19 +69,35 @@ function copyRow(table: Record<KeyId, Record<string, string>>, from: Record<KeyI
  * entirely: their keys are neither changed nor marked removed, and keep their baseline.
  * The baseline then becomes the current source, except for conflict cells.
  */
-export async function syncFromSource(session: ProjectSession): Promise<SyncResult> {
-  const meta = session.workspace;
-  if (!meta?.source) return unavailable();
+export function syncFromSource(session: ProjectSession): Promise<SyncResult> {
+  // One sync at a time per session, so two runs never merge against the same baseline.
+  const run = (queues.get(session) ?? Promise.resolve()).then(() => syncNow(session));
+  queues.set(session, run.catch(() => undefined));
+  return run;
+}
+
+const queues = new WeakMap<ProjectSession, Promise<unknown>>();
+
+/** Per session, from its last sync: the source as read, and the baseline that sync settled on. */
+const lastSync = new WeakMap<ProjectSession, {
+  source: Baseline; markers: WorkspaceMeta["markers"]; drafts: WorkspaceMeta["drafts"]; next: Baseline;
+}>();
+
+async function syncNow(session: ProjectSession): Promise<SyncResult> {
+  const source = session.workspace?.source;
+  if (!source) return unavailable();
   const { fs } = session;
   const root = session.data.root;
-  const { localesDir } = meta.source;
+  const { localesDir } = source;
   if (!(await fs.exists(joinPath(root, localesDir)))) return unavailable();
   const src = await importTsLocales(fs, root, localesDir, session.data.baseLocale);
   if (src.modules.size === 0) return unavailable();
-  const baselinePath = joinPath(root, BASELINE_PATH);
-  const baselineText = await readOrNull(fs, baselinePath);
-  const stored = parseBaseline(baselineText) ?? {};
+  const persistedText = await readOrNull(fs, joinPath(root, BASELINE_PATH));
   // Everything below is synchronous, so the workspace can't change underneath the merge.
+  // Merge against the newest baseline: one from an earlier sync not yet saved, else the file's.
+  const stored = session.pendingBaseline ?? parseBaseline(persistedText) ?? {};
+  const meta = session.workspace;
+  if (!meta) return unavailable();
 
   const parsedGroups = new Set([...src.modules.values()].map((m) => m.module.group));
   const unreadable = new Set(src.errors.map((e) => baseName(e.relPath)).filter((g) => !parsedGroups.has(g)));
@@ -162,16 +178,44 @@ export async function syncFromSource(session: ProjectSession): Promise<SyncResul
     };
     const current = meta as unknown as Record<string, unknown>;
     if (Object.entries(patch).some(([k, v]) => !jsonEqual(current[k], v))) session.setWorkspaceMeta(patch);
-  });
 
-  // The new baseline: the current source, but the old cells where there's a conflict, and the
-  // old rows of unreadable files.
-  const next: Baseline = structuredClone(src.baseline);
-  for (const c of conflicts) copyCell(next, stored, c.id, c.locale);
-  for (const id of Object.keys(stored)) if (skipped(id)) copyRow(next, stored, id);
-  const nextText = serializeBaseline(next);
-  if (nextText !== baselineText) await fs.writeTextAtomic(baselinePath, nextText);
+    // The new baseline: the current source, but the old cells where there's a conflict, and the
+    // old rows of unreadable files. Written by the next save, never before the merge is saved.
+    const next: Baseline = structuredClone(src.baseline);
+    for (const c of conflicts) copyCell(next, stored, c.id, c.locale);
+    for (const id of Object.keys(stored)) if (skipped(id)) copyRow(next, stored, id);
+    session.setPendingBaseline(serializeBaseline(next) === persistedText ? null : next);
+    lastSync.set(session, { source: src.baseline, markers: src.markers, drafts: src.drafts, next });
+  });
   return result;
+}
+
+/**
+ * Resolves a conflict reported by syncFromSource: "theirs" takes the source value, "mine" keeps
+ * the workspace value. Either way the cell's baseline (written by the next save), marker and draft
+ * become the source's, so the next sync no longer reports it.
+ */
+export function resolveSyncConflict(session: ProjectSession, c: Conflict, pick: "mine" | "theirs"): void {
+  const last = lastSync.get(session);
+  if (!last) throw new Error("No sync to resolve a conflict of");
+  const meta = session.workspace!;
+  session.batch(() => {
+    if (pick === "theirs") {
+      if (!session.data.keyOrder.includes(c.id) && c.theirs) session.insertKey(c.id);
+      if (session.data.keyOrder.includes(c.id)) {
+        if (!session.data.locales.includes(c.locale)) session.addLanguage(c.locale);
+        session.importCell(c.id, c.locale, c.theirs, undefined);
+      }
+    }
+    copyCell(last.next, last.source, c.id, c.locale);
+    session.setPendingBaseline(last.next);
+    const markers = structuredClone(meta.markers);
+    const drafts = structuredClone(meta.drafts);
+    copyCell(markers, last.markers, c.id, c.locale);
+    copyCell(drafts, last.drafts, c.id, c.locale);
+    if (!jsonEqual(markers, meta.markers) || !jsonEqual(drafts, meta.drafts)) session.setWorkspaceMeta({ markers, drafts });
+    session.conflicts = session.conflicts.filter((x) => x.id !== c.id || x.locale !== c.locale);
+  });
 }
 
 /** The nearest key before `id` in source order that is a workspace row of the same group. */

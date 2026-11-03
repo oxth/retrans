@@ -20,7 +20,8 @@ import { planReload } from "./session-reload";
 import { parseState, reconcile, serializeState, STATE_PATH, type StateEntry, type StateFile } from "./state-file";
 import { cellMeta, recordCleared, recordEdit, recordReviewed, renameInState } from "./status";
 import {
-  jsonEqual, parseWorkspaceMeta, serializeWorkspaceMeta, WORKSPACE_META_ERROR, WORKSPACE_META_PATH, type WorkspaceMeta,
+  type Baseline, BASELINE_PATH, jsonEqual, parseWorkspaceMeta, serializeBaseline, serializeWorkspaceMeta,
+  WORKSPACE_META_ERROR, WORKSPACE_META_PATH, type WorkspaceMeta,
 } from "../workspace/meta";
 import { workspaceAdapter } from "../workspace/store";
 
@@ -92,6 +93,11 @@ export class ProjectSession {
   private metaDiskText: string | null = null; // raw workspace.json as loaded / last written (stale check)
   /** Set while workspace.json on disk can't be parsed: it is then never written. */
   private metaMalformed = false;
+  /**
+   * Workspace only: the source baseline after a sync, written by the next successful save(). Kept
+   * in memory until then so the baseline on disk never claims source changes that aren't saved.
+   */
+  private pendingBase: Baseline | null = null;
 
   private constructor(
     fs: Fs, root: string, adapter: FormatAdapter, opts: ProjectOptions,
@@ -133,6 +139,23 @@ export class ProjectSession {
   setWorkspaceMeta(patch: Partial<WorkspaceMeta>): void {
     if (!this.wsMeta) throw new Error("This project is not a workspace");
     this.wsMeta = { ...this.wsMeta, ...patch, retransWorkspace: 1 };
+    this.emit();
+  }
+
+  /** The source baseline waiting for the next save (see setPendingBaseline); null when none. */
+  get pendingBaseline(): Baseline | null {
+    return this.pendingBase;
+  }
+
+  /**
+   * Workspace only: the baseline save() writes to .retrans/source-baseline.json after the
+   * workspace files and meta (null drops it). Makes the session dirty; lost when not saved.
+   */
+  setPendingBaseline(b: Baseline | null): void {
+    if (!this.wsMeta) throw new Error("This project is not a workspace");
+    const same = b === null || this.pendingBase === null ? b === this.pendingBase : jsonEqual(b, this.pendingBase);
+    if (same) return;
+    this.pendingBase = b === null ? null : structuredClone(b);
     this.emit();
   }
 
@@ -212,7 +235,7 @@ export class ProjectSession {
   }
 
   isDirty(): boolean {
-    if (this.creates.size || this.removed.size || this.localesChanged || this.metaDirty()) return true;
+    if (this.creates.size || this.removed.size || this.localesChanged || this.metaDirty() || this.pendingBase) return true;
     if (this.dirtyCells().length) return true;
     return this.stateTouched && serializeState(reconcile(this.state, this.data)) !== this.stateBaseline;
   }
@@ -310,6 +333,7 @@ export class ProjectSession {
     validateKey(key);
     if (!this.data.namespaces.includes(ns)) throw new KeyError("invalid", `namespace "${ns}" does not exist`);
     checkCollision(this.data.keyOrder, ns, key);
+    this.assertWritable(this.data.baseLocale, ns);
     const order = [...this.data.keyOrder];
     const at = after === undefined ? -1 : order.indexOf(after);
     order.splice(at < 0 ? order.length : at + 1, 0, id);
@@ -463,6 +487,7 @@ export class ProjectSession {
 
   private async saveNow(): Promise<SaveResult> {
     const res: SaveResult = { written: [], deleted: [], stale: [] };
+    const pendingBase = this.pendingBase; // what the values saved below were merged against
     const byFile = new Map<string, { locale: string; ns: string; changes: CellChange[] }>();
     for (const { id, locale } of this.dirtyCells()) {
       const { ns, key } = parseKeyId(id);
@@ -536,6 +561,14 @@ export class ProjectSession {
         this.metaBaseline = text;
         this.metaDiskText = text;
       }
+    }
+
+    // Only once every workspace file and the meta are on disk: otherwise a later sync would see
+    // the source as already merged while the merge isn't saved.
+    if (pendingBase && res.stale.length === 0) {
+      await this.fs.writeTextAtomic(joinPath(this.root, BASELINE_PATH), serializeBaseline(pendingBase));
+      res.written.push(BASELINE_PATH);
+      if (this.pendingBase === pendingBase) this.pendingBase = null;
     }
 
     // this.state stays the live object: status edits made while the write is in flight survive,
