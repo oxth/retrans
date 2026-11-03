@@ -169,8 +169,9 @@ describe("planExport: ts-writeback", () => {
     expect(b.length).toBe(a.length);
     const changed = b.filter((line, i) => line !== a[i]);
     expect(changed).toEqual(["  button_ok: 'Okay'"]);
-    await writeExportPlan(w.fs, plan);
-    expect(await w.fs.readText(path)).toBe(plan.files[0].text);
+    expect(await w.fs.readText(path)).toBe(plan.files[0].text); // written by writeBack
+    // The same plan again: the file is no longer the text it was planned from.
+    await expect(writeExportPlan(w.fs, plan)).rejects.toThrow("Your code changed while exporting. Export again.");
   });
 
   it("new key in split group goes to both objects; new group becomes a new file plus snippet", async () => {
@@ -393,6 +394,54 @@ describe("deleting rows of keys the source has", () => {
     expect(button).not.toContain("button_ok");
     expect(button).toContain("button_save: 'บันทึก'");
     expect(plan.deletedApplied).toEqual([ok]);
+  });
+});
+
+describe("writeExportPlan: failures", () => {
+  it("aborts before writing anything when a write-back file changed since planning", async () => {
+    const w = await setup();
+    w.session.setText(keyId("button", "button_ok"), "en", "Okay");
+    w.session.setText(keyId("common", "email"), "en", "E-mail");
+    const plan = await planExport(w.session, { kind: "ts-writeback" }, await w.source());
+    expect(plan.files).toHaveLength(2);
+    const common = `${w.root}/${w.localesDir}/common.ts`;
+    await w.fs.writeTextAtomic(common, (await w.fs.readText(common)).replace("'Logout'", "'Log out'"));
+    const before = await w.fixtureFiles();
+    const baseline = await w.fs.readText(`${w.root}/${BASELINE_PATH}`);
+    await expect(writeExportPlan(w.fs, plan)).rejects.toThrow("Your code changed while exporting. Export again.");
+    expect(await w.fixtureFiles()).toEqual(before);
+    expect(await w.fs.readText(`${w.root}/${BASELINE_PATH}`)).toBe(baseline);
+  });
+
+  it("a new group file that appeared since planning aborts too", async () => {
+    const w = await setup();
+    w.session.addNamespace("reports");
+    w.session.addKey("reports", "report_title", "รายงาน");
+    const plan = await planExport(w.session, { kind: "ts-writeback" }, await w.source());
+    const reports = `${w.root}/${w.localesDir}/reports.ts`;
+    expect(plan.files.map((f) => f.path)).toContain(reports);
+    await w.fs.writeTextAtomic(reports, "// mine\n");
+    await expect(writeExportPlan(w.fs, plan)).rejects.toThrow("Your code changed while exporting. Export again.");
+    expect(await w.fs.readText(reports)).toBe("// mine\n");
+  });
+
+  it("a write failing midway reports how many files were written", async () => {
+    const w = await setup();
+    const plan = await planExport(w.session, { kind: "i18next-json", dir: OUT, namespaces: "per-group" });
+    let n = 0;
+    const real = w.fs.writeTextAtomic.bind(w.fs);
+    w.fs.writeTextAtomic = async (path, text) => {
+      if (++n === 2) throw new Error("disk full");
+      return real(path, text);
+    };
+    await expect(writeExportPlan(w.fs, plan)).rejects.toThrow("1 files were written before the error: disk full");
+    n = 0;
+    w.fs.writeTextAtomic = async () => {
+      throw new Error("read-only volume");
+    };
+    const err = await writeExportPlan(w.fs, plan).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe("read-only volume"); // nothing written: the plain error
   });
 });
 

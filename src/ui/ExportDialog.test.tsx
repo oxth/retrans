@@ -18,6 +18,19 @@ vi.mock("@tauri-apps/plugin-store", () => ({
   })),
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => dlg);
+/** Runs between planning and writing (to change a file in between). */
+const hooks = vi.hoisted(() => ({ afterPlan: null as null | (() => Promise<void>) }));
+vi.mock("../workspace/export", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../workspace/export")>();
+  return {
+    ...mod,
+    planExport: async (...args: Parameters<typeof mod.planExport>) => {
+      const plan = await mod.planExport(...args);
+      await hooks.afterPlan?.();
+      return plan;
+    },
+  };
+});
 vi.mock("../platform/watch", () => ({ watchDir: vi.fn(async () => async () => {}) }));
 
 import { keyId } from "../core/model";
@@ -48,6 +61,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  hooks.afterPlan = null;
   prefs.clear();
   dlg.open.mockReset();
   dlg.save.mockReset();
@@ -58,15 +72,18 @@ afterEach(async () => {
 });
 
 /** The fixture workspace opened through the store, synced, with the editor shown. */
-async function openWs(): Promise<{ fs: MemoryFs; session: ProjectSession }> {
+async function openWs(edit?: (fs: MemoryFs) => Promise<void>): Promise<{ fs: MemoryFs; session: ProjectSession }> {
   const { fs } = await openFixtureWorkspace();
+  await edit?.(fs);
   await useApp.getState().closeProject();
   useApp.setState({ fs });
   const d = (await detectProject(fs, R))!;
   await useApp.getState().openProject(R, d, { baseLocale: "th", localesPath: d.localesPath });
   render(<AppShell />);
   const session = useApp.getState().session!;
-  await waitFor(() => expect(session.data.keyOrder).toContain(keyId("dashboardMaguro", "maguro_brand")));
+  if (session.workspace?.source) {
+    await waitFor(() => expect(session.data.keyOrder).toContain(keyId("dashboardMaguro", "maguro_brand")));
+  }
   // The open-time sync only records a baseline; start from a saved, clean session.
   if (session.isDirty()) await useApp.getState().save();
   return { fs, session };
@@ -160,7 +177,7 @@ describe("Export dialog", () => {
 
     const before = await sourceFiles(fs);
     await exportNow(dialog);
-    await waitFor(() => expect(within(dialog).getByRole("status")).toHaveTextContent("Exported 0 files."));
+    await waitFor(() => expect(within(dialog).getByRole("status")).toHaveTextContent("Already up to date."));
     expect(await sourceFiles(fs)).toEqual(before);
     expect(session.isDirty()).toBe(false);
   });
@@ -270,5 +287,125 @@ describe("Export dialog", () => {
     expect(within(dialog).getByRole("radio", { name: "One file per group" })).toBeChecked();
     expect(within(dialog).getByText("/out")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Export" })).toBeEnabled();
+  });
+
+  it("asks before replacing existing files; Cancel writes nothing, Replace writes", async () => {
+    const { fs } = await openWs();
+    const user = userEvent.setup();
+    dlg.open.mockResolvedValue(LOCALES);
+    const before = await sourceFiles(fs);
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole("radio", { name: "TypeScript modules (table style)" }));
+    await user.click(within(dialog).getByRole("button", { name: "Choose folder…" }));
+    await exportNow(dialog, user);
+    const ask = await within(dialog).findByRole("region", { name: "Files to replace" });
+    expect(ask).toHaveTextContent("These files already exist and will be replaced:");
+    expect(within(ask).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      `${LOCALES}/change-password.ts`, `${LOCALES}/common.ts`, `${LOCALES}/mapLocale.ts`,
+    ]);
+    await user.click(within(ask).getByRole("button", { name: "Cancel" }));
+    expect(within(dialog).queryByRole("region", { name: "Files to replace" })).toBeNull();
+    expect(within(dialog).queryByRole("status")).toBeNull();
+    expect(await sourceFiles(fs)).toEqual(before);
+    expect(await fs.exists(`${LOCALES}/button.ts`)).toBe(false);
+
+    await exportNow(dialog, user);
+    await user.click(within(await within(dialog).findByRole("region", { name: "Files to replace" })).getByRole("button", { name: "Replace" }));
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("Exported 5 files.");
+    expect(await fs.readText(`${LOCALES}/mapLocale.ts`)).not.toBe(before["assets/locales/mapLocale.ts"]);
+    expect(await fs.exists(`${LOCALES}/button.ts`)).toBe(true);
+  });
+
+  it("hides both TypeScript targets without a source", async () => {
+    await openWs(async (fs) => {
+      const path = `${R}/${WORKSPACE_META_PATH}`;
+      const meta = JSON.parse(await fs.readText(path));
+      delete meta.source;
+      meta.lastExport = { target: { kind: "ts-copy", dir: "/out" } };
+      await fs.writeTextAtomic(path, JSON.stringify(meta));
+    });
+    const dialog = await openDialog();
+    expect(within(dialog).queryByRole("radio", { name: "Write back to the original files" })).toBeNull();
+    expect(within(dialog).queryByRole("radio", { name: "Write TypeScript files to another folder" })).toBeNull();
+    expect(within(dialog).getByRole("radio", { name: "i18next JSON" })).toBeChecked();
+  });
+
+  it("refuses to write when the code changed between planning and writing", async () => {
+    const { fs, session } = await openWs();
+    session.setText(keyId("button", "button_ok"), "en", "Okay");
+    hooks.afterPlan = () => replaceIn(fs, BUTTON, "button_save: 'Save'", "button_save: 'Save it'");
+    const dialog = await openDialog();
+    await exportNow(dialog);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/^Your code changed while exporting\. Export again\.$/);
+    const text = await fs.readText(BUTTON);
+    expect(text).toContain("button_save: 'Save it'"); // the developer's change
+    expect(text).toContain("button_ok: 'OK'"); // the export's isn't written
+    expect(within(dialog).queryByRole("status")).toBeNull();
+  });
+
+  it("a write failing on the second file says how many were written", async () => {
+    const { fs } = await openWs();
+    dlg.open.mockResolvedValue("/out");
+    const real = fs.writeTextAtomic.bind(fs);
+    let outWrites = 0;
+    fs.writeTextAtomic = async (path, text) => {
+      if (path.startsWith("/out/") && ++outWrites === 2) throw new Error("disk full");
+      return real(path, text);
+    };
+    const dialog = await openDialog();
+    await userEvent.click(within(dialog).getByRole("radio", { name: "i18next JSON" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Choose folder…" }));
+    await exportNow(dialog);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/^1 files were written before the error: disk full$/);
+
+    outWrites = 1; // the next write fails: nothing written
+    await exportNow(dialog);
+    // The file written the first time already exists now.
+    const ask = await within(dialog).findByRole("region", { name: "Files to replace" });
+    expect(within(ask).getAllByRole("listitem")).toHaveLength(1);
+    await userEvent.click(within(ask).getByRole("button", { name: "Replace" }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveTextContent(/^Export failed: disk full$/));
+  });
+
+  it("a failing sync after a successful write is a warning, not a failure", async () => {
+    const { fs, session } = await openWs();
+    session.setText(keyId("button", "button_ok"), "en", "Okay");
+    const real = fs.writeTextAtomic.bind(fs);
+    const exists = fs.exists.bind(fs);
+    let written = false;
+    fs.writeTextAtomic = async (path, text) => {
+      await real(path, text);
+      if (path.endsWith(BASELINE_PATH)) written = true;
+    };
+    fs.exists = async (path) => {
+      if (written) throw new Error("watcher hiccup");
+      return exists(path);
+    };
+    const dialog = await openDialog();
+    await exportNow(dialog);
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("Exported 1 file.");
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    expect(within(dialog).getByRole("list", { name: "Warnings" })).toHaveTextContent(
+      "The files were written, but updating the workspace afterwards failed: watcher hiccup",
+    );
+    expect(await fs.readText(BUTTON)).toContain("button_ok: 'Okay'");
+  });
+
+  it("Close is disabled while exporting", async () => {
+    const { fs, session } = await openWs();
+    session.setText(keyId("button", "button_ok"), "en", "Okay");
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const real = fs.writeTextAtomic.bind(fs);
+    fs.writeTextAtomic = async (path, text) => {
+      if (path === BUTTON) await gate;
+      return real(path, text);
+    };
+    const dialog = await openDialog();
+    await exportNow(dialog);
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Close" })).toBeDisabled());
+    release();
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("Exported 1 file.");
+    expect(within(dialog).getByRole("button", { name: "Close" })).toBeEnabled();
   });
 });

@@ -18,7 +18,11 @@ import { applyRenames, dropDeletedKeys } from "./sync";
 export interface ExportPlan {
   /** Every file must be under this folder: the project root (write-back), else the chosen folder. */
   root: string;
-  files: Array<{ path: string; text: string }>;
+  /**
+   * `expected` (write-back only): the file's text the plan was made from, `null` for a file that
+   * must not exist yet. writeExportPlan refuses to write when the file no longer matches.
+   */
+  files: Array<{ path: string; text: string; expected?: string | null }>;
   snippets: string[];
   leftOutLocales: string[];
   /** ts-writeback / ts-copy: how to add the `leftOutLocales` to the code (when there are any). */
@@ -60,7 +64,21 @@ export async function planExport(session: ProjectSession, target: ExportTarget, 
   }
 }
 
-/** Writes every file (parent folders created, atomic writes). Throws when the plan is blocked. */
+export const SOURCE_CHANGED_MESSAGE = "Your code changed while exporting. Export again.";
+
+/** writeExportPlan wrote some files, then failed: `written` files are already on disk. */
+export class PartialExportError extends Error {
+  constructor(readonly written: number, cause: unknown) {
+    super(`${written} files were written before the error: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+}
+
+/**
+ * Writes every file (parent folders created, atomic writes). Throws when the plan is blocked, when
+ * a path leaves `plan.root`, or (SOURCE_CHANGED_MESSAGE) when a write-back file changed since
+ * planning — all before writing anything. A failure after some files were written throws a
+ * PartialExportError; a failure before the first one throws as is.
+ */
 export async function writeExportPlan(fs: Fs, plan: ExportPlan): Promise<void> {
   if (plan.blocked) {
     throw new Error(
@@ -80,13 +98,23 @@ export async function writeExportPlan(fs: Fs, plan: ExportPlan): Promise<void> {
   };
   const files = plan.files.map((f) => ({ path: inside(f.path), text: f.text }));
   const baseline = plan.baseline && { path: inside(plan.baseline.path), text: plan.baseline.text };
-  for (const f of files) {
-    const slash = f.path.lastIndexOf("/");
-    if (slash > 0) await fs.mkdirp(f.path.slice(0, slash));
-    await fs.writeTextAtomic(f.path, f.text);
+  for (const f of plan.files) {
+    if (f.expected !== undefined && (await readOrNull(fs, f.path)) !== f.expected) throw new Error(SOURCE_CHANGED_MESSAGE);
   }
-  // Last: if a file write fails, the old baseline makes the next export sync first.
-  if (baseline) await fs.writeTextAtomic(baseline.path, baseline.text);
+  let written = 0;
+  try {
+    for (const f of files) {
+      const slash = f.path.lastIndexOf("/");
+      if (slash > 0) await fs.mkdirp(f.path.slice(0, slash));
+      await fs.writeTextAtomic(f.path, f.text);
+      written++;
+    }
+    // Last: if a file write fails, the old baseline makes the next export sync first.
+    if (baseline) await fs.writeTextAtomic(baseline.path, baseline.text);
+  } catch (e) {
+    if (written === 0) throw e;
+    throw new PartialExportError(written, e);
+  }
 }
 
 /** `path` normalized with `.` and `..` segments resolved (`..` never goes above the start). */
@@ -239,7 +267,7 @@ async function planTsSource(
     const out = applyTsEdits(text, module, moduleEdits(session, module, ids, removed, renamedOld, renamedNew, deleted));
     outputs.push({ relPath, text: out });
     if (writeback && out === text) continue;
-    plan.files.push({ path: joinPath(outRoot, relPath), text: out });
+    plan.files.push({ path: joinPath(outRoot, relPath), text: out, ...(writeback ? { expected: text } : {}) });
   }
 
   for (const e of source.errors) {
@@ -268,7 +296,7 @@ async function planTsSource(
       continue;
     }
     const text = newTableModule(group, values, srcLocales);
-    plan.files.push({ path, text });
+    plan.files.push({ path, text, ...(writeback ? { expected: null } : {}) });
     outputs.push({ relPath, text });
     newGroups.push(group);
   }

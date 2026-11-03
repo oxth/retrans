@@ -2,7 +2,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
 import type { ProjectSession } from "../core/session";
 import { importTsLocales } from "../tssource/import";
-import { type ExportPlan, planExport, recordWriteBack, writeExportPlan } from "../workspace/export";
+import {
+  type ExportPlan, PartialExportError, planExport, recordWriteBack, SOURCE_CHANGED_MESSAGE, writeExportPlan,
+} from "../workspace/export";
 import { type ExportTarget, jsonEqual } from "../workspace/meta";
 import { btnGhost, btnPrimary, Dialog } from "./Dialog";
 import { SOURCE_MISSING_MESSAGE, useApp } from "./store";
@@ -23,11 +25,14 @@ const OPTIONS: Array<{ kind: Kind; label: string }> = [
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** Targets that write TypeScript from the workspace's source files. */
+const fromSource = (kind: Kind) => kind === "ts-writeback" || kind === "ts-copy";
+
 /** The target to preselect: the last one (if still possible), else write-back / i18next JSON. */
 function initial(session: ProjectSession): { kind: Kind; dir: string | null; namespaces: Namespaces } {
   const hasSource = !!session.workspace?.source;
   const last = session.workspace?.lastExport?.target;
-  if (last && (last.kind !== "ts-writeback" || hasSource)) {
+  if (last && (!fromSource(last.kind) || hasSource)) {
     return {
       kind: last.kind,
       dir: "dir" in last ? last.dir : null,
@@ -59,8 +64,10 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExportPlan | null>(null);
+  /** A plan waiting for Replace / Cancel because some of its files already exist. */
+  const [confirm, setConfirm] = useState<{ t: ExportTarget; plan: ExportPlan; existing: string[] } | null>(null);
   const source = session.workspace?.source;
-  const options = OPTIONS.filter((o) => o.kind !== "ts-writeback" || source);
+  const options = OPTIONS.filter((o) => !fromSource(o.kind) || source);
   const target = targetOf(kind, dir, namespaces);
 
   async function chooseFolder() {
@@ -68,7 +75,8 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
     if (typeof picked === "string") setDir(picked);
   }
 
-  async function run(t: ExportTarget) {
+  /** Plans the export; null when it can't go ahead (`error` set) or waits for Replace / Cancel. */
+  async function prepare(t: ExportTarget): Promise<ExportPlan | null> {
     const app = useApp.getState;
     const fail = (m: string) => {
       setError(m);
@@ -81,9 +89,8 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
       return fail(conflictMessage() ?? app().error ?? "Couldn't save your changes.");
     }
 
-    const ts = t.kind === "ts-writeback" || t.kind === "ts-copy";
     let imported;
-    if (ts) {
+    if (fromSource(t.kind)) {
       if (!source) return fail("This workspace has no TypeScript source.");
       // Merge source changes first: export never overwrites a change made in the code.
       const r = await app().syncSource(session);
@@ -99,27 +106,53 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
     if (plan.blocked?.reason === "duplicates") {
       return fail(`Can't export while these keys are duplicated: ${plan.blocked.keys.join(", ")}`);
     }
-    if (plan.blocked) return fail("Your code changed while exporting. Export again.");
-    await writeExportPlan(session.fs, plan);
-
-    const settings = { target: t };
-    if (!jsonEqual(session.workspace?.lastExport, settings)) session.setWorkspaceMeta({ lastExport: settings });
-    if (t.kind === "ts-writeback") {
-      recordWriteBack(session, plan);
-      // Markers and drafts now follow the files just written; nothing should be left to merge.
-      await app().syncSource(session);
+    if (plan.blocked) return fail(SOURCE_CHANGED_MESSAGE);
+    if (t.kind !== "ts-writeback") {
+      const existing: string[] = [];
+      for (const f of plan.files) if (await session.fs.exists(f.path)) existing.push(f.path);
+      if (existing.length > 0) {
+        setConfirm({ t, plan, existing });
+        return null;
+      }
     }
-    if (session.isDirty()) await app().save();
     return plan;
   }
 
-  async function doExport() {
-    if (!target) return;
+  /** Writes the plan, then brings the workspace up to date; null when nothing was written (`error` set). */
+  async function write(t: ExportTarget, plan: ExportPlan): Promise<ExportPlan | null> {
+    try {
+      await writeExportPlan(session.fs, plan);
+    } catch (e) {
+      const m = msg(e);
+      setError(e instanceof PartialExportError || m === SOURCE_CHANGED_MESSAGE ? m : `Export failed: ${m}`);
+      return null;
+    }
+    // The files are written: from here on a failure is only a warning.
+    const app = useApp.getState;
+    const warnings = [...plan.warnings];
+    const warn = (m: string) => warnings.push(`The files were written, but updating the workspace afterwards failed: ${m}`);
+    try {
+      const settings = { target: t };
+      if (!jsonEqual(session.workspace?.lastExport, settings)) session.setWorkspaceMeta({ lastExport: settings });
+      if (t.kind === "ts-writeback") {
+        recordWriteBack(session, plan);
+        // Markers and drafts now follow the files just written; nothing should be left to merge.
+        await app().syncSource(session);
+      }
+      if (session.isDirty() && !(await app().save())) warn(app().error ?? "Couldn't save your changes.");
+    } catch (e) {
+      warn(msg(e));
+    }
+    return { ...plan, warnings };
+  }
+
+  async function go(step: () => Promise<ExportPlan | null>) {
     setBusy(true);
     setError(null);
     setResult(null);
+    setConfirm(null);
     try {
-      const plan = await run(target);
+      const plan = await step();
       if (plan) setResult(plan);
     } catch (e) {
       setError(`Export failed: ${msg(e)}`);
@@ -128,10 +161,24 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
     }
   }
 
+  async function doExport() {
+    if (!target) return;
+    await go(async () => {
+      const plan = await prepare(target);
+      return plan && write(target, plan);
+    });
+  }
+
+  async function replace() {
+    if (!confirm) return;
+    const { t, plan } = confirm;
+    await go(() => write(t, plan));
+  }
+
   const n = result?.files.length ?? 0;
   return (
-    <Dialog title="Export" onClose={onClose} wide>
-      <fieldset className="space-y-1 text-sm" disabled={busy}>
+    <Dialog title="Export" onClose={busy ? undefined : onClose} wide>
+      <fieldset className="space-y-1 text-sm" disabled={busy || !!confirm}>
         {options.map((o) => (
           <div key={o.kind}>
             <label className="flex items-center gap-2">
@@ -155,7 +202,7 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
       </fieldset>
       {kind !== "ts-writeback" && (
         <div className="mt-3 flex items-center gap-2 text-sm">
-          <button className={`${btnGhost} border border-gray-300`} disabled={busy} onClick={() => void chooseFolder()}>
+          <button className={`${btnGhost} border border-gray-300`} disabled={busy || !!confirm} onClick={() => void chooseFolder()}>
             Choose folder…
           </button>
           <span className="truncate font-mono text-xs text-gray-600">{dir ?? "No folder chosen"}</span>
@@ -163,9 +210,23 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
       )}
 
       {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
+      {confirm && (
+        <section aria-label="Files to replace" className="mt-3 space-y-2 text-sm">
+          <p>These files already exist and will be replaced:</p>
+          <ul className="max-h-40 list-disc overflow-auto pl-5 font-mono text-xs">
+            {confirm.existing.map((p) => <li key={p}>{p}</li>)}
+          </ul>
+          <div className="flex justify-end gap-2">
+            <button className={btnGhost} onClick={() => setConfirm(null)}>Cancel</button>
+            <button className={btnPrimary} onClick={() => void replace()}>Replace</button>
+          </div>
+        </section>
+      )}
       {result && (
         <div className="mt-3 space-y-3 text-sm">
-          <p role="status" className="text-green-700">Exported {n} {n === 1 ? "file" : "files"}.</p>
+          <p role="status" className="text-green-700">
+            {n === 0 ? "Already up to date." : `Exported ${n} ${n === 1 ? "file" : "files"}.`}
+          </p>
           {result.leftOutLocales.length > 0 && (
             <section aria-label="Left-out languages" className="space-y-1">
               <p>
@@ -188,8 +249,8 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
       )}
 
       <div className="mt-5 flex justify-end gap-2">
-        <button className={btnGhost} onClick={onClose}>Close</button>
-        <button className={btnPrimary} disabled={busy || !target} onClick={() => void doExport()}>Export</button>
+        <button className={btnGhost} disabled={busy} onClick={onClose}>Close</button>
+        <button className={btnPrimary} disabled={busy || !target || !!confirm} onClick={() => void doExport()}>Export</button>
       </div>
     </Dialog>
   );
