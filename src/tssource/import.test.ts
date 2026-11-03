@@ -190,4 +190,29 @@ describe("importTsLocales", () => {
     expect(imp.keyOrder).toEqual(["good::k"]);
     expect(imp.locales).toEqual(["th", "en"]);
   });
+
+  it("a second locale file with the same name (subfolder, or .ts next to .tsx) is skipped with an error", async () => {
+    const fs = new MemoryFs({
+      [`${R}/loc/common.ts`]: "export const commonEN = { a: 'A' };",
+      [`${R}/loc/admin/common.ts`]: "export const commonEN = { b: 'B' };",
+      [`${R}/loc/button.ts`]: "export const buttonEN = { c: 'C' };",
+      [`${R}/loc/button.tsx`]: "export const buttonEN = { d: 'D' };",
+    });
+    const imp = await importTsLocales(fs, R, "loc", "th");
+    // Sorted paths: loc/admin/common.ts comes before loc/common.ts, so the latter is skipped.
+    expect([...imp.modules.keys()]).toEqual(["loc/admin/common.ts", "loc/button.ts"]);
+    expect(imp.keyOrder).toEqual(["common::b", "button::c"]);
+    expect(imp.errors).toEqual([
+      {
+        relPath: "loc/button.tsx",
+        message: `Two locale files are named "button" (loc/button.ts, loc/button.tsx). Retrans can't tell them apart yet — loc/button.tsx was skipped.`,
+        sameName: true,
+      },
+      {
+        relPath: "loc/common.ts",
+        message: `Two locale files are named "common" (loc/admin/common.ts, loc/common.ts). Retrans can't tell them apart yet — loc/common.ts was skipped.`,
+        sameName: true,
+      },
+    ]);
+  });
 });

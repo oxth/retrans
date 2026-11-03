@@ -201,13 +201,14 @@ async function planTsSource(
   }
 
   for (const e of source.errors) {
-    plan.warnings.push(`Couldn't read ${e.relPath}; it was left unchanged.`);
+    plan.warnings.push(e.sameName ? e.message : `Couldn't read ${e.relPath}; it was left unchanged.`);
   }
 
   // Groups created in Retrans: a new table-style file each, in the languages the source has.
   const srcLocales = source.locales.filter((l) => sessionLocales.includes(l));
   const known = new Set([...source.modules.values()].map((m) => m.module.group));
-  const erroredGroups = new Set(source.errors.map((e) => baseName(e.relPath)));
+  // A file skipped for its name doesn't make its group unreadable: the group's other file is read.
+  const erroredGroups = new Set(source.errors.filter((e) => !e.sameName).map((e) => baseName(e.relPath)));
   const newGroups: string[] = [];
   for (const group of session.data.namespaces) {
     if (known.has(group)) continue;

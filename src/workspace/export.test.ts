@@ -3,7 +3,7 @@ import { keyId, type MessageValue } from "../core/model";
 import { joinPath } from "../platform/fs";
 import { MemoryFs } from "../platform/memory-fs";
 import { importTsLocales } from "../tssource/import";
-import { openFixtureWorkspace } from "../test/workspace-fixture";
+import { openFixtureWorkspace, openWorkspaceFrom } from "../test/workspace-fixture";
 import { planExport, recordWriteBack, writeExportPlan } from "./export";
 import { BASELINE_PATH, parseBaseline, parseWorkspaceMeta, serializeBaseline, WORKSPACE_META_PATH } from "./meta";
 import { syncFromSource } from "./sync";
@@ -299,6 +299,42 @@ describe("planExport: ts-writeback", () => {
     expect(plan.files).toEqual([]);
     await expect(writeExportPlan(w.fs, plan)).rejects.toThrow();
     expect(await w.fs.readText(path)).toContain("'Okay!'");
+  });
+});
+
+describe("same-named locale files", () => {
+  it("the later file by path is never imported, synced or written", async () => {
+    const R = "/p";
+    const root = `${R}/locales/common.ts`;
+    const admin = `${R}/locales/admin/common.ts`;
+    const fs = new MemoryFs({
+      [root]: "export const commonTH = {\n  a: 'ก',\n};\n\nexport const commonEN = {\n  a: 'A',\n};\n",
+      [admin]: "export const commonTH = {\n  b: 'ข',\n};\n\nexport const commonEN = {\n  b: 'B',\n};\n",
+    });
+    const s = await openWorkspaceFrom(fs, R, "locales");
+    expect(s.data.keyOrder).toEqual([keyId("common", "b")]);
+    // A developer edits the skipped file: sync ignores it.
+    await fs.writeTextAtomic(root, (await fs.readText(root)).replace("a: 'A'", "a: 'AA'"));
+    const r = await syncFromSource(s);
+    expect(r).toMatchObject({ added: [], updated: [], removedInSource: [], conflicts: [] });
+    await s.save();
+    const rootText = await fs.readText(root);
+
+    s.setText(keyId("common", "b"), "en", "Bee");
+    await s.save();
+    const plan = await planExport(s, { kind: "ts-writeback" }, await importTsLocales(fs, R, "locales", "th"));
+    expect(plan.blocked).toBeUndefined();
+    expect(plan.files.map((f) => f.path)).toEqual([admin]);
+    expect(plan.files[0].text).not.toContain("a:");
+    expect(plan.warnings).toEqual([
+      `Two locale files are named "common" (locales/admin/common.ts, locales/common.ts). Retrans can't tell them apart yet — locales/common.ts was skipped.`,
+    ]);
+    await writeExportPlan(fs, plan);
+    expect(await fs.readText(root)).toBe(rootText);
+    expect(await fs.readText(admin)).toContain("  b: 'Bee',\n");
+
+    const copy = await planExport(s, { kind: "ts-copy", dir: OUT }, await importTsLocales(fs, R, "locales", "th"));
+    expect(copy.files.map((f) => f.path)).toEqual([`${OUT}/locales/admin/common.ts`]);
   });
 });
 

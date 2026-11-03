@@ -103,7 +103,9 @@ async function syncNow(session: ProjectSession): Promise<SyncResult> {
   if (!meta) return unavailable();
 
   const parsedGroups = new Set([...src.modules.values()].map((m) => m.module.group));
-  const unreadable = new Set(src.errors.map((e) => baseName(e.relPath)).filter((g) => !parsedGroups.has(g)));
+  const unreadable = new Set(
+    src.errors.filter((e) => !e.sameName).map((e) => baseName(e.relPath)).filter((g) => !parsedGroups.has(g)),
+  );
   const skipped = (id: KeyId) => unreadable.has(parseKeyId(id).ns);
   const inSource = new Set(src.keyOrder);
 

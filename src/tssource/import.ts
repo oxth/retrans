@@ -24,8 +24,11 @@ export interface TsImport {
   duplicates: string[];
   /** `locale` is set when only that language's entry is read-only (split style); else the whole key. */
   readOnly: Array<{ id: KeyId; reason: string; locale?: string }>;
-  /** Files that failed to read or parse; they are skipped. */
-  errors: Array<{ relPath: string; message: string }>;
+  /**
+   * Files that failed to read or parse, or (`sameName`) that share their group name with an
+   * earlier file by path; they are skipped (never synced or written).
+   */
+  errors: Array<{ relPath: string; message: string; sameName?: true }>;
 }
 
 /** Root-relative candidates, checked in order. */
@@ -106,6 +109,9 @@ export async function resolveTsSource(fs: Fs, chosen: string): Promise<{ root: s
   return null;
 }
 
+const sameNameMessage = (group: string, a: string, b: string) =>
+  `Two locale files are named "${group}" (${a}, ${b}). Retrans can't tell them apart yet — ${b} was skipped.`;
+
 /** Keys with no value in any language that aren't read-only (they'd otherwise have no row). Sorted. */
 export function emptyKeysOf(imp: TsImport): KeyId[] {
   const readOnly = new Set(imp.readOnly.map((r) => r.id));
@@ -132,6 +138,7 @@ export async function importTsLocales(
   };
   const dir = joinPath(root, localesDir);
   const relPaths = (await candidateFiles(fs, dir)).map((rel) => joinPath(localesDir, rel)).sort();
+  const byGroup = new Map<string, string>(); // group -> the first file (by path) that has it
 
   for (const relPath of relPaths) {
     let text: string;
@@ -144,6 +151,12 @@ export async function importTsLocales(
       continue;
     }
     if (!module) continue;
+    const first = byGroup.get(module.group);
+    if (first !== undefined) {
+      out.errors.push({ relPath, message: sameNameMessage(module.group, first, relPath), sameName: true });
+      continue;
+    }
+    byGroup.set(module.group, relPath);
     out.modules.set(relPath, { relPath, module, text });
     for (const loc of module.locales) if (!out.locales.includes(loc)) out.locales.push(loc);
   }

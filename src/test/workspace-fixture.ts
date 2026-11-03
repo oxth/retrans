@@ -14,6 +14,7 @@ import {
   BASELINE_PATH, parseWorkspaceMeta, serializeBaseline, serializeWorkspaceMeta, WORKSPACE_DIR, WORKSPACE_META_PATH,
 } from "../workspace/meta";
 import { createWorkspace } from "../workspace/store";
+import { syncFromSource } from "../workspace/sync";
 
 export const FIXTURE_ROOT = "/project";
 export const FIXTURE_LOCALES_DIR = "src/assets/locales";
@@ -59,4 +60,19 @@ export async function openFixtureWorkspace(): Promise<{
   const session = await ProjectSession.open(fs, root, d, { baseLocale: "th", localesPath: d.localesPath });
   session.setSourceReadOnly(imported.readOnly); // as the import (and every sync) does
   return { fs, session, root, localesDir, imported };
+}
+
+/**
+ * A workspace imported from the TS sources already in `fs` (as the Import dialog does: fromImport,
+ * first save), reopened from disk and synced, as opening a workspace does.
+ */
+export async function openWorkspaceFrom(fs: MemoryFs, root: string, localesDir: string): Promise<ProjectSession> {
+  const imp = await importTsLocales(fs, root, localesDir, "th");
+  const fresh = await ProjectSession.fromImport(fs, root, imp, { name: "test", localesDir, baseLocale: "th" });
+  await fresh.save();
+  const d = (await detectProject(fs, root))!;
+  const session = await ProjectSession.open(fs, root, d, { baseLocale: "th", localesPath: d.localesPath });
+  await syncFromSource(session);
+  if (session.isDirty()) await session.save();
+  return session;
 }
