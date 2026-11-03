@@ -19,13 +19,19 @@ pub struct SyncReport {
     pub removed: usize,
 }
 
+/// llama.cpp's `common` helpers (`llama-common*.dll`): built because llama-cpp-2 enables the sys
+/// crate's default `common` feature, linked against OpenSSL, and imported by nothing we ship.
+fn is_unshipped(p: &Path) -> bool {
+    p.file_name().is_some_and(|n| n.to_string_lossy().to_ascii_lowercase().starts_with("llama-common"))
+}
+
 fn is_dll(p: &Path) -> bool {
     p.extension().is_some_and(|e| e.eq_ignore_ascii_case("dll")) && p.is_file()
 }
 
 /// Mirror every `.dll` in `sources`, plus the `extra` files, into `dest`: copy one only when it is
 /// missing or its size or mtime differs (the copy gets the source's mtime), and delete `.dll`
-/// files neither has. Other files in `dest` are left alone. Missing source dirs are skipped.
+/// files neither has (llama-common*.dll is never staged). Other files in `dest` are left alone. Missing source dirs are skipped.
 pub fn sync_dlls(sources: &[&Path], extra: &[PathBuf], dest: &Path) -> io::Result<SyncReport> {
     fs::create_dir_all(dest)?;
     let mut report = SyncReport::default();
@@ -33,7 +39,7 @@ pub fn sync_dlls(sources: &[&Path], extra: &[PathBuf], dest: &Path) -> io::Resul
     let mut files: Vec<PathBuf> = Vec::new();
     for dir in sources {
         let Ok(entries) = fs::read_dir(dir) else { continue };
-        files.extend(entries.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| is_dll(p)));
+        files.extend(entries.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| is_dll(p) && !is_unshipped(p)));
     }
     files.extend(extra.iter().cloned());
     for path in files {

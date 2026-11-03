@@ -105,6 +105,9 @@ jobs:
           $dlls = @(Get-ChildItem src-tauri/llama-dlls -Filter *.dll)
           if ($dlls.Count -eq 0) { Write-Error 'No DLLs staged in src-tauri/llama-dlls' }
           $shipped = @($dlls | ForEach-Object { $_.Name.ToLowerInvariant() })
+          # llama-common*.dll needs OpenSSL and nothing we ship imports it: it must not be staged.
+          $common = @($shipped | Where-Object { $_ -like 'llama-common*' })
+          if ($common.Count) { Write-Host "::error::llama-common must not ship (needs OpenSSL): $($common -join ', ')"; exit 1 }
           foreach ($crt in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
             if ($shipped -notcontains $crt) { Write-Host "::error::$crt is not staged in src-tauri/llama-dlls"; exit 1 }
           }
@@ -159,4 +162,8 @@ jobs:
             printf '%s\n' "$names" | grep -ixF "$crt" >/dev/null || missing="$missing $crt"
           done
           if [ -n "$missing" ]; then echo "::error::Missing next to retrans.exe:$missing"; exit 1; fi
+          common=$(printf '%s\n' "$paths" | grep -iE '(^|/)llama-common[^/]*\.dll$' || true)
+          if [ -n "$common" ]; then
+            echo "::error::llama-common must not ship (needs OpenSSL, imported by nothing): $common"; exit 1
+          fi
           echo "All llama.cpp and VC++ runtime DLLs present."

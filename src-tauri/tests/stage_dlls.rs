@@ -134,3 +134,21 @@ fn finds_the_vc_runtime_in_order_redist_dir_vs_install_system32() {
     );
     fs::remove_dir_all(&root).unwrap();
 }
+
+#[test]
+fn llama_common_is_never_staged_and_an_old_copy_is_removed() {
+    let root = tmp("common");
+    let (bin, dest) = (root.join("bin"), root.join("dest"));
+    fs::create_dir_all(&bin).unwrap();
+    fs::create_dir_all(&dest).unwrap();
+    write(&bin.join("llama.dll"), "llama");
+    write(&bin.join("llama-common.dll"), "needs openssl");
+    write(&bin.join("LLAMA-COMMON-BASE.dll"), "x");
+    write(&dest.join("llama-common.dll"), "old copy");
+    let r = sync_dlls(&[&bin], &[], &dest).unwrap();
+    assert_eq!((r.found, r.copied, r.removed), (1, 1, 1));
+    assert!(dest.join("llama.dll").exists());
+    assert!(!dest.join("llama-common.dll").exists());
+    assert!(!dest.join("LLAMA-COMMON-BASE.dll").exists());
+    fs::remove_dir_all(&root).unwrap();
+}
