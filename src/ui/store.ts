@@ -7,6 +7,7 @@ import type { Conflict } from "../core/merge";
 import { clearJournal, type Journal, journalPath, readJournal, writeJournal } from "../core/recovery";
 import { parseState, STATE_PATH } from "../core/state-file";
 import { isRelevantChange } from "../core/watch-filter";
+import { BASELINE_PATH, WORKSPACE_META_PATH } from "../workspace/meta";
 import { type Fs, FsError, joinPath } from "../platform/fs";
 import { tauriFs } from "../platform/tauri-fs";
 import { addRecent } from "../platform/prefs";
@@ -136,7 +137,8 @@ export const useApp = create<AppState>((set, get) => ({
     const { state: st } = parseState(await readState(fs, root));
     const effective: ProjectOptions = {
       baseLocale: opts.baseLocale,
-      localesPath: st.project.localesPath ?? opts.localesPath,
+      // A workspace's files always live in .retrans/workspace.
+      localesPath: d.workspace ? d.localesPath : (st.project.localesPath ?? opts.localesPath),
     };
     const session = await ProjectSession.open(fs, root, d, effective);
     if (stale()) return;
@@ -169,7 +171,10 @@ export const useApp = create<AppState>((set, get) => ({
     set({ session, detected: d, conflicts: [], recovery, error: null, version: 0, closePrompt: null });
 
     try {
-      const scope = { root, format: d.format, localesPath: session.opts.localesPath };
+      const scope = {
+        root, format: d.format, localesPath: session.opts.localesPath,
+        extraPaths: d.workspace ? [WORKSPACE_META_PATH, BASELINE_PATH] : undefined,
+      };
       const stop = await watchDir(root, (paths) => {
         if (get().session !== session || !isRelevantChange(paths, scope)) return;
         session.reloadFromDisk().then(

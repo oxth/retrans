@@ -3,7 +3,9 @@ import { parseState, serializeState, STATE_PATH } from "../core/state-file";
 import type { DetectResult, FormatAdapter } from "../formats/adapter";
 import { detectAt, nextI18nextAdapter } from "../formats/next-i18next";
 import { type Fs, FsError, joinPath } from "../platform/fs";
-import { parseWorkspaceMeta, serializeWorkspaceMeta, WORKSPACE_DIR, WORKSPACE_META_PATH, type WorkspaceMeta } from "./meta";
+import {
+  parseWorkspaceMeta, serializeWorkspaceMeta, WORKSPACE_DIR, WORKSPACE_META_ERROR, WORKSPACE_META_PATH, type WorkspaceMeta,
+} from "./meta";
 
 async function readOrNull(fs: Fs, path: string): Promise<string | null> {
   try {
@@ -46,13 +48,16 @@ export const workspaceAdapter: FormatAdapter = {
 };
 
 /**
- * A workspace is a folder with a valid .retrans/workspace.json. Its translations are the
+ * A workspace is a folder with a .retrans/workspace.json (throws when it can't be parsed). Its translations are the
  * next-i18next layout under WORKSPACE_DIR; the base language is the one pinned in state.json
  * (listed first), else null.
  */
 export async function detectWorkspace(fs: Fs, root: string): Promise<DetectResult | null> {
-  const meta = parseWorkspaceMeta(await readOrNull(fs, joinPath(root, WORKSPACE_META_PATH)));
-  if (!meta) return null;
+  const text = await readOrNull(fs, joinPath(root, WORKSPACE_META_PATH));
+  if (text === null) return null;
+  const meta = parseWorkspaceMeta(text);
+  // Never fall through to another format: that would open the folder as something it isn't.
+  if (!meta) throw new Error(WORKSPACE_META_ERROR);
   const d = (await detectAt(fs, root, WORKSPACE_DIR)) ?? {
     format: "next-i18next" as const, baseLocale: null, locales: [], namespaces: [], localesPath: WORKSPACE_DIR, keyCount: 0,
   };

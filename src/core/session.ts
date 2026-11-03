@@ -19,7 +19,9 @@ import type { Journal } from "./recovery";
 import { planReload } from "./session-reload";
 import { parseState, reconcile, serializeState, STATE_PATH, type StateEntry, type StateFile } from "./state-file";
 import { cellMeta, recordCleared, recordEdit, recordReviewed, renameInState } from "./status";
-import { serializeWorkspaceMeta, WORKSPACE_META_PATH, type WorkspaceMeta } from "../workspace/meta";
+import {
+  jsonEqual, parseWorkspaceMeta, serializeWorkspaceMeta, WORKSPACE_META_ERROR, WORKSPACE_META_PATH, type WorkspaceMeta,
+} from "../workspace/meta";
 import { workspaceAdapter } from "../workspace/store";
 
 export { KeyError } from "./session-helpers";
@@ -88,6 +90,8 @@ export class ProjectSession {
   private wsMeta: WorkspaceMeta | null;
   private metaBaseline: string | null; // serialized meta as loaded / last saved
   private metaDiskText: string | null = null; // raw workspace.json as loaded / last written (stale check)
+  /** Set while workspace.json on disk can't be parsed: it is then never written. */
+  private metaMalformed = false;
 
   private constructor(
     fs: Fs, root: string, adapter: FormatAdapter, opts: ProjectOptions,
@@ -505,7 +509,7 @@ export class ProjectSession {
       }
     }
 
-    if (this.wsMeta && this.metaDirty()) {
+    if (this.wsMeta && this.metaDirty() && !this.metaMalformed) {
       const text = serializeWorkspaceMeta(this.wsMeta);
       const path = joinPath(this.root, WORKSPACE_META_PATH);
       if ((await readOrNull(this.fs, path)) !== this.metaDiskText) {
@@ -558,6 +562,7 @@ export class ProjectSession {
   private async reloadNow(): Promise<Conflict[]> {
     const load = await this.adapter.load(this.fs, this.root, this.opts);
     const stateText = await readOrNull(this.fs, joinPath(this.root, STATE_PATH));
+    const metaText = this.wsMeta ? await readOrNull(this.fs, joinPath(this.root, WORKSPACE_META_PATH)) : null;
     // Everything below is synchronous, so edits made during the awaits are included as "mine".
     const plan = planReload({ data: this.data, disk: this.disk, creates: this.creates, removed: this.removed, load });
     for (const p of plan.adopted) this.creates.delete(p);
@@ -581,10 +586,46 @@ export class ProjectSession {
     this.stateDiskText = stateText;
     this.stateTouched = true;
     this.errors = this.withStateError(load.errors.filter((e) => plan.files.some((f) => f.relPath === e.relPath)));
+    if (this.wsMeta) this.mergeMetaFromDisk(metaText);
 
     this.conflicts = plan.conflicts;
     this.emit();
     return plan.conflicts;
+  }
+
+  /**
+   * Workspace meta from disk: fields not changed locally since the last load/save adopt the disk's,
+   * locally changed fields win. A deleted file is written again by the next save; an unparseable
+   * one is reported and never overwritten until it parses again.
+   */
+  private mergeMetaFromDisk(text: string | null): void {
+    const local = this.wsMeta!;
+    if (text === null) {
+      this.metaMalformed = false;
+      this.metaDiskText = null;
+      this.metaBaseline = null; // so the meta counts as changed and is re-created
+      return;
+    }
+    const disk = parseWorkspaceMeta(text);
+    this.metaMalformed = !disk;
+    if (!disk) {
+      this.errors = [
+        ...this.errors.filter((e) => e.relPath !== WORKSPACE_META_PATH),
+        { relPath: WORKSPACE_META_PATH, message: WORKSPACE_META_ERROR },
+      ];
+      return;
+    }
+    const base = (this.metaBaseline ? JSON.parse(this.metaBaseline) : {}) as Record<string, unknown>;
+    const mine = local as unknown as Record<string, unknown>;
+    const theirs = disk as unknown as Record<string, unknown>;
+    const merged: Record<string, unknown> = {};
+    for (const k of new Set([...Object.keys(mine), ...Object.keys(theirs), ...Object.keys(base)])) {
+      const v = jsonEqual(mine[k], base[k]) ? theirs[k] : mine[k];
+      if (v !== undefined) merged[k] = v;
+    }
+    this.wsMeta = merged as unknown as WorkspaceMeta;
+    this.metaBaseline = serializeWorkspaceMeta(disk);
+    this.metaDiskText = text;
   }
 
   /**

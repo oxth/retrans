@@ -22,6 +22,8 @@ export interface WatchScope {
   format: Format;
   /** next-i18next: the locales directory; Paraglide: the pathPattern, e.g. "messages/{locale}.json". */
   localesPath: string;
+  /** More root-relative files that count (e.g. a workspace's meta and baseline). */
+  extraPaths?: string[];
 }
 
 /**
@@ -41,7 +43,7 @@ export function isRelevantChange(paths: string[], scope: WatchScope): boolean {
     dir = before.includes("/") ? before.slice(0, before.lastIndexOf("/")) : "";
     match = new RegExp("^" + pattern.split("{locale}").map(escapeRe).join("[^/]+") + "$");
   }
-  const exact = new Set([STATE_PATH, SETTINGS_PATH]);
+  const exact = new Set([STATE_PATH, SETTINGS_PATH, ...(scope.extraPaths ?? []).map(trimRel)]);
   for (const raw of paths) {
     const p = norm(raw);
     if (p !== root && !p.startsWith(root + "/")) continue;

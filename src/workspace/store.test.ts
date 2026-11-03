@@ -97,6 +97,50 @@ describe("workspace store", () => {
     expect(s.isDirty()).toBe(true);
   });
 
+  it("stale meta: reload merges it (local fields win) and the retried save succeeds", async () => {
+    const fs = await demo();
+    const { s } = await open(fs);
+    const { s: idle } = await open(fs);
+    s.setWorkspaceMeta({ duplicates: ["a"] });
+    const disk = parseWorkspaceMeta(await fs.readText(`${R}/${WORKSPACE_META_PATH}`))!;
+    await fs.writeTextAtomic(`${R}/${WORKSPACE_META_PATH}`, serializeWorkspaceMeta({ ...disk, name: "Renamed", duplicates: ["z"] }));
+    expect((await s.save()).stale).toEqual([WORKSPACE_META_PATH]);
+    await s.reloadFromDisk();
+    expect(s.workspace).toMatchObject({ name: "Renamed", duplicates: ["a"] });
+    const r = await s.save();
+    expect(r.stale).toEqual([]);
+    expect(r.written).toEqual([WORKSPACE_META_PATH]);
+    expect(s.isDirty()).toBe(false);
+    expect(parseWorkspaceMeta(await fs.readText(`${R}/${WORKSPACE_META_PATH}`))).toMatchObject({ name: "Renamed", duplicates: ["a"] });
+
+    // No local change: the disk meta is adopted and the session stays clean.
+    await idle.reloadFromDisk();
+    expect(idle.workspace).toMatchObject({ name: "Renamed", duplicates: ["a"] });
+    expect(idle.isDirty()).toBe(false);
+  });
+
+  it("a malformed meta on reload is never overwritten and is reported", async () => {
+    const fs = await demo();
+    const { s } = await open(fs);
+    await fs.writeTextAtomic(`${R}/${WORKSPACE_META_PATH}`, "<<<<<<< HEAD\n");
+    s.setWorkspaceMeta({ duplicates: ["a"] });
+    await s.reloadFromDisk();
+    expect(s.errors.map((e) => e.relPath)).toContain(WORKSPACE_META_PATH);
+    const r = await s.save();
+    expect(r.written).not.toContain(WORKSPACE_META_PATH);
+    expect(await fs.readText(`${R}/${WORKSPACE_META_PATH}`)).toBe("<<<<<<< HEAD\n");
+    expect(s.isDirty()).toBe(true);
+  });
+
+  it("an unreadable workspace.json is an error, not another format", async () => {
+    const fs = await demo();
+    await fs.writeTextAtomic(`${R}/public/locales/en/common.json`, j({ a: "A" }));
+    await fs.writeTextAtomic(`${R}/${WORKSPACE_META_PATH}`, "{ broken");
+    const msg = "Can't read .retrans/workspace.json — fix it (e.g. resolve merge markers) and open again.";
+    await expect(detectWorkspace(fs, R)).rejects.toThrow(msg);
+    await expect(detectProject(fs, R)).rejects.toThrow(msg);
+  });
+
   it("new languages and groups in a workspace are flat files", async () => {
     const fs = await demo();
     const { s } = await open(fs);

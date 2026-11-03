@@ -117,6 +117,14 @@ function sorted(v: Json): Json {
 
 const serialize = (v: unknown) => JSON.stringify(sorted(v as Json), null, 2) + "\n";
 
+/** Order-insensitive equality of JSON-like values (object key order ignored). */
+export function jsonEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(sorted((a ?? null) as Json)) === JSON.stringify(sorted((b ?? null) as Json));
+}
+
+export const WORKSPACE_META_ERROR =
+  "Can't read .retrans/workspace.json — fix it (e.g. resolve merge markers) and open again.";
+
 /** Sorted keys, 2-space indent, trailing newline (same style as serializeState). */
 export function serializeWorkspaceMeta(m: WorkspaceMeta): string {
   return serialize(m);

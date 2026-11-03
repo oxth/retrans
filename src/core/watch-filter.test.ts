@@ -37,4 +37,16 @@ describe("isRelevantChange (#5)", () => {
     expect(w(["C:/work/p/src/x.ts"])).toBe(false);
     expect(next(["/p//public/locales/en/a.json"], "/p/")).toBe(true);
   });
+
+  it("extra exact paths (workspace meta and baseline) count", () => {
+    const ws = (paths: string[]) =>
+      isRelevantChange(paths, {
+        root: "/p", format: "next-i18next", localesPath: ".retrans/workspace",
+        extraPaths: [".retrans/workspace.json", ".retrans/source-baseline.json"],
+      });
+    expect(ws(["/p/.retrans/workspace.json"])).toBe(true);
+    expect(ws(["/p/.retrans/source-baseline.json"])).toBe(true);
+    expect(ws(["/p/.retrans/workspace/th/common.json"])).toBe(true);
+    expect(ws(["/p/.retrans/other.json"])).toBe(false);
+  });
 });

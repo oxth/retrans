@@ -44,7 +44,7 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
         </select>
         <span className="mt-1 block text-xs text-gray-500">Used for projects that have no saved view of their own.</span>
       </label>
-      <div>
+      {!session.workspace && <div>
         <label className="block">
           <span className="mb-1 block font-medium">Locales path</span>
           <input aria-label="Locales path" className={`${inputCls} font-mono`} value={path} onChange={(e) => setPath(e.target.value)} placeholder="public/locales" />
@@ -77,7 +77,7 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
           )}
           <span className="text-xs text-gray-500">Takes effect when you reopen the project.</span>
         </div>
-      </div>
+      </div>}
       <section className="space-y-3">
         <h2 className="text-base font-semibold">Machine translation</h2>
         <MtSettings session={session} />
