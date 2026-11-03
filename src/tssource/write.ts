@@ -418,25 +418,81 @@ function objectNodes(text: string): Map<number, Node> {
   return map;
 }
 
-/** A JS identifier from a group name: `change-password` → `changePassword`. */
-function groupIdent(group: string): string {
+const RESERVED = new Set([
+  "break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "else", "enum",
+  "export", "extends", "false", "finally", "for", "function", "if", "import", "in", "instanceof", "new", "null",
+  "return", "super", "switch", "this", "throw", "true", "try", "typeof", "var", "void", "while", "with", "yield",
+  "let", "static", "implements", "interface", "package", "private", "protected", "public", "await", "arguments",
+  "eval", "undefined", "NaN", "Infinity",
+  "mapLocale", // the helper every generated module imports
+]);
+
+/** A JS identifier from an ASCII group name (`change-password` → `changePassword`); null for a non-ASCII one. */
+function baseIdent(group: string): string | null {
+  if (/[^\x00-\x7F]/.test(group)) return null;
   const parts = group.split(/[^A-Za-z0-9_$]+/).filter(Boolean);
   let id = parts.map((p, i) => (i === 0 ? p : p[0].toUpperCase() + p.slice(1))).join("");
-  if (id === "" || /^[0-9]/.test(id)) id = "_" + id;
+  if (id === "") return null;
+  if (/^[0-9]/.test(id) || RESERVED.has(id)) id = "_" + id;
   return id;
 }
 
 /**
+ * A unique identifier per group, for the generated `const` and export names: camelCased, `_` before
+ * a reserved word or a leading digit, `group<N>` for a non-ASCII name, a number after a clash.
+ */
+export function groupIdents(groups: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const taken = new Set<string>();
+  const fallback: string[] = [];
+  for (const g of groups) {
+    if (out.has(g)) continue;
+    const base = baseIdent(g);
+    if (base === null) {
+      fallback.push(g);
+      continue;
+    }
+    let id = base;
+    for (let n = 2; taken.has(id); n++) id = `${base}${n}`;
+    taken.add(id);
+    out.set(g, id);
+  }
+  let n = 1;
+  for (const g of fallback) {
+    while (taken.has(`group${n}`)) n++;
+    const id = `group${n}`;
+    taken.add(id);
+    out.set(g, id);
+  }
+  return out;
+}
+
+/** The export-name suffix for a locale: `TH` for `th`, `zhHant` for `zh-Hant`. */
+export function localeSuffix(locale: string): string {
+  if (/^[A-Za-z]+$/.test(locale)) return locale.toUpperCase();
+  const parts = locale.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  return parts.map((p, i) => (i === 0 ? p : p[0].toUpperCase() + p.slice(1))).join("") || "_";
+}
+
+/** The specifier a module imports `mapLocale` from (e.g. `@/assets/locales/mapLocale`), else null. */
+export function mapLocaleImport(text: string): string | null {
+  const m = /import\s*\{\s*mapLocale\s*\}\s*from\s*(['"])([^'"\n]+)\1/.exec(text);
+  return m ? m[2] : null;
+}
+
+/**
  * A new table-style module (fixture style: 2-space indent, single quotes, `mapLocale`).
- * `mapLocaleFrom` is the import specifier of the `mapLocale` helper.
+ * `mapLocaleFrom` is the import specifier of the `mapLocale` helper; `ident` the identifier for
+ * the group (see groupIdents).
  */
 export function newTableModule(
   group: string,
   values: Record<string, Record<string, string>>,
   locales: string[],
-  mapLocaleFrom = "@/assets/locales/mapLocale",
+  mapLocaleFrom = "./mapLocale",
+  ident = groupIdents([group]).get(group)!,
 ): string {
-  const id = groupIdent(group);
+  const id = ident;
   const rows: string[] = [];
   for (const [key, vals] of Object.entries(values)) {
     const pair = pairText(vals, locales);
@@ -449,22 +505,25 @@ export function newTableModule(
     ...rows,
     "};",
     "",
-    ...locales.map((l) => `export const ${id}${l.toUpperCase()} = mapLocale(${id}, ${encodeTsString(l, "'")});`),
+    ...locales.map((l) => `export const ${id}${localeSuffix(l)} = mapLocale(${id}, ${encodeTsString(l, "'")});`),
     "",
   ].join("\n");
 }
 
-/** The import lines plus, per locale, the spread lines to paste into `i18n.ts`. */
-export function i18nSnippet(groups: string[], locales: string[]): string {
+/**
+ * The import lines plus, per locale, the spread lines to paste into `i18n.ts`. `from` is the
+ * folder prefix of the import paths (as the `mapLocale` import has it, e.g. `@/assets/locales/`).
+ */
+export function i18nSnippet(groups: string[], locales: string[], from = "./", idents = groupIdents(groups)): string {
   const imports = groups.map((g) => {
-    const id = groupIdent(g);
-    const names = locales.map((l) => `${id}${l.toUpperCase()}`).join(", ");
-    return `import { ${names} } from '@/assets/locales/${g}';`;
+    const id = idents.get(g)!;
+    const names = locales.map((l) => `${id}${localeSuffix(l)}`).join(", ");
+    return `import { ${names} } from ${encodeTsString(from + g, "'")};`;
   });
   const blocks = locales.map(
     (l) =>
       `// resources.${l}.translation:\n` +
-      groups.map((g) => `...${groupIdent(g)}${l.toUpperCase()},`).join("\n") +
+      groups.map((g) => `...${idents.get(g)!}${localeSuffix(l)},`).join("\n") +
       "\n",
   );
   return [imports.join("\n") + "\n", ...blocks].join("\n");

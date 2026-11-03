@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseLocaleModule, type LocaleModule, type Quote } from "./parse";
-import { applyTsEdits, encodeTsString, i18nSnippet, newTableModule, type TsEdit } from "./write";
+import { applyTsEdits, encodeTsString, groupIdents, i18nSnippet, mapLocaleImport, newTableModule, type TsEdit } from "./write";
 
 const LOCALES = resolve(__dirname, "../test/fixtures/ts-locales/src/assets/locales");
 const FILES = ["button.tsx", "common.ts", "dashboardMaguro.tsx", "change-password.ts"];
@@ -293,7 +293,7 @@ describe("newTableModule / i18nSnippet", () => {
       "report-x": { th: "it's", en: "a\nb" },
       th_only: { th: "ไทย" },
     };
-    const text = newTableModule("report", vals, ["th", "en"]);
+    const text = newTableModule("report", vals, ["th", "en"], "@/assets/locales/mapLocale");
     expect(text).toBe(
       [
         "import { mapLocale } from '@/assets/locales/mapLocale';",
@@ -317,7 +317,7 @@ describe("newTableModule / i18nSnippet", () => {
   });
 
   it("i18nSnippet", () => {
-    expect(i18nSnippet(["report"], ["th", "en"])).toBe(
+    expect(i18nSnippet(["report"], ["th", "en"], "@/assets/locales/")).toBe(
       [
         "import { reportTH, reportEN } from '@/assets/locales/report';",
         "",
@@ -329,5 +329,48 @@ describe("newTableModule / i18nSnippet", () => {
         "",
       ].join("\n"),
     );
+  });
+
+  it("defaults: relative mapLocale import, relative snippet paths", () => {
+    expect(newTableModule("report", { a: { th: "ก" } }, ["th"])).toContain("import { mapLocale } from './mapLocale';");
+    expect(i18nSnippet(["report"], ["th"])).toContain("import { reportTH } from './report';");
+  });
+
+  it("group identifiers: reserved words, non-ASCII, collisions", () => {
+    const ids = groupIdents(["delete", "class", "mapLocale", "change-password", "ภาษา", "ข้อความ", "group1", "a-b", "aB", "9lives"]);
+    expect(Object.fromEntries(ids)).toEqual({
+      delete: "_delete",
+      class: "_class",
+      mapLocale: "_mapLocale",
+      "change-password": "changePassword",
+      ภาษา: "group2",
+      ข้อความ: "group3",
+      group1: "group1",
+      "a-b": "aB",
+      aB: "aB2",
+      "9lives": "_9lives",
+    });
+  });
+
+  it("generated modules and snippets are valid TypeScript for any group and locale", () => {
+    const locales = ["th", "zh-Hant", "es-419"];
+    for (const group of ["delete", "ภาษา", "change-password", "mapLocale"]) {
+      const text = newTableModule(group, { k: { th: "ก", "zh-Hant": "字", "es-419": "x" } }, locales);
+      const mod = parseLocaleModule(text, `${group}.ts`);
+      expect(mod, `${group}: ${text}`).not.toBeNull();
+      expect(mod!.locales).toEqual(locales);
+      expect(values(mod!)).toEqual({ k: { th: "ก", "zh-Hant": "字", "es-419": "x" } });
+    }
+    expect(newTableModule("report", {}, ["th", "zh-Hant"])).toContain("export const reportzhHant = mapLocale(report, 'zh-Hant');");
+    const snippet = i18nSnippet(["delete", "ภาษา"], ["th", "zh-Hant"], "@/locales/");
+    expect(snippet).toContain("import { _deleteTH, _deletezhHant } from '@/locales/delete';");
+    expect(snippet).toContain("import { group1TH, group1zhHant } from '@/locales/ภาษา';");
+    expect(snippet).toContain("// resources.zh-Hant.translation:\n..._deletezhHant,\n...group1zhHant,\n");
+  });
+
+  it("mapLocaleImport reads the helper's import specifier", () => {
+    expect(mapLocaleImport(read("common.ts"))).toBe("@/assets/locales/mapLocale");
+    expect(mapLocaleImport('import { mapLocale } from "../helpers/mapLocale";\n')).toBe("../helpers/mapLocale");
+    expect(mapLocaleImport(read("button.tsx"))).toBeNull();
   });
 });

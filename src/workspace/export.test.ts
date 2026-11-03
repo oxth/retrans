@@ -397,6 +397,39 @@ describe("deleting rows of keys the source has", () => {
   });
 });
 
+describe("generated TypeScript files", () => {
+  it("a new group copies the folder's mapLocale import; reserved and non-ASCII names get valid identifiers", async () => {
+    const w = await setup();
+    const s = w.session;
+    for (const g of ["delete", "รายงาน"]) {
+      s.addNamespace(g);
+      s.addKey(g, "title", "หัวข้อ");
+    }
+    const plan = await planExport(s, { kind: "ts-writeback" }, await w.source());
+    const del = file(plan, `${w.root}/${w.localesDir}/delete.ts`)!;
+    expect(del).toContain("import { mapLocale } from '@/assets/locales/mapLocale';");
+    expect(del).toContain("const _delete = {");
+    expect(file(plan, `${w.root}/${w.localesDir}/รายงาน.ts`)).toContain("export const group1TH = mapLocale(group1, 'th');");
+    expect(plan.snippets.join("\n")).toContain("import { _deleteTH, _deleteEN } from '@/assets/locales/delete';");
+    expect(plan.snippets.join("\n")).toContain("import { group1TH, group1EN } from '@/assets/locales/รายงาน';");
+    expect(plan.warnings).toEqual([]);
+    await writeExportPlan(w.fs, plan);
+    expect((await w.source()).errors).toEqual([]);
+  });
+
+  it("without a table-style file in the folder, new files import ./mapLocale", async () => {
+    const R = "/p";
+    const fs = new MemoryFs({ [`${R}/loc/form.ts`]: "export const formTH = {\n  title: 'หัวข้อ',\n};\n" });
+    const s = await openWorkspaceFrom(fs, R, "loc");
+    s.addNamespace("reports");
+    s.addKey("reports", "report_title", "รายงาน");
+    await s.save();
+    const plan = await planExport(s, { kind: "ts-writeback" }, await importTsLocales(fs, R, "loc", "th"));
+    expect(file(plan, `${R}/loc/reports.ts`)).toContain("import { mapLocale } from './mapLocale';");
+    expect(plan.snippets.join("\n")).toContain("import { reportsTH } from './reports';");
+  });
+});
+
 describe("writeExportPlan: failures", () => {
   it("aborts before writing anything when a write-back file changed since planning", async () => {
     const w = await setup();
@@ -593,7 +626,8 @@ describe("planExport: other formats", () => {
     expect(file(plan, `${OUT}/button.ts`)).toContain("import { mapLocale } from './mapLocale';");
     // New format: untranslated cells are omitted, markers included.
     expect(file(plan, `${OUT}/button.ts`)).toContain("  button_delete: { th: 'ลบ' },");
-    expect(plan.snippets.join("\n")).toContain("import { buttonTH, buttonEN } from '@/assets/locales/button';");
+    // Snippet paths use the same base as the mapLocale import.
+    expect(plan.snippets.join("\n")).toContain("import { buttonTH, buttonEN } from './button';");
     await writeExportPlan(w.fs, plan);
     const re = await importTsLocales(w.fs, OUT, "", "th");
     expect(re.errors).toEqual([]);

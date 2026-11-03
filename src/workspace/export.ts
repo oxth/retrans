@@ -11,7 +11,9 @@ import { MESSAGE_SCHEMA, paraglideSettingsText } from "../formats/scaffold";
 import { type Fs, FsError, joinPath, normalizePath } from "../platform/fs";
 import { isMarker, type TsImport } from "../tssource/import";
 import { type LocaleModule, parseLocaleModule } from "../tssource/parse";
-import { applyTsEdits, encodeTsString, i18nSnippet, newTableModule, type TsEdit } from "../tssource/write";
+import {
+  applyTsEdits, encodeTsString, groupIdents, i18nSnippet, mapLocaleImport, newTableModule, type TsEdit,
+} from "../tssource/write";
 import { type Baseline, BASELINE_PATH, type ExportTarget, jsonEqual, parseBaseline, serializeBaseline } from "./meta";
 import { applyRenames, dropDeletedKeys } from "./sync";
 
@@ -227,6 +229,28 @@ async function readOrNull(fs: Fs, path: string): Promise<string | null> {
   }
 }
 
+/** True when a generated module parses back as a locale module. */
+function generatedOk(text: string, relPath: string): boolean {
+  try {
+    return parseLocaleModule(text, relPath) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** True when root-relative `relPath` sits directly in folder `dir` (not in a subfolder). */
+function directlyIn(relPath: string, dir: string): boolean {
+  const d = joinPath(dir);
+  const rest = d === "" ? relPath : relPath.startsWith(d + "/") ? relPath.slice(d.length + 1) : null;
+  return rest !== null && !rest.includes("/");
+}
+
+/** The folder part of a path or specifier, with its trailing `/` (`none` when it has none). */
+function dirOf(path: string, none: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash < 0 ? none : path.slice(0, slash + 1);
+}
+
 const baseName = (relPath: string) => relPath.slice(relPath.lastIndexOf("/") + 1).replace(/\.tsx?$/, "");
 
 async function planTsSource(
@@ -280,6 +304,12 @@ async function planTsSource(
   // A file skipped for its name doesn't make its group unreadable: the group's other file is read.
   const erroredGroups = new Set(source.errors.filter((e) => !e.sameName).map((e) => baseName(e.relPath)));
   const newGroups: string[] = [];
+  // New files import mapLocale as the folder's table-style files do (else from next to them).
+  const mapLocaleFrom = [...source.modules.values()]
+    .filter((m) => m.module.style === "table" && directlyIn(m.relPath, meta.source!.localesDir))
+    .map((m) => mapLocaleImport(m.text))
+    .find((x) => x !== null) ?? "./mapLocale";
+  const idents = groupIdents(session.data.namespaces.filter((g) => !known.has(g)));
   for (const group of session.data.namespaces) {
     if (known.has(group)) continue;
     const ids = (rows.get(group) ?? []).filter((id) => !removed.has(id));
@@ -295,12 +325,16 @@ async function planTsSource(
       plan.warnings.push(`${relPath} already exists; group "${group}" was not written.`);
       continue;
     }
-    const text = newTableModule(group, values, srcLocales);
+    const text = newTableModule(group, values, srcLocales, mapLocaleFrom, idents.get(group));
+    if (!generatedOk(text, relPath)) {
+      plan.warnings.push(`Couldn't generate ${path} — skipped.`);
+      continue;
+    }
     plan.files.push({ path, text, ...(writeback ? { expected: null } : {}) });
     outputs.push({ relPath, text });
     newGroups.push(group);
   }
-  if (newGroups.length > 0) plan.snippets.push(i18nSnippet(newGroups, srcLocales));
+  if (newGroups.length > 0) plan.snippets.push(i18nSnippet(newGroups, srcLocales, dirOf(mapLocaleFrom, "./"), idents));
 
   plan.leftOutLocales = sessionLocales.filter((l) => !source.locales.includes(l));
   if (plan.leftOutLocales.length > 0) plan.leftOutSnippet = languageSnippet(plan.leftOutLocales, source.locales);
@@ -510,13 +544,22 @@ function planTsModules(session: ProjectSession, dir: string): ExportPlan {
   const plan = emptyPlan(dir);
   const locales = session.data.locales;
   const rows = rowsByGroup(session);
-  const groups = session.data.namespaces.filter((g) => (rows.get(g) ?? []).length > 0);
-  for (const group of groups) {
+  const candidates = session.data.namespaces.filter((g) => (rows.get(g) ?? []).length > 0);
+  const idents = groupIdents(candidates);
+  const groups: string[] = [];
+  for (const group of candidates) {
     const values = tableValues(session, rows.get(group)!, locales, false);
-    plan.files.push({ path: joinPath(dir, `${group}.ts`), text: newTableModule(group, values, locales, "./mapLocale") });
+    const path = joinPath(dir, `${group}.ts`);
+    const text = newTableModule(group, values, locales, "./mapLocale", idents.get(group));
+    if (!generatedOk(text, `${group}.ts`)) {
+      plan.warnings.push(`Couldn't generate ${path} — skipped.`);
+      continue;
+    }
+    plan.files.push({ path, text });
+    groups.push(group);
   }
   plan.files.push({ path: joinPath(dir, "mapLocale.ts"), text: mapLocaleModule(locales) });
-  plan.snippets.push(i18nSnippet(groups, locales));
+  if (groups.length > 0) plan.snippets.push(i18nSnippet(groups, locales, "./", idents));
   return plan;
 }
 
