@@ -175,11 +175,11 @@ describe("workspace store", () => {
     expect(parseWorkspaceMeta(j({ retransWorkspace: 1 }))).toBeNull();
     // Malformed optional parts are dropped, not fatal.
     const m = parseWorkspaceMeta(
-      j({ retransWorkspace: 1, name: "x", drafts: 5, markers: { "common::a": { en: 1, th: "y" } }, removedInSource: [1, "common::b"], emptyKeys: ["common::z", 2], source: { type: "js" }, lastExport: { target: { kind: "nope" } } }),
+      j({ retransWorkspace: 1, name: "x", drafts: 5, markers: { "common::a": { en: 1, th: "y" } }, removedInSource: [1, "common::b"], emptyKeys: ["common::z", 2], renames: { "common::a": "common::b", "common::c": 3 }, source: { type: "js" }, lastExport: { target: { kind: "nope" } } }),
     );
     expect(m).toEqual({
       retransWorkspace: 1, name: "x", drafts: {}, markers: { "common::a": { th: "y" } },
-      removedInSource: ["common::b"], duplicates: [], emptyKeys: ["common::z"],
+      removedInSource: ["common::b"], duplicates: [], emptyKeys: ["common::z"], renames: { "common::a": "common::b" },
     });
     expect(parseBaseline("nope")).toBeNull();
     expect(parseBaseline(null)).toBeNull();
@@ -188,7 +188,7 @@ describe("workspace store", () => {
   it("meta and baseline serialize with sorted keys and round-trip", () => {
     const m: WorkspaceMeta = {
       retransWorkspace: 1, name: "N", source: { type: "ts", localesDir: "src/locales" },
-      drafts: { "common::a": { en: "draft" } }, markers: {}, removedInSource: [], duplicates: ["a"], emptyKeys: ["common::e"],
+      drafts: { "common::a": { en: "draft" } }, markers: {}, removedInSource: [], duplicates: ["a"], emptyKeys: ["common::e"], renames: { "common::old": "common::new" },
       lastExport: { target: { kind: "i18next-json", dir: "out", namespaces: "single" } },
     };
     const text = serializeWorkspaceMeta(m);

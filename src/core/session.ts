@@ -169,6 +169,7 @@ export class ProjectSession {
       removedInSource: [],
       duplicates: [...imp.duplicates],
       emptyKeys: emptyKeysOf(imp),
+      renames: {},
     };
     const s = new ProjectSession(fs, root, workspaceAdapter, opts, { data, files: [], errors: [] }, state, stateText, error, meta);
     s.disk = new Map(); // nothing on disk yet: every value is unsaved
@@ -495,8 +496,16 @@ export class ProjectSession {
     const ids = (list: KeyId[]) => [...new Set(list.map((id) => pairs.get(id) ?? id))];
     const table = <T>(t: Record<KeyId, T>) =>
       Object.fromEntries(Object.entries(t).map(([id, v]) => [pairs.get(id) ?? id, v])) as Record<KeyId, T>;
+    const renames = { ...meta.renames };
+    for (const [from, to] of pairs) {
+      // The source id this key came from (chains collapse); renaming back to it drops the entry.
+      const origin = Object.keys(renames).find((k) => renames[k] === from) ?? from;
+      if (to === origin) delete renames[origin];
+      else renames[origin] = to;
+    }
     this.wsMeta = {
       ...meta,
+      renames,
       emptyKeys: ids(meta.emptyKeys).sort(),
       removedInSource: ids(meta.removedInSource),
       drafts: table(meta.drafts),

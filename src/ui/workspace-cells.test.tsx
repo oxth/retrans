@@ -353,3 +353,101 @@ describe("translator package import into a workspace", () => {
     expect(diff.skipped).toEqual([{ id: brand, locale: "en", reason: "read-only-file" }]);
   });
 });
+
+describe("renames survive the sync (through the store)", () => {
+  /** Saves through the store, then closes and opens the same folder again (sync runs on open). */
+  async function saveAndReopen(fs: MemoryFs): Promise<ProjectSession> {
+    await act(async () => {
+      expect(await useApp.getState().save()).toBe(true);
+    });
+    cleanup();
+    await useApp.getState().closeProject();
+    const d = (await detectProject(fs, "/project"))!;
+    await useApp.getState().openProject("/project", d, { baseLocale: "th", localesPath: d.localesPath });
+    render(<AppShell />);
+    const session = useApp.getState().session!;
+    await waitFor(() => expect(session.data.keyOrder).toContain(keyId("dashboardMaguro", "maguro_brand")));
+    return session;
+  }
+
+  it("an empty key renamed, saved and reopened stays renamed (and again after the next save)", async () => {
+    const { fs, session } = await openWs();
+    const from = keyId("common", "only_en");
+    const to = keyId("common", "only_english");
+    act(() => void session.renameKey(from, "only_english"));
+    expect(session.workspace!.renames).toEqual({ [from]: to });
+    let s = await saveAndReopen(fs);
+    expect(s.data.keyOrder).toContain(to);
+    expect(s.data.keyOrder).not.toContain(from);
+    expect(s.workspace!.emptyKeys).toEqual([to]);
+    expect(s.workspace!.removedInSource).toEqual([]);
+    expect(cell(to, "en")).toHaveTextContent("Draft: Only EN");
+    act(() => s.setText(keyId("common", "email"), "en", "E-mail"));
+    s = await saveAndReopen(fs);
+    expect(s.data.keyOrder).toContain(to);
+    expect(s.data.keyOrder).not.toContain(from);
+  });
+
+  it("a key with a draft and marker keeps them on the new id after reopen", async () => {
+    const { fs, session } = await openWs();
+    const from = keyId("button", "button_reset_password");
+    const to = keyId("button", "button_reset_pw");
+    act(() => void session.renameKey(from, "button_reset_pw"));
+    const s = await saveAndReopen(fs);
+    expect(s.data.keyOrder).not.toContain(from);
+    expect(s.workspace!.drafts[to]).toEqual({ en: "Reset password" });
+    expect(s.workspace!.markers[to]).toEqual({ en: "Reset password (EN)" });
+    expect(s.workspace!.drafts[from]).toBeUndefined();
+    expect(cell(to, "en")).toHaveTextContent("Draft: Reset password");
+    expect(useApp.getState().conflicts).toEqual([]);
+  });
+
+  it("a source change to the old id merges into the renamed key", async () => {
+    const { fs, session } = await openWs();
+    const from = keyId("button", "button_ok");
+    const to = keyId("button", "button_okay");
+    act(() => void session.renameKey(from, "button_okay"));
+    const s = await saveAndReopen(fs);
+    await replaceIn(fs, `${LOCALES}/button.tsx`, "  button_ok: 'OK'\n", "  button_ok: 'Okay!'\n");
+    act(() => watch.cb!([`${LOCALES}/button.tsx`]));
+    await waitFor(() => expect(s.value(to, "en")).toEqual({ kind: "text", text: "Okay!" }));
+    expect(s.data.keyOrder).not.toContain(from);
+    expect(s.workspace!.removedInSource).toEqual([]);
+    expect(useApp.getState().conflicts).toEqual([]);
+  });
+
+  it("changed on both sides: a conflict whose mine is the renamed key's value", async () => {
+    const { fs, session } = await openWs();
+    const from = keyId("button", "button_ok");
+    const to = keyId("button", "button_okay");
+    act(() => void session.renameKey(from, "button_okay"));
+    const s = await saveAndReopen(fs);
+    act(() => s.setText(to, "en", "Fine"));
+    await replaceIn(fs, `${LOCALES}/button.tsx`, "  button_ok: 'OK'\n", "  button_ok: 'Okay!'\n");
+    act(() => watch.cb!([`${LOCALES}/button.tsx`]));
+    await waitFor(() => expect(useApp.getState().conflicts).toEqual([
+      { id: to, locale: "en", mine: { kind: "text", text: "Fine" }, theirs: { kind: "text", text: "Okay!" }, origin: "source" },
+    ]));
+    expect(s.data.keyOrder).not.toContain(from);
+  });
+
+  it("chains collapse and renaming back to the source id drops the entry", async () => {
+    const { fs, session } = await openWs();
+    const a = keyId("button", "button_save");
+    const b = keyId("button", "button_store");
+    const c = keyId("button", "button_keep");
+    act(() => void session.renameKey(a, "button_store"));
+    act(() => void session.renameKey(b, "button_keep"));
+    expect(session.workspace!.renames).toEqual({ [a]: c });
+    let s = await saveAndReopen(fs);
+    expect(s.data.keyOrder).toContain(c);
+    expect(s.data.keyOrder).not.toContain(a);
+    expect(s.data.keyOrder).not.toContain(b);
+    act(() => void s.renameKey(c, "button_save"));
+    expect(s.workspace!.renames).toEqual({});
+    s = await saveAndReopen(fs);
+    expect(s.data.keyOrder).toContain(a);
+    expect(s.data.keyOrder).not.toContain(c);
+    expect(s.value(a, "en")).toEqual({ kind: "text", text: "Save" });
+  });
+});

@@ -7,7 +7,7 @@ import type { Conflict } from "../core/merge";
 import { type KeyId, type MessageValue, parseKeyId, valuesEqual } from "../core/model";
 import type { ProjectSession } from "../core/session";
 import { type Fs, FsError, joinPath } from "../platform/fs";
-import { importTsLocales, isMarker } from "../tssource/import";
+import { importTsLocales, isMarker, type TsImport } from "../tssource/import";
 import { type Baseline, BASELINE_PATH, jsonEqual, parseBaseline, serializeBaseline, type WorkspaceMeta } from "./meta";
 
 export interface SyncResult {
@@ -93,10 +93,12 @@ async function syncNow(session: ProjectSession): Promise<SyncResult> {
   if (!(await fs.exists(joinPath(root, localesDir)))) return unavailable();
   const src = await importTsLocales(fs, root, localesDir, session.data.baseLocale);
   if (src.modules.size === 0) return unavailable();
+  if (!session.workspace) return unavailable();
+  applyRenames(src, session.workspace.renames);
   const persistedText = await readOrNull(fs, joinPath(root, BASELINE_PATH));
   // Everything below is synchronous, so the workspace can't change underneath the merge.
   // Merge against the newest baseline: one from an earlier sync not yet saved, else the file's.
-  const stored = session.pendingBaseline ?? parseBaseline(persistedText) ?? {};
+  const stored = renameRows(session.pendingBaseline ?? parseBaseline(persistedText) ?? {}, session.workspace.renames);
   const meta = session.workspace;
   if (!meta) return unavailable();
 
@@ -219,6 +221,43 @@ export function resolveSyncConflict(session: ProjectSession, c: Conflict, pick: 
     if (!jsonEqual(markers, meta.markers) || !jsonEqual(drafts, meta.drafts)) session.setWorkspaceMeta({ markers, drafts });
     session.conflicts = session.conflicts.filter((x) => x.id !== c.id || x.locale !== c.locale);
   });
+}
+
+/**
+ * Rewrites an import's ids to workspace ids through `renames` (source id -> renamed id), so a key
+ * renamed in Retrans keeps its row, values and meta, and source changes to it merge into it. A
+ * rename whose new id the source now has as a key of its own is ignored (the source key wins).
+ * Duplicates are recomputed from the renamed keys. Mutates `imp`.
+ */
+export function applyRenames(imp: TsImport, renames: Record<KeyId, KeyId>): void {
+  const map = new Map<KeyId, KeyId>();
+  const inSource = new Set(imp.keyOrder);
+  for (const [from, to] of Object.entries(renames)) if (inSource.has(from) && !inSource.has(to)) map.set(from, to);
+  if (!map.size) return;
+  const id = (k: KeyId) => map.get(k) ?? k;
+  imp.keyOrder = imp.keyOrder.map(id);
+  imp.values = new Map([...imp.values].map(([k, v]) => [id(k), v]));
+  imp.baseline = renameRows(imp.baseline, renames, map);
+  imp.markers = renameRows(imp.markers, renames, map);
+  imp.drafts = renameRows(imp.drafts, renames, map);
+  imp.readOnly = imp.readOnly.map((r) => ({ ...r, id: id(r.id) }));
+  const groups = new Map<string, Set<string>>();
+  for (const k of imp.keyOrder) {
+    const { ns, key } = parseKeyId(k);
+    groups.set(key, (groups.get(key) ?? new Set()).add(ns));
+  }
+  imp.duplicates = [...groups].filter(([, gs]) => gs.size > 1).map(([k]) => k).sort();
+}
+
+/** A table keyed by source ids with renamed rows moved to their new id (an existing new-id row wins). */
+function renameRows<T>(table: Record<KeyId, T>, renames: Record<KeyId, KeyId>, map?: Map<KeyId, KeyId>): Record<KeyId, T> {
+  const out: Record<KeyId, T> = { ...table };
+  for (const [from, to] of map ?? Object.entries(renames)) {
+    if (!(from in out)) continue;
+    if (!(to in out)) out[to] = out[from];
+    delete out[from];
+  }
+  return out;
 }
 
 /** The nearest key before `id` in source order that is a workspace row of the same group. */

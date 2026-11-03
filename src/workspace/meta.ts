@@ -31,6 +31,11 @@ export interface WorkspaceMeta {
   duplicates: string[];
   /** Source keys with no value in any language (only markers / `undefined`), sorted; they have no workspace values. */
   emptyKeys: KeyId[];
+  /**
+   * Keys renamed in Retrans: source (old) id -> workspace (new) id, chains collapsed. Sync maps
+   * source ids through it; write-back (Task 8) turns each into remove-old + add-new, then clears it.
+   */
+  renames: Record<KeyId, KeyId>;
   lastExport?: ExportSettings;
 }
 
@@ -62,6 +67,12 @@ function stringTable(v: unknown): Record<string, Record<string, string>> {
     for (const [loc, s] of Object.entries(cells)) if (typeof s === "string") row[loc] = s;
     if (Object.keys(row).length) out[id] = row;
   }
+  return out;
+}
+
+function stringMap(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (isRecord(v)) for (const [k, s] of Object.entries(v)) if (typeof s === "string") out[k] = s;
   return out;
 }
 
@@ -98,6 +109,7 @@ export function parseWorkspaceMeta(text: string | null): WorkspaceMeta | null {
     removedInSource: stringList(raw.removedInSource),
     duplicates: stringList(raw.duplicates),
     emptyKeys: stringList(raw.emptyKeys),
+    renames: stringMap(raw.renames),
   };
   const src = raw.source;
   if (isRecord(src) && src.type === "ts" && typeof src.localesDir === "string") {

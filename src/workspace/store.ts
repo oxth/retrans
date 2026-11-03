@@ -75,7 +75,7 @@ export async function createWorkspace(
   fs: Fs, root: string, opts: { name: string; baseLocale: string; locales: string[]; group?: string },
 ): Promise<void> {
   const meta: WorkspaceMeta = {
-    retransWorkspace: 1, name: opts.name, drafts: {}, markers: {}, removedInSource: [], duplicates: [], emptyKeys: [],
+    retransWorkspace: 1, name: opts.name, drafts: {}, markers: {}, removedInSource: [], duplicates: [], emptyKeys: [], renames: {},
   };
   const group = opts.group ?? "common";
   const locales = [opts.baseLocale, ...opts.locales.filter((l) => l !== opts.baseLocale)];
