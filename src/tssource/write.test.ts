@@ -179,6 +179,24 @@ describe("applyTsEdits", () => {
     expect(cp.out).toBe(cp.before.replace(/.*success_description:\r\n.*\r\n/g, ""));
   });
 
+  it("remove with a locale drops only that language", () => {
+    const split = edit("button.tsx", [{ kind: "remove", key: "button_ok", locale: "en" }]);
+    expect(values(split.after).button_ok).toEqual({ th: "ตกลง" });
+    expect(split.out).toBe(split.before.replace(",\n  button_ok: 'OK'\n};", "\n};"));
+    const table = edit("common.ts", [
+      { kind: "remove", key: "email", locale: "en" },
+      { kind: "remove", key: "support_file_jpg_png", locale: "th" },
+      { kind: "set", key: "change_pw", locale: "th", value: "x" },
+      { kind: "remove", key: "change_pw", locale: "en" },
+    ]);
+    expect(values(table.after).email).toEqual({ th: "อีเมล" });
+    expect(values(table.after).support_file_jpg_png).toEqual({ en: "Support file JPG, PNG" });
+    expect(values(table.after).change_pw).toEqual({ th: "x" });
+    expect(table.out).toContain("  email: { th: 'อีเมล' },\n");
+    expect(table.out).toContain("  support_file_jpg_png: {\n    en: 'Support file JPG, PNG',\n  },\n");
+    expect(table.out).toContain("  change_pw: { th: 'x' },\n");
+  });
+
   it("CRLF preserved", () => {
     const { before, out, after } = edit("change-password.ts", [
       { kind: "set", key: "current_pw", locale: "en", value: "Now" },

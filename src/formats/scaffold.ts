@@ -11,7 +11,7 @@ export interface NewProjectInput {
   namespace?: string; // defaults to "common"
 }
 
-const MESSAGE_SCHEMA = "https://inlang.com/schema/inlang-message-format";
+export const MESSAGE_SCHEMA = "https://inlang.com/schema/inlang-message-format";
 const PLUGIN_URL = "https://cdn.jsdelivr.net/npm/@inlang/plugin-message-format@4/dist/index.js";
 
 function canonical(code: string): string {
@@ -49,15 +49,20 @@ async function writeNext(fs: Fs, root: string, base: string, locales: string[], 
   await fs.writeTextAtomic(joinPath(root, "next-i18next.config.js"), text);
 }
 
-async function writeParaglide(fs: Fs, root: string, base: string, locales: string[]): Promise<void> {
-  const settings =
+/** `project.inlang/settings.json` for a Paraglide project with the message-format plugin. */
+export function paraglideSettingsText(base: string, locales: string[]): string {
+  return (
     "{\n" +
     `  "$schema": "https://inlang.com/schema/project-settings",\n` +
     `  "baseLocale": ${JSON.stringify(base)},\n` +
     `  "locales": ${list(locales, (s) => JSON.stringify(s))},\n` +
     `  "modules": [${JSON.stringify(PLUGIN_URL)}],\n` +
-    `  "plugin.inlang.messageFormat": {\n    "pathPattern": "./messages/{locale}.json"\n  }\n}\n`;
-  await fs.writeTextAtomic(joinPath(root, "project.inlang/settings.json"), settings);
+    `  "plugin.inlang.messageFormat": {\n    "pathPattern": "./messages/{locale}.json"\n  }\n}\n`
+  );
+}
+
+async function writeParaglide(fs: Fs, root: string, base: string, locales: string[]): Promise<void> {
+  await fs.writeTextAtomic(joinPath(root, "project.inlang/settings.json"), paraglideSettingsText(base, locales));
   for (const l of locales) {
     await fs.writeTextAtomic(
       joinPath(root, "messages", `${l}.json`),

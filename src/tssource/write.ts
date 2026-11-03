@@ -11,7 +11,8 @@ import type { LocaleModule, Quote, TsObjectRef } from "./parse";
 export type TsEdit =
   | { kind: "set"; key: string; locale: string; value: string }
   | { kind: "add"; key: string; values: Record<string, string> }
-  | { kind: "remove"; key: string };
+  /** Without `locale`: the whole key. With `locale`: only that language's property (split) or pair field (table). */
+  | { kind: "remove"; key: string; locale?: string };
 
 /** Loose view of a Babel AST node; only the fields this module reads. */
 interface Node {
@@ -61,7 +62,8 @@ const hasValue = (v: string | undefined): v is string => v !== undefined && v !=
  *   `{ locale: value }` pair (table). Empty values and unknown languages are skipped.
  *   `add` on a key the file already has acts as a `set` per language.
  * - `remove` deletes the property (its whole line when it sits on its own line) from
- *   every object (split) or the pair (table).
+ *   every object (split) or the pair (table). With a `locale`, only that language's
+ *   object (split) or that field of the key's pair (table) loses it.
  */
 export function applyTsEdits(text: string, module: LocaleModule, edits: TsEdit[]): string {
   if (edits.length === 0) return text;
@@ -136,22 +138,30 @@ export function applyTsEdits(text: string, module: LocaleModule, edits: TsEdit[]
     if (pair && tables.length > 0) queueInsert(tables[0], `${keyText(key)}: ${pair}`);
   };
 
-  const remove = (key: string) => {
-    const targets = module.style === "split" ? module.objects : tables;
-    for (const ref of targets) {
-      for (const p of nodeOf(ref).properties as Node[]) {
-        if (propName(p) !== key) continue;
-        const s = removals.get(ref) ?? new Set<Node>();
-        s.add(p);
-        removals.set(ref, s);
-      }
+  const queueRemoval = (ref: TsObjectRef, name: string) => {
+    for (const p of nodeOf(ref).properties as Node[]) {
+      if (propName(p) !== name) continue;
+      const s = removals.get(ref) ?? new Set<Node>();
+      s.add(p);
+      removals.set(ref, s);
     }
+  };
+
+  const remove = (key: string, locale?: string) => {
+    if (locale !== undefined && module.style === "table") {
+      const pair = module.pairObjects?.[key];
+      if (pair) queueRemoval(pair, locale);
+      return;
+    }
+    const targets =
+      module.style === "split" ? module.objects.filter((o) => locale === undefined || o.locale === locale) : tables;
+    for (const ref of targets) queueRemoval(ref, key);
   };
 
   for (const e of edits) {
     if (e.kind === "set") set(e.key, e.locale, e.value);
     else if (e.kind === "add") add(e.key, e.values);
-    else remove(e.key);
+    else remove(e.key, e.locale);
   }
 
   const splices: Splice[] = [...literalSets.values()];

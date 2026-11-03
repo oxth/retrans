@@ -1,0 +1,401 @@
+/**
+ * Export engine (spec §8): turns a workspace session into a list of files, then writes them.
+ *
+ * Planning is read-only (it only reads the stored baseline); `writeExportPlan` does the writing.
+ * TypeScript write-back edits the source modules with minimal diffs (`applyTsEdits`); every other
+ * target is generated from the workspace values alone.
+ */
+import { isTranslated, type KeyId, keyId, parseKeyId } from "../core/model";
+import type { ProjectSession } from "../core/session";
+import { MESSAGE_SCHEMA, paraglideSettingsText } from "../formats/scaffold";
+import { type Fs, FsError, joinPath } from "../platform/fs";
+import { isMarker, type TsImport } from "../tssource/import";
+import type { LocaleModule } from "../tssource/parse";
+import { applyTsEdits, encodeTsString, i18nSnippet, newTableModule, type TsEdit } from "../tssource/write";
+import { BASELINE_PATH, type ExportTarget, jsonEqual, parseBaseline } from "./meta";
+
+export interface ExportPlan {
+  files: Array<{ path: string; text: string }>;
+  snippets: string[];
+  leftOutLocales: string[];
+  warnings: string[];
+  blocked?: { reason: "duplicates"; keys: string[] } | { reason: "conflicts" };
+}
+
+const emptyPlan = (): ExportPlan => ({ files: [], snippets: [], leftOutLocales: [], warnings: [] });
+
+/**
+ * `source` (from `importTsLocales` on the current files) is required for `ts-writeback` and
+ * `ts-copy`. Those are blocked with `conflicts` while the source differs from the stored
+ * baseline: the caller syncs first (`syncFromSource`), which brings the baseline up to date
+ * once there are no open conflicts.
+ */
+export async function planExport(session: ProjectSession, target: ExportTarget, source?: TsImport): Promise<ExportPlan> {
+  switch (target.kind) {
+    case "ts-writeback":
+    case "ts-copy":
+      if (!source) throw new Error("Writing TypeScript needs the current source files");
+      return planTsSource(session, target, source);
+    case "ts-modules":
+      return planTsModules(session, target.dir);
+    case "i18next-json":
+      return planI18next(session, target.dir, target.namespaces);
+    case "paraglide":
+      return planParaglide(session, target.dir);
+  }
+}
+
+/** Writes every file (parent folders created, atomic writes). Throws when the plan is blocked. */
+export async function writeExportPlan(fs: Fs, plan: ExportPlan): Promise<void> {
+  if (plan.blocked) {
+    throw new Error(
+      plan.blocked.reason === "duplicates"
+        ? `Export blocked by duplicate keys: ${plan.blocked.keys.join(", ")}`
+        : "Export blocked: the source files changed — sync and resolve conflicts first",
+    );
+  }
+  for (const f of plan.files) {
+    const slash = f.path.lastIndexOf("/");
+    if (slash > 0) await fs.mkdirp(f.path.slice(0, slash));
+    await fs.writeTextAtomic(f.path, f.text);
+  }
+}
+
+// ---- workspace reading -------------------------------------------------------------------
+
+type Cell = { text: string } | "complex" | undefined;
+
+/** A translated cell's text, "complex" for a non-text value, undefined when missing. */
+function cell(session: ProjectSession, id: KeyId, locale: string): Cell {
+  const v = session.value(id, locale);
+  if (!isTranslated(v)) return undefined;
+  return v!.kind === "text" ? { text: v!.text } : "complex";
+}
+
+/** Group -> its key ids, in key order. */
+function rowsByGroup(session: ProjectSession): Map<string, KeyId[]> {
+  const out = new Map<string, KeyId[]>();
+  for (const id of session.data.keyOrder) {
+    const { ns } = parseKeyId(id);
+    const list = out.get(ns) ?? [];
+    list.push(id);
+    out.set(ns, list);
+  }
+  return out;
+}
+
+/** Keys present in more than one group, sorted. */
+function duplicateKeys(session: ProjectSession): string[] {
+  const groups = new Map<string, Set<string>>();
+  for (const id of session.data.keyOrder) {
+    const { ns, key } = parseKeyId(id);
+    const s = groups.get(key) ?? new Set<string>();
+    s.add(ns);
+    groups.set(key, s);
+  }
+  return [...groups].filter(([, s]) => s.size > 1).map(([k]) => k).sort();
+}
+
+/**
+ * `{ key: { locale: text } }` for a group's TS output: translated text, else the source marker
+ * the cell still had (it stays a marker). Untranslated cells without a marker are left out.
+ */
+function tableValues(session: ProjectSession, ids: KeyId[], locales: string[]): Record<string, Record<string, string>> {
+  const markers = session.workspace?.markers ?? {};
+  const out: Record<string, Record<string, string>> = {};
+  for (const id of ids) {
+    const row: Record<string, string> = {};
+    for (const loc of locales) {
+      const c = cell(session, id, loc);
+      if (c && c !== "complex") row[loc] = c.text;
+      else if (c === undefined && markers[id]?.[loc] !== undefined) row[loc] = markers[id][loc];
+    }
+    out[parseKeyId(id).key] = row;
+  }
+  return out;
+}
+
+const json = (v: unknown) => JSON.stringify(v, null, 2) + "\n";
+
+function jsonValue(session: ProjectSession, id: KeyId, locale: string): unknown {
+  const v = session.value(id, locale);
+  if (!isTranslated(v)) return undefined;
+  return v!.kind === "text" ? v!.text : v!.raw;
+}
+
+// ---- TypeScript: write-back / copy -------------------------------------------------------
+
+async function readOrNull(fs: Fs, path: string): Promise<string | null> {
+  try {
+    return await fs.readText(path);
+  } catch (err) {
+    if (err instanceof FsError && err.code === "NotFound") return null;
+    throw err;
+  }
+}
+
+const baseName = (relPath: string) => relPath.slice(relPath.lastIndexOf("/") + 1).replace(/\.tsx?$/, "");
+
+async function planTsSource(
+  session: ProjectSession,
+  target: Extract<ExportTarget, { kind: "ts-writeback" | "ts-copy" }>,
+  source: TsImport,
+): Promise<ExportPlan> {
+  const meta = session.workspace;
+  if (!meta?.source) throw new Error("This workspace has no TypeScript source");
+  const root = session.data.root;
+  const stored = parseBaseline(await readOrNull(session.fs, joinPath(root, BASELINE_PATH)));
+  if (!stored || !jsonEqual(stored, source.baseline)) return { ...emptyPlan(), blocked: { reason: "conflicts" } };
+
+  const plan = emptyPlan();
+  const writeback = target.kind === "ts-writeback";
+  const outRoot = writeback ? root : target.dir;
+  const removed = new Set(meta.removedInSource);
+  const rows = rowsByGroup(session);
+  const sessionLocales = session.data.locales;
+
+  for (const { relPath, module, text } of source.modules.values()) {
+    const ids = (rows.get(module.group) ?? []).filter((id) => !removed.has(id));
+    const out = applyTsEdits(text, module, moduleEdits(session, module, ids, removed));
+    if (writeback && out === text) continue;
+    plan.files.push({ path: joinPath(outRoot, relPath), text: out });
+  }
+
+  for (const e of source.errors) {
+    plan.warnings.push(`Couldn't read ${e.relPath}; it was left unchanged.`);
+  }
+
+  // Groups created in Retrans: a new table-style file each, in the languages the source has.
+  const srcLocales = source.locales.filter((l) => sessionLocales.includes(l));
+  const known = new Set([...source.modules.values()].map((m) => m.module.group));
+  const erroredGroups = new Set(source.errors.map((e) => baseName(e.relPath)));
+  const newGroups: string[] = [];
+  for (const group of session.data.namespaces) {
+    if (known.has(group)) continue;
+    const ids = (rows.get(group) ?? []).filter((id) => !removed.has(id));
+    const values = tableValues(session, ids, srcLocales);
+    if (!Object.values(values).some((r) => Object.keys(r).length > 0)) continue;
+    const relPath = joinPath(meta.source.localesDir, `${group}.ts`);
+    const path = joinPath(outRoot, relPath);
+    if (erroredGroups.has(group) || (writeback && (await session.fs.exists(path)))) {
+      plan.warnings.push(`${relPath} already exists; group "${group}" was not written.`);
+      continue;
+    }
+    plan.files.push({ path, text: newTableModule(group, values, srcLocales) });
+    newGroups.push(group);
+  }
+  if (newGroups.length > 0) plan.snippets.push(i18nSnippet(newGroups, srcLocales));
+
+  plan.leftOutLocales = sessionLocales.filter((l) => !source.locales.includes(l));
+  if (plan.leftOutLocales.length > 0) plan.snippets.push(languageSnippet(plan.leftOutLocales, source.locales));
+  return plan;
+}
+
+/**
+ * The edits that make `module` match the workspace rows `ids` (its group, removed-in-source keys
+ * already dropped). At most one edit kind per key, and nothing for read-only values.
+ */
+function moduleEdits(session: ProjectSession, module: LocaleModule, ids: KeyId[], removed: Set<KeyId>): TsEdit[] {
+  const edits: TsEdit[] = [];
+  const { group } = module;
+  const sessionLocales = session.data.locales;
+  const entry = (key: string, loc: string) => module.entries.find((e) => e.key === key && e.locale === loc);
+  const isReal = (key: string, loc: string) => {
+    const e = entry(key, loc);
+    return e !== undefined && !e.undefinedLiteral && !isMarker(e.value, loc);
+  };
+  const hasReadOnly = (key: string) => module.readOnly.some((r) => r.key === key);
+  const readOnlyCell = (key: string, loc: string) =>
+    module.readOnly.some((r) => r.key === key && (module.style === "table" || r.locale === undefined || r.locale === loc));
+
+  const sourceKeys: string[] = [];
+  const addSourceKey = (k: string) => {
+    if (!sourceKeys.includes(k)) sourceKeys.push(k);
+  };
+  for (const e of module.entries) addSourceKey(e.key);
+  for (const r of module.readOnly) addSourceKey(r.key);
+  for (const k of Object.keys(module.pairObjects ?? {})) addSourceKey(k);
+
+  const wsKeys = new Set<string>();
+  for (const id of ids) {
+    const { key } = parseKeyId(id);
+    wsKeys.add(key);
+
+    if (!sourceKeys.includes(key)) {
+      const values: Record<string, string> = {};
+      for (const loc of module.locales) {
+        const c = cell(session, id, loc);
+        if (c && c !== "complex") values[loc] = c.text;
+      }
+      if (Object.keys(values).length > 0) edits.push({ kind: "add", key, values });
+      continue;
+    }
+    if (module.style === "table" && hasReadOnly(key)) continue;
+
+    const cellEdits: TsEdit[] = [];
+    let kept = 0; // languages that still have something in the file afterwards
+    for (const loc of module.locales) {
+      const e = entry(key, loc);
+      const present = e !== undefined && !e.undefinedLiteral;
+      if (!sessionLocales.includes(loc) || readOnlyCell(key, loc)) {
+        if (present || readOnlyCell(key, loc)) kept++;
+        continue;
+      }
+      const c = cell(session, id, loc);
+      if (c === "complex") {
+        if (present) kept++;
+      } else if (c) {
+        kept++;
+        if (!(isReal(key, loc) && e!.value === c.text)) cellEdits.push({ kind: "set", key, locale: loc, value: c.text });
+      } else if (present && isMarker(e!.value, loc)) {
+        kept++; // still missing: the marker stays
+      } else if (present) {
+        cellEdits.push({ kind: "remove", key, locale: loc });
+      }
+    }
+    const removesAll = kept === 0 && cellEdits.some((x) => x.kind === "remove") && !hasReadOnly(key);
+    if (removesAll) edits.push({ kind: "remove", key });
+    else edits.push(...cellEdits);
+  }
+
+  // Keys deleted in the workspace. A key with no real value in the source (only markers or
+  // `undefined`) has no workspace row to begin with, so it is never treated as deleted.
+  for (const key of sourceKeys) {
+    if (wsKeys.has(key) || removed.has(keyId(group, key)) || hasReadOnly(key)) continue;
+    if (module.locales.some((loc) => isReal(key, loc))) edits.push({ kind: "remove", key });
+  }
+  return edits;
+}
+
+/** How to add languages the TS sources don't have. */
+function languageSnippet(leftOut: string[], sourceLocales: string[]): string {
+  const all = [...sourceLocales, ...leftOut];
+  const names = leftOut.join(", ");
+  const field = (l: string) => `${tsKey(l)}?: string`;
+  const pairs = all.map((l) => `${tsKey(l)}: '…'`).join(", ");
+  return [
+    `// ${names}: not in the TypeScript sources, so not written. To add ${leftOut.length > 1 ? "them" : "it"}:`,
+    `// 1. Split-style files: one more export per language, e.g.`,
+    ...leftOut.map((l) => `//      export const button${l.toUpperCase()} = { button_save: '…', … };`),
+    `// 2. Table-style files: one more field per pair, e.g.`,
+    `//      email: { ${pairs} },`,
+    `// 3. mapLocale.ts: widen its types:`,
+    `//      table: Record<TKey, { ${all.map(field).join("; ")} }>,`,
+    `//      locale: ${all.map((l) => encodeTsString(l, "'")).join(" | ")},`,
+    `// 4. i18n.ts: add resources.<language>.translation with the …${leftOut[0].toUpperCase()} spreads.`,
+    `// Or export ${names} in another format (i18next JSON or Paraglide).`,
+    "",
+  ].join("\n");
+}
+
+const tsKey = (s: string) => (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(s) ? s : encodeTsString(s, "'"));
+
+// ---- TypeScript modules ------------------------------------------------------------------
+
+function mapLocaleModule(locales: string[]): string {
+  const fields = locales.map((l) => `${tsKey(l)}?: string`).join("; ");
+  return [
+    "/**",
+    " * Derives one language's flat translation map from a table of per-language pairs,",
+    " * keeping each translation key written once.",
+    " */",
+    "export function mapLocale<TKey extends string>(",
+    `  table: Record<TKey, { ${fields} }>,`,
+    `  locale: ${locales.map((l) => encodeTsString(l, "'")).join(" | ")},`,
+    "): Partial<Record<TKey, string>> {",
+    "  return Object.fromEntries(",
+    "    Object.entries(table)",
+    "      .map(([key, value]) => [key, (value as Record<string, string | undefined>)[locale]])",
+    "      .filter(([, value]) => value !== undefined),",
+    "  ) as Partial<Record<TKey, string>>;",
+    "}",
+    "",
+  ].join("\n");
+}
+
+function planTsModules(session: ProjectSession, dir: string): ExportPlan {
+  const plan = emptyPlan();
+  const locales = session.data.locales;
+  const rows = rowsByGroup(session);
+  const groups = session.data.namespaces.filter((g) => (rows.get(g) ?? []).length > 0);
+  for (const group of groups) {
+    const values = tableValues(session, rows.get(group)!, locales);
+    plan.files.push({ path: joinPath(dir, `${group}.ts`), text: newTableModule(group, values, locales) });
+  }
+  plan.files.push({ path: joinPath(dir, "mapLocale.ts"), text: mapLocaleModule(locales) });
+  plan.snippets.push(i18nSnippet(groups, locales));
+  return plan;
+}
+
+// ---- i18next JSON ------------------------------------------------------------------------
+
+function planI18next(session: ProjectSession, dir: string, namespaces: "per-group" | "single"): ExportPlan {
+  if (namespaces === "single") {
+    const dups = duplicateKeys(session);
+    if (dups.length > 0) return { ...emptyPlan(), blocked: { reason: "duplicates", keys: dups } };
+  }
+  const plan = emptyPlan();
+  const rows = rowsByGroup(session);
+  const flat = (ids: KeyId[], locale: string) => {
+    const out: Record<string, unknown> = {};
+    for (const id of ids) {
+      const v = jsonValue(session, id, locale);
+      if (v !== undefined) out[parseKeyId(id).key] = v;
+    }
+    return out;
+  };
+  for (const locale of session.data.locales) {
+    if (namespaces === "single") {
+      plan.files.push({ path: joinPath(dir, locale, "translation.json"), text: json(flat(session.data.keyOrder, locale)) });
+      continue;
+    }
+    for (const group of session.data.namespaces) {
+      plan.files.push({ path: joinPath(dir, locale, `${group}.json`), text: json(flat(rows.get(group) ?? [], locale)) });
+    }
+  }
+  return plan;
+}
+
+// ---- Paraglide ---------------------------------------------------------------------------
+
+/** i18next `{{name}}` → `{name}`; a format modifier (`{{x, fmt}}`, `{{- x}}`) is dropped. */
+function toParaglide(text: string, onModifier: () => void): string {
+  return text.replace(/\{\{([^{}]*)\}\}/g, (_, inner: string) => {
+    let name = inner.trim();
+    let modifier = false;
+    if (name.startsWith("-")) {
+      name = name.slice(1).trim();
+      modifier = true;
+    }
+    const comma = name.indexOf(",");
+    if (comma >= 0) {
+      name = name.slice(0, comma).trim();
+      modifier = true;
+    }
+    if (modifier) onModifier();
+    return `{${name}}`;
+  });
+}
+
+function planParaglide(session: ProjectSession, dir: string): ExportPlan {
+  const dups = duplicateKeys(session);
+  if (dups.length > 0) return { ...emptyPlan(), blocked: { reason: "duplicates", keys: dups } };
+  const plan = emptyPlan();
+  const warned = new Set<string>();
+  for (const locale of session.data.locales) {
+    const out: Record<string, unknown> = { $schema: MESSAGE_SCHEMA };
+    for (const id of session.data.keyOrder) {
+      const { key } = parseKeyId(id);
+      const v = session.value(id, locale);
+      if (!isTranslated(v)) continue;
+      out[key] = v!.kind === "text" ? toParaglide(v!.text, () => warned.add(key)) : v!.raw;
+    }
+    plan.files.push({ path: joinPath(dir, "messages", `${locale}.json`), text: json(out) });
+  }
+  plan.files.push({
+    path: joinPath(dir, "project.inlang/settings.json"),
+    text: paraglideSettingsText(session.data.baseLocale, session.data.locales),
+  });
+  plan.warnings = [...warned].map((k) => `Format modifier dropped in ${k}`);
+  return plan;
+}
