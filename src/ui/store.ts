@@ -1,10 +1,11 @@
 import { create } from "zustand";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
+import { exit } from "@tauri-apps/plugin-process";
 import { appDataDir } from "@tauri-apps/api/path";
 import type { DetectResult, ProjectOptions } from "../formats/adapter";
 import { ProjectSession } from "../core/session";
 import type { Conflict } from "../core/merge";
-import { clearJournal, type Journal, journalPath, readJournal, writeJournal } from "../core/recovery";
+import { type Journal, journalPath, readJournal } from "../core/recovery";
 import { parseState, STATE_PATH } from "../core/state-file";
 import { isRelevantChange, isSourceChange } from "../core/watch-filter";
 import { resolveSyncConflict, syncFromSource, type SyncResult } from "../workspace/sync";
@@ -13,6 +14,10 @@ import { type Fs, FsError, joinPath } from "../platform/fs";
 import { tauriFs } from "../platform/tauri-fs";
 import { addRecent } from "../platform/prefs";
 import { watchDir } from "../platform/watch";
+import { defaultTabUi, type TabUi } from "./tab-ui";
+import {
+  cancelJournal, dropJournal, newRuntime, runDeferredSync, scheduleJournal, teardown, type TabRuntime,
+} from "./tab-runtime";
 
 export interface PendingRecovery { journal: Journal; path: string }
 
@@ -26,8 +31,41 @@ export type UiConflict = Conflict & { origin?: "source" };
 export const SOURCE_MISSING_MESSAGE = "Source files not found — showing the saved workspace.";
 export const SOURCE_INVALID_MESSAGE = "The workspace's source folder setting is invalid — showing the saved workspace.";
 
+/** Everything about a tab that isn't on screen; the active tab's live copy is the flat AppState fields. */
+export interface TabSnapshot {
+  session: ProjectSession;
+  detected: DetectResult;
+  version: number;
+  conflicts: UiConflict[];
+  sourceMissing: boolean;
+  recovery: PendingRecovery | null;
+  error: string | null;
+  ui: TabUi;
+}
+
+/** One open project. `snap` is null for the active tab (its state is in the flat fields). */
+export interface Tab {
+  id: string;
+  root: string;
+  name: string;
+  /** Background work in flight (Translate missing runs, source syncs). */
+  busy: number;
+  snap: TabSnapshot | null;
+}
+
+/** A project folder path without trailing slashes: two spellings of one folder are one tab. */
+export const normRoot = (root: string) => root.replace(/[\\/]+$/, "") || root;
+
 export interface AppState {
   fs: Fs;
+  /** Open projects, in tab order. */
+  tabs: Tab[];
+  /** The tab on screen; null shows the start screen (other tabs may still be open). */
+  activeId: string | null;
+  /** The active tab's page, filters and hidden languages. */
+  ui: TabUi;
+  /** App-level message, e.g. tabs that couldn't be reopened. */
+  notice: string | null;
   session: ProjectSession | null;
   /** What detection found for the open project (before state.json overrides). */
   detected: DetectResult | null;
@@ -38,12 +76,30 @@ export interface AppState {
   recovery: PendingRecovery | null;
   error: string | null;
   /**
-   * Set while the Save / Discard / Cancel prompt is up; `then` is what happens afterwards
-   * ("proceed": the caller of confirmUnsaved goes on, e.g. installing an update).
+   * Set while the Save / Discard / Cancel prompt is up; `then` is what happens afterwards.
+   * "project": the active tab closes. "quit": the app quits; `tabs` are the tabs with unsaved
+   * changes. "proceed": the caller of confirmUnsaved goes on (e.g. installing an update).
    */
-  closePrompt: { then: "project" | "window" } | { then: "proceed"; resolve: (go: boolean) => void } | null;
+  closePrompt:
+    | { then: "project" }
+    | { then: "quit"; tabs: string[] }
+    | { then: "proceed"; tabs: string[]; resolve: (go: boolean) => void }
+    | null;
+  switchTab(id: string): void;
+  /** The "+" button: keeps every tab and shows the start screen. */
+  showStart(): void;
+  /** Activates the tab, then closes it like Close project (asking about unsaved changes). */
+  closeTab(id: string): Promise<void>;
+  /** Closes every tab without asking (quit after the prompt, tests). */
+  closeAllTabs(): Promise<void>;
+  setUi(p: Partial<TabUi>): void;
+  /** The tab holding `session`, or null when it is closed (or was never opened in a tab). */
+  tabIdOf(session: ProjectSession): string | null;
+  /** Updates a tab: the flat fields when it's active, else its snapshot. */
+  patchTab(id: string, p: Partial<TabSnapshot> | ((cur: TabSnapshot) => Partial<TabSnapshot>)): void;
+  markBusy(id: string, delta: 1 | -1): void;
   /**
-   * Opens `root`. `prebuilt`: a session already made in memory (an imported TypeScript project,
+   * Opens `root` in a new tab, or switches to the tab already showing it. `prebuilt`: a session already made in memory (an imported TypeScript project,
    * see ProjectSession.fromImport) instead of loading one from disk. A workspace with a source is
    * synced from it right after opening, and again whenever its source folder changes.
    */
@@ -56,10 +112,18 @@ export interface AppState {
    * Refuses (false, with an error) while conflicts are unresolved.
    */
   save(): Promise<boolean>;
+  /**
+   * `save` for any tab's session. `quiet`: auto-save, which skips a tab with unresolved
+   * conflicts without an error (it saves once they are resolved).
+   */
+  saveSession(session: ProjectSession, opts?: { quiet?: boolean }): Promise<boolean>;
+  /** "project": close the active tab. "window": quit the app (window close button, Cmd+Q). */
   requestClose(then: "project" | "window"): Promise<void>;
   answerClosePrompt(choice: "save" | "discard" | "cancel"): Promise<void>;
-  /** True when there's nothing unsaved, or after the user saved or discarded; false on Cancel. */
+  /** True when no tab has unsaved changes, or after the user saved or discarded them all; false on Cancel. */
   confirmUnsaved(): Promise<boolean>;
+  /** Ids of the tabs with unsaved changes, in tab order (LEGACY_TAB for a session set without a tab). */
+  dirtyTabs(): string[];
   resolveConflict(c: UiConflict, pick: "mine" | "theirs"): void;
   resolveAllConflicts(pick: "mine" | "theirs"): void;
   /**
@@ -70,65 +134,13 @@ export interface AppState {
   syncSource(session: ProjectSession): Promise<SyncResult>;
 }
 
-const JOURNAL_DELAY_MS = 1000;
-let journalTimer: ReturnType<typeof setTimeout> | null = null;
-let journalFile: string | null = null;
-/** The journal write in flight, if any; clearing waits for it so it can't land afterwards. */
-let journalWrite: Promise<void> | null = null;
+const runtimes = new Map<string, TabRuntime>();
+/** Opens in flight, by root, so opening a folder twice at once makes one tab. */
+const opening = new Map<string, Promise<void>>();
 
-function cancelJournal(): void {
-  if (journalTimer) clearTimeout(journalTimer);
-  journalTimer = null;
-}
-
-/** Cancels a scheduled write, waits for one in flight, then removes the journal. */
-async function dropJournal(fs: Fs, path: string): Promise<void> {
-  cancelJournal();
-  while (journalWrite) await journalWrite;
-  await clearJournal(fs, path);
-}
-
-/** Debounced, best-effort: errors go to the console only. */
-function scheduleJournal(session: ProjectSession, fs: Fs): void {
-  cancelJournal();
-  journalTimer = setTimeout(() => {
-    journalTimer = null;
-    const path = journalFile;
-    if (!path || useApp.getState().session !== session || !session.isDirty()) return;
-    const w: Promise<void> = writeJournal(fs, path, session.toJournal())
-      .catch((e) => console.warn("journal write failed", e))
-      .finally(() => {
-        if (journalWrite === w) journalWrite = null;
-      });
-    journalWrite = w;
-  }, JOURNAL_DELAY_MS);
-}
-
-/**
- * The sync from source held back while a recovery journal waits for Restore / Discard: syncing
- * first would merge the source against values the journal is about to replace (and mark the
- * source as merged), so a journaled edit could silently overwrite a source change.
- */
-let deferredSync: (() => void) | null = null;
-
-function runDeferredSync(): void {
-  const run = deferredSync;
-  deferredSync = null;
-  run?.();
-}
-
-let stopWatch: (() => Promise<void>) | null = null;
-let unsubscribe: (() => void) | null = null;
-
-async function teardown(): Promise<void> {
-  deferredSync = null;
-  cancelJournal();
-  journalFile = null;
-  unsubscribe?.();
-  unsubscribe = null;
-  const stop = stopWatch;
-  stopWatch = null;
-  if (stop) await stop().catch(() => {});
+function activeRuntime(): TabRuntime | undefined {
+  const id = useApp.getState().activeId;
+  return id ? runtimes.get(id) : undefined;
 }
 
 async function readState(fs: Fs, root: string): Promise<string | null> {
@@ -158,33 +170,66 @@ function withFileConflicts(session: ProjectSession, list: UiConflict[], more: Co
   return [...session.refreshConflicts([...list.filter((c) => c.origin !== "source"), ...more]), ...source];
 }
 
-let openGen = 0;
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export const useApp = create<AppState>((set, get) => ({
-  fs: tauriFs,
-  session: null,
-  detected: null,
-  version: 0,
-  conflicts: [],
-  sourceMissing: false,
-  recovery: null,
-  error: null,
-  closePrompt: null,
+type Flat = Pick<AppState, "session" | "detected" | "version" | "conflicts" | "sourceMissing" | "recovery" | "error" | "ui">;
+const emptyFlat = (): Flat => ({
+  session: null, detected: null, version: 0, conflicts: [], sourceMissing: false, recovery: null, error: null, ui: defaultTabUi(),
+});
+/** The active tab's live state as a snapshot. */
+const snapOf = (s: AppState): TabSnapshot => ({
+  session: s.session!, detected: s.detected!, version: s.version, conflicts: s.conflicts,
+  sourceMissing: s.sourceMissing, recovery: s.recovery, error: s.error, ui: s.ui,
+});
+/** The tab list with the active tab's live state stored in its snapshot. */
+const parked = (s: AppState): Tab[] =>
+  s.tabs.map((t) => (t.id === s.activeId && s.session ? { ...t, snap: snapOf(s) } : t));
 
-  async openProject(root, d, opts, prebuilt) {
+export const useApp = create<AppState>((set, get) => {
+  /** Updates whichever tab holds `session`; also the legacy case of a session set without a tab. */
+  const patchSession = (session: ProjectSession, p: Partial<TabSnapshot> | ((cur: TabSnapshot) => Partial<TabSnapshot>)) => {
+    const id = get().tabIdOf(session);
+    if (id) get().patchTab(id, p);
+    else if (get().session === session) set((s) => (typeof p === "function" ? p(snapOf(s)) : p));
+  };
+
+  /** Saves every dirty tab that can be saved (auto-save would anyway); prompts are only for the rest. */
+  const flushSaves = async () => {
+    const s = get();
+    const sessions = s.tabs.map((t) => (t.id === s.activeId ? s.session : t.snap?.session));
+    if (s.activeId === null && s.session) sessions.push(s.session);
+    for (const session of sessions) {
+      if (session?.isDirty()) await get().saveSession(session, { quiet: true }).catch(() => false);
+    }
+  };
+
+  /** Removes a tab and stops its machinery; the right (else left) neighbour becomes active. */
+  const removeTab = async (id: string) => {
+    const rt = runtimes.get(id);
+    runtimes.delete(id);
+    set((s) => {
+      const i = s.tabs.findIndex((t) => t.id === id);
+      if (i < 0) return {};
+      const rest = s.tabs.filter((t) => t.id !== id);
+      if (id !== s.activeId) return { tabs: rest };
+      const next = s.tabs[i + 1] ?? s.tabs[i - 1];
+      if (!next?.snap) return { tabs: rest, activeId: null, ...emptyFlat(), closePrompt: null };
+      return {
+        tabs: rest.map((t) => (t.id === next.id ? { ...t, snap: null } : t)),
+        activeId: next.id, ...next.snap, closePrompt: null,
+      };
+    });
+    if (rt) await teardown(rt);
+  };
+
+  const openTab = async (root: string, d: DetectResult, opts: ProjectOptions, prebuilt?: ProjectSession) => {
     const { fs } = get();
-    const my = ++openGen;
-    const stale = () => my !== openGen;
-    await teardown();
     const session = prebuilt ?? (await openSession(fs, root, d, opts));
-    if (stale()) return;
     if (!prebuilt && d.baseLocale === null) {
       const { state: st } = parseState(await readState(fs, root));
       if (st.project.baseLocale !== opts.baseLocale) {
         // Ask once (spec §7.1): remember the user's pick.
         await session.pinBaseLocale(opts.baseLocale).catch((e) => console.warn("could not record base language", e));
-        if (stale()) return;
       }
     }
     const name = root.split("/").filter(Boolean).pop() ?? root;
@@ -193,33 +238,41 @@ export const useApp = create<AppState>((set, get) => ({
     } catch {
       /* best effort */
     }
+    const rt = newRuntime();
     let recovery: PendingRecovery | null = null;
     try {
       const path = journalPath(await appDataDir(), root);
-      journalFile = path;
+      rt.journalFile = path;
       const journal = await readJournal(fs, path);
       if (journal) recovery = { journal, path };
     } catch {
       /* best effort */
     }
-    if (stale()) return;
 
-    unsubscribe = session.subscribe(() => {
-      set((s) => ({ version: s.version + 1 }));
-      if (session.isDirty()) scheduleJournal(session, fs);
+    const id = crypto.randomUUID();
+    runtimes.set(id, rt);
+    const alive = () => runtimes.get(id) === rt;
+    rt.unsubscribe = session.subscribe(() => {
+      get().patchTab(id, (cur) => ({ version: cur.version + 1 }));
+      if (session.isDirty()) scheduleJournal(rt, session, fs, () => get().tabIdOf(session) !== null);
     });
-    set({ session, detected: d, conflicts: [], sourceMissing: false, recovery, error: null, version: 0, closePrompt: null });
+    set((s) => ({
+      tabs: [...parked(s), { id, root, name, busy: 0, snap: null }],
+      activeId: id,
+      ...emptyFlat(),
+      session, detected: d, recovery, closePrompt: null,
+    }));
 
     const sourceDir = session.workspace?.source?.localesDir;
     const sync = () => {
-      get().syncSource(session).catch((e) => {
-        if (get().session === session) set({ error: `Sync from source failed: ${msg(e)}` });
-      });
+      get().syncSource(session).catch((e) => patchSession(session, { error: `Sync from source failed: ${msg(e)}` }));
     };
     if (sourceDir !== undefined) {
-      if (recovery) deferredSync = sync; // runs after Restore / Discard
+      if (recovery) rt.deferredSync = sync; // runs right after the journal is applied
       else sync();
     }
+    // Edits left by a crash (or a quit before auto-save ran) come back without asking.
+    if (recovery) await get().restoreRecovery();
 
     try {
       const scope = {
@@ -227,127 +280,247 @@ export const useApp = create<AppState>((set, get) => ({
         extraPaths: d.workspace ? [WORKSPACE_META_PATH, BASELINE_PATH] : undefined,
       };
       const stop = await watchDir(root, (paths) => {
-        if (get().session !== session) return;
+        if (!alive()) return;
         // While a recovery is pending the deferred sync covers source changes too.
-        if (sourceDir !== undefined && isSourceChange(paths, root, sourceDir) && !deferredSync) sync();
+        if (sourceDir !== undefined && isSourceChange(paths, root, sourceDir) && !rt.deferredSync) sync();
         if (!isRelevantChange(paths, scope)) return;
         session.reloadFromDisk().then(
           (c) => {
-            if (get().session === session) set((s) => ({ conflicts: withFileConflicts(session, s.conflicts, c) }));
+            if (alive()) get().patchTab(id, (cur) => ({ conflicts: withFileConflicts(session, cur.conflicts, c) }));
           },
           (e) => {
-            if (get().session === session) set({ error: `Reload failed: ${msg(e)}` });
+            if (alive()) get().patchTab(id, { error: `Reload failed: ${msg(e)}` });
           },
         );
       });
-      if (stale()) {
+      if (!alive()) {
         await stop().catch(() => {});
         return;
       }
-      stopWatch = stop;
+      rt.stopWatch = stop;
     } catch (e) {
-      if (!stale()) set({ error: `File watching unavailable: ${msg(e)}` });
+      if (alive()) get().patchTab(id, { error: `File watching unavailable: ${msg(e)}` });
     }
+  };
+
+  return {
+  fs: tauriFs,
+  tabs: [],
+  activeId: null,
+  notice: null,
+  ...emptyFlat(),
+  closePrompt: null,
+
+  switchTab(id) {
+    const s = get();
+    if (id === s.activeId) return;
+    const target = s.tabs.find((t) => t.id === id);
+    if (!target?.snap) return;
+    const tabs = parked(s).map((t) => (t.id === id ? { ...t, snap: null } : t));
+    set({ tabs, activeId: id, ...target.snap });
+  },
+
+  showStart() {
+    const s = get();
+    if (s.activeId === null) return;
+    set({ tabs: parked(s), activeId: null, ...emptyFlat() });
+  },
+
+  async closeTab(id) {
+    get().switchTab(id);
+    if (get().activeId === id) await get().requestClose("project");
+  },
+
+  async closeAllTabs() {
+    const ids = get().tabs.map((t) => t.id);
+    const rts = ids.map((id) => runtimes.get(id)).filter((r): r is TabRuntime => !!r);
+    for (const id of ids) runtimes.delete(id);
+    set({ tabs: [], activeId: null, ...emptyFlat(), closePrompt: null, notice: null });
+    for (const rt of rts) await teardown(rt);
+  },
+
+  setUi(p) {
+    set((s) => ({ ui: { ...s.ui, ...p } }));
+  },
+
+  tabIdOf(session) {
+    const s = get();
+    if (s.session === session) return s.activeId;
+    return s.tabs.find((t) => t.snap?.session === session)?.id ?? null;
+  },
+
+  patchTab(id, p) {
+    set((s) => {
+      if (id === s.activeId) return typeof p === "function" ? p(snapOf(s)) : p;
+      return {
+        tabs: s.tabs.map((t) =>
+          t.id === id && t.snap ? { ...t, snap: { ...t.snap, ...(typeof p === "function" ? p(t.snap) : p) } } : t,
+        ),
+      };
+    });
+  },
+
+  markBusy(id, delta) {
+    set((s) => ({ tabs: s.tabs.map((t) => (t.id === id ? { ...t, busy: Math.max(0, t.busy + delta) } : t)) }));
+  },
+
+  async openProject(root, d, opts, prebuilt) {
+    const key = normRoot(root);
+    const switchTo = () => {
+      const t = get().tabs.find((x) => x.root === key);
+      if (t) get().switchTab(t.id);
+      return !!t;
+    };
+    if (switchTo()) return;
+    const inflight = opening.get(key);
+    if (inflight) {
+      await inflight;
+      switchTo();
+      return;
+    }
+    const p = openTab(key, d, opts, prebuilt).finally(() => opening.delete(key));
+    opening.set(key, p);
+    await p;
   },
 
   async closeProject() {
-    openGen++;
-    await teardown();
-    set({ session: null, detected: null, conflicts: [], sourceMissing: false, recovery: null, error: null, version: 0, closePrompt: null });
+    const id = get().activeId;
+    if (id) await removeTab(id);
+    else set({ ...emptyFlat(), closePrompt: null }); // a session set without a tab
   },
 
   async restoreRecovery() {
     const { session, recovery, fs } = get();
     if (!session || !recovery) return;
+    const rt = activeRuntime();
     try {
       const c = session.applyJournal(recovery.journal);
       set((s) => ({ recovery: null, conflicts: withFileConflicts(session, s.conflicts, c) }));
     } catch (e) {
       set({ recovery: null, error: `Could not restore unsaved changes: ${msg(e)}` });
-      await dropJournal(fs, recovery.path).catch(() => {});
+      await dropJournal(rt, fs, recovery.path).catch(() => {});
     }
     // After the journal: an edit it restored that the source also changed is a source conflict.
-    if (get().session === session) runDeferredSync();
+    if (get().session === session) runDeferredSync(rt);
   },
 
   async discardRecovery() {
     const { fs, recovery } = get();
+    const rt = activeRuntime();
     try {
-      if (recovery) await dropJournal(fs, recovery.path);
+      if (recovery) await dropJournal(rt, fs, recovery.path);
     } finally {
       set({ recovery: null });
-      runDeferredSync();
+      runDeferredSync(rt);
     }
   },
 
   async save() {
-    const { session, fs } = get();
+    const { session } = get();
     if (!session) return false;
+    return get().saveSession(session);
+  },
+
+  async saveSession(session, opts) {
+    const { fs } = get();
     if (!session.isDirty()) return true;
-    if (get().conflicts.length > 0) {
-      set({ error: "Resolve conflicts before saving." });
+    const id = get().tabIdOf(session);
+    const conflicts = id && id !== get().activeId ? (get().tabs.find((t) => t.id === id)?.snap?.conflicts ?? []) : get().conflicts;
+    if (conflicts.length > 0) {
+      if (!opts?.quiet) patchSession(session, { error: "Resolve conflicts before saving." });
       return false;
     }
-    const current = () => get().session === session;
+    // The user may switch tabs while saving: results go to this session's tab.
+    const rt = id ? runtimes.get(id) : activeRuntime();
+    const current = () => get().session === session || get().tabIdOf(session) !== null;
     try {
       let r = await session.save();
       if (r.stale.length) {
         const c = await session.reloadFromDisk();
-        if (current()) set((s) => ({ conflicts: withFileConflicts(session, s.conflicts, c) }));
+        patchSession(session, (cur) => ({ conflicts: withFileConflicts(session, cur.conflicts, c) }));
         if (c.length) return false;
         r = await session.save();
         if (r.stale.length) {
-          if (current()) set({ error: "Files changed on disk again while saving. Try saving again." });
+          patchSession(session, { error: "Files changed on disk again while saving. Try saving again." });
           return false;
         }
       }
       if (!current()) return false;
       if (session.isDirty()) {
         if (session.stateMalformed) {
-          set({ error: `Review statuses weren't saved: ${STATE_PATH} can't be parsed. Fix it (e.g. resolve merge markers) and save again.` });
+          patchSession(session, {
+            error: `Review statuses weren't saved: ${STATE_PATH} can't be parsed. Fix it (e.g. resolve merge markers) and save again.`,
+          });
         }
         return false;
       }
-      if (journalFile) await dropJournal(fs, journalFile).catch((e) => console.warn("journal clear failed", e));
-      else cancelJournal();
+      if (rt?.journalFile) await dropJournal(rt, fs, rt.journalFile).catch((e) => console.warn("journal clear failed", e));
+      else cancelJournal(rt);
       return true;
     } catch (e) {
-      if (current()) set({ error: `Save failed: ${msg(e)}` });
+      patchSession(session, { error: `Save failed: ${msg(e)}` });
       return false;
     }
   },
 
   async requestClose(then) {
-    const { session } = get();
-    if (session?.isDirty()) {
-      set({ closePrompt: { then } });
+    if (then === "project") {
+      const { session } = get();
+      if (session?.isDirty()) await get().saveSession(session, { quiet: true }).catch(() => false);
+      if (session?.isDirty() && get().session === session) set({ closePrompt: { then: "project" } });
+      else if (get().session === session) await get().closeProject();
       return;
     }
-    await finishClose(then, get().closeProject);
+    await flushSaves();
+    const tabs = get().dirtyTabs();
+    if (tabs.length) set({ closePrompt: { then: "quit", tabs } });
+    else await quitApp();
   },
 
   async answerClosePrompt(choice) {
     const prompt = get().closePrompt;
     if (!prompt) return;
     set({ closePrompt: null });
+    if (prompt.then === "project") {
+      if (choice === "cancel") return;
+      // The tab asked about, even if another is clicked while this saves or drops its journal.
+      const id = get().activeId;
+      if (choice === "save") {
+        if (!(await get().save())) return;
+      } else await dropTabJournal(id ?? LEGACY_TAB);
+      if (id) await removeTab(id);
+      else await get().closeProject();
+      return;
+    }
     const proceed = prompt.then === "proceed" ? prompt.resolve : null;
     if (choice === "cancel") return proceed?.(false);
     if (choice === "save") {
-      if (!(await get().save())) return proceed?.(false);
+      // In tab order; the first tab that can't be saved stays on screen with its error.
+      for (const id of prompt.tabs) {
+        if (id !== LEGACY_TAB) get().switchTab(id);
+        if (!(await get().save())) return proceed?.(false);
+      }
     } else {
-      const { fs } = get();
-      if (journalFile) await dropJournal(fs, journalFile).catch((e) => console.warn("journal clear failed", e));
-      else cancelJournal();
+      for (const id of prompt.tabs) await dropTabJournal(id);
     }
     if (proceed) proceed(true);
-    else await finishClose(prompt.then as "project" | "window", get().closeProject);
+    else await quitApp();
   },
 
-  confirmUnsaved() {
-    if (!get().session?.isDirty()) return Promise.resolve(true);
+  async confirmUnsaved() {
+    await flushSaves();
+    const tabs = get().dirtyTabs();
+    if (!tabs.length) return true;
     const prev = get().closePrompt;
     if (prev?.then === "proceed") prev.resolve(false); // a newer request replaces an open one
-    return new Promise<boolean>((resolve) => set({ closePrompt: { then: "proceed", resolve } }));
+    return new Promise<boolean>((resolve) => set({ closePrompt: { then: "proceed", tabs, resolve } }));
+  },
+
+  dirtyTabs() {
+    const s = get();
+    const ids = s.tabs.filter((t) => (t.id === s.activeId ? s.session : t.snap?.session)?.isDirty()).map((t) => t.id);
+    if (s.activeId === null && s.session?.isDirty()) ids.push(LEGACY_TAB);
+    return ids;
   },
 
   resolveConflict(c, pick) {
@@ -357,15 +530,24 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   async syncSource(session) {
-    const r = await syncFromSource(session);
-    if (get().session !== session) return r;
+    const busyId = get().tabIdOf(session);
+    if (busyId) get().markBusy(busyId, 1);
+    let r: SyncResult;
+    try {
+      r = await syncFromSource(session);
+    } finally {
+      if (busyId) get().markBusy(busyId, -1);
+    }
     if (!r.sourceAvailable) {
-      set({ sourceMissing: true });
+      patchSession(session, { sourceMissing: true });
       return r;
     }
     // Each sync reports every open source conflict: they replace the previous ones.
     const fresh: UiConflict[] = r.conflicts.map((c) => ({ ...c, origin: "source" }));
-    set((s) => ({ sourceMissing: false, conflicts: [...s.conflicts.filter((c) => c.origin !== "source"), ...fresh] }));
+    patchSession(session, (cur) => ({
+      sourceMissing: false,
+      conflicts: [...cur.conflicts.filter((c) => c.origin !== "source"), ...fresh],
+    }));
     return r;
   },
 
@@ -374,7 +556,8 @@ export const useApp = create<AppState>((set, get) => ({
     if (session) session.batch(() => { for (const c of conflicts) resolveOne(session, c, pick); });
     set({ conflicts: [] });
   },
-}));
+  };
+});
 
 function resolveOne(session: ProjectSession, c: UiConflict, pick: "mine" | "theirs"): void {
   const { origin, ...conflict } = c;
@@ -397,9 +580,131 @@ async function openSession(fs: Fs, root: string, d: DetectResult, opts: ProjectO
   return ProjectSession.open(fs, root, d, effective);
 }
 
-async function finishClose(then: "project" | "window", closeProject: () => Promise<void>): Promise<void> {
-  if (then === "project") await closeProject();
-  else await getCurrentWindow().destroy();
+/** The unresolved conflicts of whichever tab holds `session`. */
+function conflictsOf(session: ProjectSession): UiConflict[] {
+  const st = useApp.getState();
+  if (st.session === session) return st.conflicts;
+  return st.tabs.find((t) => t.snap?.session === session)?.snap?.conflicts ?? [];
+}
+
+/** How long auto-save waits after the last edit in a tab. */
+export const AUTOSAVE_DELAY_MS = 1000;
+
+/**
+ * Saves every tab's edits to its files AUTOSAVE_DELAY_MS after its last change, background tabs
+ * included. A tab with unresolved conflicts waits until they are resolved. Returns a stop function.
+ */
+export function startAutosave(): () => void {
+  const timers = new Map<ProjectSession, ReturnType<typeof setTimeout>>();
+  const seen = new Map<ProjectSession, number>();
+  const saving = new Set<ProjectSession>();
+  /**
+   * Sessions a save left dirty with nothing edited since (e.g. state.json has merge markers):
+   * their unsaved state, so emits from the failed save itself don't retry it every second.
+   */
+  const stuck = new Map<ProjectSession, string>();
+  const fingerprint = (session: ProjectSession) => {
+    const { savedAt: _ignored, ...rest } = session.toJournal() as unknown as Record<string, unknown>;
+    return JSON.stringify(rest);
+  };
+  const schedule = (session: ProjectSession) => {
+    const prev = timers.get(session);
+    if (prev) clearTimeout(prev);
+    timers.set(
+      session,
+      setTimeout(() => {
+        timers.delete(session);
+        if (saving.has(session)) return schedule(session); // try again once the save in flight is done
+        if (!session.isDirty()) return;
+        const st = useApp.getState();
+        if (st.tabIdOf(session) === null && st.session !== session) return; // closed meanwhile
+        if (st.closePrompt) return schedule(session); // the user is deciding: Discard must mean discard
+        const before = fingerprint(session);
+        saving.add(session);
+        void st
+          .saveSession(session, { quiet: true })
+          .catch(() => {})
+          .finally(() => {
+            saving.delete(session);
+            if (!session.isDirty()) return void stuck.delete(session);
+            const after = fingerprint(session);
+            const blocked = conflictsOf(session).length > 0; // resolving them is an edit: saves then
+            if (after === before && !blocked) stuck.set(session, after);
+            else if (after !== before) {
+              stuck.delete(session);
+              schedule(session); // edited while saving
+            }
+          });
+      }, AUTOSAVE_DELAY_MS),
+    );
+  };
+  const check = () => {
+    const st = useApp.getState();
+    const open: Array<[ProjectSession, number]> = [];
+    if (st.session) open.push([st.session, st.version]);
+    for (const t of st.tabs) if (t.snap) open.push([t.snap.session, t.snap.version]);
+    for (const [session, version] of open) {
+      if (seen.get(session) === version) continue;
+      seen.set(session, version);
+      if (!session.isDirty()) {
+        stuck.delete(session);
+        continue;
+      }
+      if (saving.has(session)) continue; // decided when that save finishes
+      if (stuck.has(session) && stuck.get(session) === fingerprint(session)) continue; // nothing new to save
+      schedule(session);
+    }
+    for (const session of [...seen.keys()]) {
+      if (open.some(([s]) => s === session)) continue;
+      seen.delete(session);
+      stuck.delete(session);
+      const t = timers.get(session);
+      if (t) clearTimeout(t);
+      timers.delete(session);
+    }
+  };
+  check();
+  const unsub = useApp.subscribe(check);
+  return () => {
+    unsub();
+    for (const t of timers.values()) clearTimeout(t);
+    timers.clear();
+  };
+}
+
+/** The tab id used for a session set without a tab (tests, legacy callers). */
+export const LEGACY_TAB = "";
+
+/** Drops a tab's recovery journal (its unsaved changes were discarded). */
+async function dropTabJournal(id: string): Promise<void> {
+  const rt = id === LEGACY_TAB ? activeRuntime() : runtimes.get(id);
+  const { fs } = useApp.getState();
+  if (rt?.journalFile) await dropJournal(rt, fs, rt.journalFile).catch((e) => console.warn("journal clear failed", e));
+  else cancelJournal(rt);
+}
+
+/**
+ * Quits with an explicit exit code. Destroying the window instead would ask Rust to exit with no
+ * code, which the unsaved-changes guard (Cmd+Q) refuses while edits were discarded but not reverted.
+ */
+async function quitApp(): Promise<void> {
+  await exit(0);
+}
+
+/**
+ * Tells Rust whether any tab has unsaved changes, so Cmd+Q / the app menu's Quit is held back and
+ * routed to the quit prompt. Sends only changes. Returns a stop function.
+ */
+export function startUnsavedSync(): () => void {
+  let last = false;
+  const send = () => {
+    const on = useApp.getState().dirtyTabs().length > 0;
+    if (on === last) return;
+    last = on;
+    invoke("set_unsaved", { on }).catch(() => {});
+  };
+  send();
+  return useApp.subscribe(send);
 }
 
 /** Re-renders on every session change; returns the change counter. */

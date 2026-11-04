@@ -1,13 +1,21 @@
 use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, DebounceEventResult, Debouncer};
+use serde::Serialize;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 
-/// The single active folder watch; `watch_dir` replaces it, `unwatch_dir` drops it.
+/// Active folder watches by root path.
 #[derive(Default)]
-pub struct WatchState(Mutex<Option<Debouncer<RecommendedWatcher>>>);
+pub struct WatchState(Mutex<HashMap<String, Debouncer<RecommendedWatcher>>>);
+
+#[derive(Clone, Serialize)]
+struct FsChangedPayload {
+    root: String,
+    paths: Vec<String>,
+}
 
 /// Forward-slash form of a path, as the TS side expects.
 fn to_slash(p: &Path) -> String {
@@ -36,10 +44,21 @@ pub fn is_ignored_under(root: &str, path: &str) -> bool {
     rel.split('/').any(|seg| IGNORED_SEGMENTS.contains(&seg))
 }
 
+fn insert_watch(
+    map: &mut HashMap<String, Debouncer<RecommendedWatcher>>,
+    root: String,
+    debouncer: Debouncer<RecommendedWatcher>,
+) {
+    map.insert(root, debouncer);
+}
+
+fn remove_watch(map: &mut HashMap<String, Debouncer<RecommendedWatcher>>, root: &str) -> bool {
+    map.remove(root).is_some()
+}
+
 #[tauri::command]
 pub fn watch_dir(app: AppHandle, state: State<'_, WatchState>, root: String) -> Result<(), String> {
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-    *guard = None; // stop the previous watch first
     let watched = root.clone();
     let mut debouncer = new_debouncer(Duration::from_millis(300), move |res: DebounceEventResult| {
         let Ok(events) = res else { return };
@@ -51,7 +70,13 @@ pub fn watch_dir(app: AppHandle, state: State<'_, WatchState>, root: String) -> 
         paths.sort();
         paths.dedup();
         if !paths.is_empty() {
-            let _ = app.emit("fs-changed", paths);
+            let _ = app.emit(
+                "fs-changed",
+                FsChangedPayload {
+                    root: watched.clone(),
+                    paths,
+                },
+            );
         }
     })
     .map_err(|e| e.to_string())?;
@@ -59,19 +84,26 @@ pub fn watch_dir(app: AppHandle, state: State<'_, WatchState>, root: String) -> 
         .watcher()
         .watch(Path::new(&root), RecursiveMode::Recursive)
         .map_err(|e| e.to_string())?;
-    *guard = Some(debouncer);
+    insert_watch(&mut guard, root, debouncer);
     Ok(())
 }
 
 #[tauri::command]
-pub fn unwatch_dir(state: State<'_, WatchState>) -> Result<(), String> {
-    *state.0.lock().map_err(|e| e.to_string())? = None;
+pub fn unwatch_dir(state: State<'_, WatchState>, root: String) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    remove_watch(&mut guard, &root);
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{is_ignored, is_ignored_under};
+    use super::{insert_watch, is_ignored, is_ignored_under, remove_watch};
+    use notify_debouncer_mini::new_debouncer;
+    use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
+    use notify_debouncer_mini::{DebounceEventResult, Debouncer};
+    use std::collections::HashMap;
+    use std::time::Duration;
+    use tempfile::tempdir;
 
     #[test]
     fn ignores_node_modules_git_and_temp_files() {
@@ -98,5 +130,37 @@ mod tests {
         assert!(!is_ignored_under("/home/me/build/p", "/home/me/build/p/public/locales/en/common.json"));
         assert!(is_ignored_under("/p", "/p/node_modules/x/en.json"));
         assert!(is_ignored_under("/p", "/p/public/locales/en/common.json.retrans-tmp"));
+    }
+
+    fn test_debouncer(path: &std::path::Path) -> Debouncer<RecommendedWatcher> {
+        let mut debouncer = new_debouncer(Duration::from_millis(300), |_res: DebounceEventResult| {})
+            .expect("debouncer should build");
+        debouncer
+            .watcher()
+            .watch(path, RecursiveMode::Recursive)
+            .expect("watch should start");
+        debouncer
+    }
+
+    #[test]
+    fn watch_state_keeps_one_debouncer_per_root() {
+        let d1 = tempdir().expect("tempdir should build");
+        let d2 = tempdir().expect("tempdir should build");
+        let mut map: HashMap<String, Debouncer<RecommendedWatcher>> = HashMap::new();
+
+        insert_watch(&mut map, "/a".to_string(), test_debouncer(d1.path()));
+        assert_eq!(map.len(), 1);
+        insert_watch(&mut map, "/b".to_string(), test_debouncer(d2.path()));
+        assert_eq!(map.len(), 2);
+
+        insert_watch(&mut map, "/a".to_string(), test_debouncer(d1.path()));
+        assert_eq!(map.len(), 2);
+
+        assert!(remove_watch(&mut map, "/a"));
+        assert_eq!(map.len(), 1);
+        assert!(!remove_watch(&mut map, "/a"));
+        assert_eq!(map.len(), 1);
+        assert!(remove_watch(&mut map, "/b"));
+        assert!(map.is_empty());
     }
 }

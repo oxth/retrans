@@ -102,3 +102,35 @@ export async function setAutoCheckUpdates(on: boolean): Promise<void> {
   await s.set("autoCheckUpdates", on);
   await s.save();
 }
+
+/** The tabs open at quit (roots, in tab order) and the active one; reopened on launch. */
+export async function getOpenTabs(): Promise<{ roots: string[]; active: string | null }> {
+  const s = await getStore();
+  const roots = await s.get<unknown>("openTabs");
+  const active = await s.get<unknown>("activeTab");
+  return {
+    roots: Array.isArray(roots) ? roots.filter((r): r is string => typeof r === "string") : [],
+    active: typeof active === "string" ? active : null,
+  };
+}
+
+export async function setOpenTabs(roots: string[], active: string | null): Promise<void> {
+  const s = await getStore();
+  await s.set("openTabs", roots);
+  await s.set("activeTab", active);
+  await s.save();
+}
+
+/** What a launch shows: the projects open last time ("restore", the default) or the start screen. */
+export type LaunchMode = "restore" | "start";
+
+export async function getLaunchMode(): Promise<LaunchMode> {
+  const s = await getStore();
+  return (await s.get<string>("launchMode")) === "start" ? "start" : "restore";
+}
+
+export async function setLaunchMode(m: LaunchMode): Promise<void> {
+  const s = await getStore();
+  await s.set("launchMode", m);
+  await s.save();
+}

@@ -24,6 +24,7 @@ import { AppShell } from "./AppShell";
 import { useMt } from "./mt-store";
 import { useApp } from "./store";
 import { TranslateMissingDialog } from "./TranslateMissingDialog";
+import { resetRuns } from "./runs";
 
 const R = "/project";
 const FIX = resolve(__dirname, "../test/fixtures") + "/";
@@ -59,6 +60,7 @@ function mtOn(gen?: (r: { reqId: number; prompt: string }) => Promise<string>) {
 beforeEach(() => {
   prefs.clear();
   useMt.setState({ ...initialMt }, true);
+  resetRuns(); // these sessions have no tab, so their runs share one slot
 });
 afterEach(cleanup);
 

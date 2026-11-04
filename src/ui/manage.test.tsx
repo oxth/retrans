@@ -8,7 +8,9 @@ const prefs = vi.hoisted(() => new Map<string, unknown>());
 const win = vi.hoisted(() => ({
   handler: null as null | ((e: { preventDefault(): void }) => void),
   destroy: vi.fn(async () => {}),
+  exit: vi.fn(async () => {}),
 }));
+vi.mock("@tauri-apps/plugin-process", () => ({ exit: win.exit }));
 vi.mock("@tauri-apps/api/path", () => ({ appDataDir: vi.fn(async () => "/appdata") }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
@@ -50,6 +52,7 @@ import { detectProject } from "../formats/detect";
 import { MemoryFs, loadFixtureDir } from "../platform/memory-fs";
 import App from "../App";
 import { AppShell } from "./AppShell";
+import { UnsavedPrompt } from "./UnsavedPrompt";
 import { useApp } from "./store";
 
 const FIX = resolve(__dirname, "../test/fixtures") + "/";
@@ -74,7 +77,16 @@ async function open(fs: MemoryFs, shell: "shell" | "app" = "shell"): Promise<Pro
   useApp.setState({ fs });
   const d = (await detectProject(fs, "/project"))!;
   await useApp.getState().openProject("/project", d, { baseLocale: d.baseLocale ?? "en", localesPath: d.localesPath });
-  render(shell === "app" ? <App /> : <AppShell />);
+  render(
+    shell === "app" ? (
+      <App />
+    ) : (
+      <>
+        <AppShell />
+        <UnsavedPrompt />
+      </>
+    ),
+  );
   return useApp.getState().session!;
 }
 const nested = () => loadFixtureDir(FIX + "next-nested");
@@ -84,6 +96,7 @@ beforeEach(() => {
   prefs.clear();
   win.handler = null;
   win.destroy.mockClear();
+  win.exit.mockClear();
 });
 afterEach(() => {
   cleanup();
@@ -276,21 +289,35 @@ describe("journal and closing", () => {
     expect(await fs.exists(path)).toBe(false);
   });
 
-  it("Close project with unsaved changes asks Save / Discard / Cancel", async () => {
+  const blockSave = () =>
+    act(() => useApp.setState({ conflicts: [{ id: "common::title", locale: "th", mine: { kind: "text", text: "W" } }] }));
+
+  it("Close project right after an edit saves it and closes without asking", async () => {
     const fs = nested();
     const s = await open(fs);
     act(() => s.setText("common::title", "th", "Z"));
     await userEvent.click(screen.getByRole("button", { name: "Close project" }));
-    const dlg = screen.getByRole("dialog", { name: "Unsaved changes" });
+    await waitFor(() => expect(useApp.getState().session).toBeNull());
+    expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).toBeNull();
+    expect(JSON.parse(await fs.readText(TH)).title).toBe("Z");
+  });
+
+  it("Close project with changes that can't be saved asks Save / Discard / Cancel", async () => {
+    const fs = nested();
+    const s = await open(fs);
+    act(() => s.setText("common::title", "th", "Z"));
+    blockSave();
+    await userEvent.click(screen.getByRole("button", { name: "Close project" }));
+    const dlg = await screen.findByRole("dialog", { name: "Unsaved changes" });
     await userEvent.click(within(dlg).getByRole("button", { name: "Cancel" }));
     expect(useApp.getState().session).toBe(s);
     await userEvent.click(screen.getByRole("button", { name: "Close project" }));
-    await userEvent.click(within(screen.getByRole("dialog", { name: "Unsaved changes" })).getByRole("button", { name: "Discard" }));
+    await userEvent.click(within(await screen.findByRole("dialog", { name: "Unsaved changes" })).getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(useApp.getState().session).toBeNull());
     expect(JSON.parse(await fs.readText(TH)).title).toBe("สวัสดี");
   });
 
-  it("window close request is intercepted when dirty: Save then destroy", async () => {
+  it("window close right after an edit saves it and quits without asking", async () => {
     const fs = nested();
     const s = await open(fs, "app");
     await waitFor(() => expect(win.handler).not.toBeNull());
@@ -301,22 +328,24 @@ describe("journal and closing", () => {
     const e = { preventDefault: vi.fn() };
     win.handler!(e);
     expect(e.preventDefault).toHaveBeenCalled();
-    await userEvent.click(within(await screen.findByRole("dialog", { name: "Unsaved changes" })).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(win.destroy).toHaveBeenCalled());
+    await waitFor(() => expect(win.exit).toHaveBeenCalledWith(0));
+    expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).toBeNull();
     expect(JSON.parse(await fs.readText(TH)).title).toBe("W");
   });
 
-  it("window close: Discard clears the journal and destroys", async () => {
+  it("window close: Discard on changes that can't be saved clears the journal and quits", async () => {
     const fs = nested();
     const s = await open(fs, "app");
     await waitFor(() => expect(win.handler).not.toBeNull());
     const path = journalPath("/appdata", "/project");
     await fs.writeTextAtomic(path, "{}");
     act(() => s.setText("common::title", "th", "W"));
+    blockSave();
     win.handler!({ preventDefault() {} });
     await userEvent.click(within(await screen.findByRole("dialog", { name: "Unsaved changes" })).getByRole("button", { name: "Discard" }));
-    await waitFor(() => expect(win.destroy).toHaveBeenCalled());
+    await waitFor(() => expect(win.exit).toHaveBeenCalledWith(0));
     expect(await fs.exists(path)).toBe(false);
+    expect(JSON.parse(await fs.readText(TH)).title).toBe("สวัสดี");
   });
 });
 
@@ -381,7 +410,7 @@ describe("review fixes (UI)", () => {
     await useApp.getState().requestClose("window");
     fs.writes.length = 0;
     await act(() => useApp.getState().answerClosePrompt("save"));
-    expect(win.destroy).not.toHaveBeenCalled();
+    expect(win.exit).not.toHaveBeenCalled();
     expect(fs.writes).toEqual([]);
     expect(useApp.getState().error).toMatch(/Resolve conflicts before saving/);
   });

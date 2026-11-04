@@ -5,7 +5,7 @@
  * viewport. We also stub ResizeObserver (absent in jsdom). The tests then run against a real
  * ProjectSession over MemoryFs fixtures; only the layout primitives are faked.
  */
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { resolve } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -125,5 +125,29 @@ describe("views", () => {
     }
     expect(screen.getByRole("progressbar", { name: "th completion" })).toHaveAttribute("data-tone", "amber");
     expect(screen.getByRole("progressbar", { name: "en completion" })).toHaveAttribute("data-tone", "green");
+  });
+});
+
+describe("tabs", () => {
+  it("filters and page survive switching tabs", async () => {
+    await useApp.getState().closeAllTabs();
+    const fs = new MemoryFs({ ...loadFixtureDir(FIX + "next-nested", "/p1").snapshot(), ...loadFixtureDir(FIX + "next-nested", "/p2").snapshot() });
+    useApp.setState({ fs });
+    for (const root of ["/p1", "/p2"]) {
+      const d = (await detectProject(fs, root))!;
+      await useApp.getState().openProject(root, d, { baseLocale: d.baseLocale ?? "en", localesPath: d.localesPath });
+    }
+    function Active() {
+      const id = useApp((s) => s.activeId);
+      return <AppShell key={id ?? "start"} />;
+    }
+    render(<Active />);
+    const [id1, id2] = useApp.getState().tabs.map((t) => t.id);
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search" }), "nav");
+    act(() => useApp.getState().switchTab(id1));
+    expect(screen.getByRole("searchbox", { name: "Search" })).toHaveValue("");
+    act(() => useApp.getState().switchTab(id2));
+    expect(screen.getByRole("searchbox", { name: "Search" })).toHaveValue("nav");
+    await useApp.getState().closeAllTabs();
   });
 });

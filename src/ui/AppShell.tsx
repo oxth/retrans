@@ -12,16 +12,14 @@ import { LoadErrors } from "./LoadErrors";
 import { SharePage } from "./SharePage";
 import { SettingsPage } from "./SettingsPage";
 import { type Page, Sidebar } from "./Sidebar";
-import { UnsavedPrompt } from "./UnsavedPrompt";
 import { SOURCE_INVALID_MESSAGE, SOURCE_MISSING_MESSAGE, useApp, useSessionVersion } from "./store";
 import { keepKey } from "../workspace/actions";
 import { TableView } from "./TableView";
 import { activeModel, useMt } from "./mt-store";
-import { type FilterState, Toolbar } from "./Toolbar";
+import { Toolbar } from "./Toolbar";
 import { TranslateMissingDialog } from "./TranslateMissingDialog";
 import { useShallow } from "zustand/react/shallow";
 
-const INITIAL: FilterState = { search: "", ns: "all", missing: false, needsReview: false, machine: false, status: "all" };
 
 export function AppShell() {
   const version = useSessionVersion();
@@ -29,9 +27,13 @@ export function AppShell() {
   const error = useApp((s) => s.error);
   const sourceMissing = useApp((s) => s.sourceMissing);
   const requestClose = useApp((s) => s.requestClose);
-  const [page, setPage] = useState<Page>("translations");
-  const [filter, setFilter] = useState<FilterState>(INITIAL);
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // Page, filters and hidden languages belong to the tab: they survive switching tabs.
+  const page = useApp((s) => s.ui.page);
+  const filter = useApp((s) => s.ui.filter);
+  const hiddenList = useApp((s) => s.ui.hidden);
+  const hidden = useMemo(() => new Set(hiddenList), [hiddenList]);
+  const setUi = useApp((s) => s.setUi);
+  const setPage = useCallback((p: Page) => setUi({ page: p }), [setUi]);
   const [viewMode, setMode] = useState<"list" | "table">("list");
   const root = session?.data.root;
   const [dialog, setDialog] = useState<{ kind: "add" | "translate" | "export" } | { kind: "rename" | "delete"; row: Row } | null>(null);
@@ -137,11 +139,7 @@ export function AppShell() {
 
   if (!session) return null;
   const toggleLocale = (l: string) =>
-    setHidden((h) => {
-      const n = new Set(h);
-      if (!n.delete(l)) n.add(l);
-      return n;
-    });
+    setUi({ hidden: hiddenList.includes(l) ? hiddenList.filter((x) => x !== l) : [...hiddenList, l] });
 
   return (
     <div className="flex min-h-0 flex-1 bg-white text-gray-900">
@@ -181,7 +179,7 @@ export function AppShell() {
           <>
             <Toolbar
               filter={filter}
-              onFilter={(p) => setFilter((f) => ({ ...f, ...p }))}
+              onFilter={(p) => setUi({ filter: { ...useApp.getState().ui.filter, ...p } })}
               missingCount={missingCount}
               namespaces={session.data.namespaces}
               showNamespaces={session.data.format === "next-i18next"}
@@ -216,7 +214,6 @@ export function AppShell() {
       {dialog?.kind === "delete" && <DeleteKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
       {dialog?.kind === "export" && <ExportDialog session={session} onClose={() => setDialog(null)} />}
       <ConflictDialog />
-      <UnsavedPrompt />
     </div>
   );
 }
