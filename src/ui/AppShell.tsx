@@ -3,7 +3,8 @@ import type { KeyId } from "../core/model";
 import { buildRows, nextMissing, type Row } from "../core/rows";
 import { getViewMode, setViewMode } from "../platform/prefs";
 import type { EditActions } from "./Cell";
-import { ListView } from "./ListView";
+import { ListView, type RowAction } from "./ListView";
+import { LinkDialog, SetCodeKeyDialog } from "./FigmaKeyDialogs";
 import { AddKeyDialog, DeleteKeyDialog, RenameKeyDialog } from "./KeyDialogs";
 import { ConflictDialog } from "./ConflictDialog";
 import { ExportDialog } from "./ExportDialog";
@@ -36,7 +37,9 @@ export function AppShell() {
   const setPage = useCallback((p: Page) => setUi({ page: p }), [setUi]);
   const [viewMode, setMode] = useState<"list" | "table">("list");
   const root = session?.data.root;
-  const [dialog, setDialog] = useState<{ kind: "add" | "translate" | "export" } | { kind: "rename" | "delete"; row: Row } | null>(null);
+  const [dialog, setDialog] = useState<
+    { kind: "add" | "translate" | "export" } | { kind: "rename" | "delete" | "code-key" | "link"; row: Row } | null
+  >(null);
   const hasModel = useMt(useShallow((s) => activeModel(s))) !== null;
   const dirty = !!session && (version >= 0 ? session.isDirty() : false);
 
@@ -130,7 +133,7 @@ export function AppShell() {
     [],
   );
 
-  const onRowAction = useCallback((row: Row, kind: "rename" | "delete" | "keep") => {
+  const onRowAction = useCallback((row: Row, kind: RowAction) => {
     if (kind === "keep") {
       const s = live.current.session;
       if (s) keepKey(s, row.id);
@@ -213,6 +216,8 @@ export function AppShell() {
       {dialog?.kind === "rename" && <RenameKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
       {dialog?.kind === "delete" && <DeleteKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
       {dialog?.kind === "export" && <ExportDialog session={session} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "code-key" && <SetCodeKeyDialog session={session} row={dialog.row.id} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "link" && <LinkDialog session={session} row={dialog.row.id} onClose={() => setDialog(null)} />}
       <ConflictDialog />
     </div>
   );

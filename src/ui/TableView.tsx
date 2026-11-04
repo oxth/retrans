@@ -2,7 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useRef } from "react";
 import { Cell } from "./Cell";
 import { RowMenu } from "./RowMenu";
-import { isRemovedInSource, type ViewProps } from "./ListView";
+import { isRemovedInSource, type ViewProps, isFigmaRow, NoCodeKeyBadge } from "./ListView";
 import { RowWarnings } from "./Warnings";
 import { duplicateGroups } from "../workspace/actions";
 
@@ -53,6 +53,7 @@ export function TableView({ session, rows, locales, version, editing, actions, o
             {virt.getVirtualItems().map((vi) => {
               const row = rows[vi.index];
               const removed = isRemovedInSource(session, row.id);
+              const figmaRow = isFigmaRow(session, row.id);
               return (
                 <div
                   key={vi.key}
@@ -71,11 +72,14 @@ export function TableView({ session, rows, locales, version, editing, actions, o
                           onRename={() => onRowAction(row, "rename")}
                           onDelete={() => onRowAction(row, "delete")}
                           onKeep={removed ? () => onRowAction(row, "keep") : undefined}
+                          onCodeKey={figmaRow ? () => onRowAction(row, "code-key") : undefined}
+                          onLink={figmaRow ? () => onRowAction(row, "link") : undefined}
                         />
                       )}
                     </div>
                     {row.ns && <div className="text-[10px] text-gray-400">{row.ns}</div>}
                     <div className="text-[10px]">
+                      {figmaRow && <NoCodeKeyBadge />}
                       <RowWarnings duplicateOf={duplicateGroups(session, row.id)} removedInSource={removed} />
                     </div>
                   </div>

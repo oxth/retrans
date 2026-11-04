@@ -4,8 +4,11 @@ import { useState } from "react";
  * Per-row actions. `onKeep` is set for a workspace key removed in source: Delete is then
  * labelled "Delete key" and Keep clears the mark (so write-back writes the key again).
  */
-export function RowMenu({ name, onRename, onDelete, onKeep }: {
+export function RowMenu({ name, onRename, onDelete, onKeep, onCodeKey, onLink }: {
   name: string; onRename: () => void; onDelete: () => void; onKeep?: () => void;
+  /** Set for a Figma string with no code key yet. */
+  onCodeKey?: () => void;
+  onLink?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const item = "block w-full px-3 py-1 text-left text-sm hover:bg-gray-100";
@@ -26,6 +29,8 @@ export function RowMenu({ name, onRename, onDelete, onKeep }: {
       {open && (
         <div role="menu" className="absolute left-0 z-30 mt-1 w-max min-w-28 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
           <button role="menuitem" className={item} onClick={() => { setOpen(false); onRename(); }}>Rename</button>
+          {onCodeKey && <button role="menuitem" className={item} onClick={() => { setOpen(false); onCodeKey(); }}>Set code key…</button>}
+          {onLink && <button role="menuitem" className={item} onClick={() => { setOpen(false); onLink(); }}>Link to code key…</button>}
           {onKeep && <button role="menuitem" className={item} onClick={() => { setOpen(false); onKeep(); }}>Keep (will be written back to your code)</button>}
           <button role="menuitem" className={`${item} text-red-600`} onClick={() => { setOpen(false); onDelete(); }}>
             {onKeep ? "Delete key" : "Delete"}
