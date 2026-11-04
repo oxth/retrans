@@ -1,0 +1,38 @@
+{
+  "เลือกไฮไลต์เซนเซอร์": {
+    "$type": "string",
+    "$value": "เลือกไฮไลต์เซนเซอร์",
+    "$extensions": {
+      "com.figma.variableId": "VariableID:3058:129318",
+      "com.figma.scopes": [
+        "ALL_SCOPES"
+      ],
+      "com.figma.type": "string"
+    }
+  },
+  "ข้อมูลการรับประกัน": {
+    "$type": "string",
+    "$value": "ข้อมูลการรับประกัน",
+    "$extensions": {
+      "com.figma.variableId": "VariableID:3084:181892",
+      "com.figma.scopes": [
+        "ALL_SCOPES"
+      ],
+      "com.figma.type": "string"
+    }
+  },
+  "สวัสดี คุณ": {
+    "$type": "string",
+    "$value": "สวัสดี คุณ {{name}} ยินดีต้อนรับสู่ [Product Name] ขอบคุณสำหรับการลงทะเบียนกับเรา เพื่อความปลอดภัยในการใช้งานบัญชีของคุณ กรุณากดยืนยันตัวตนในขั้นตอนสุดท้ายนี้ เมื่อคุณกดยืนยันแล้ว จะสามารถเริ่มใช้งานระบบได้อย่างสมบูรณ์ กรุณากดปุ่มยืนยันบัญชีด้านล่าง เพื่อยืนยันตัวตนของคุณ",
+    "$extensions": {
+      "com.figma.variableId": "VariableID:3106:435788",
+      "com.figma.scopes": [
+        "ALL_SCOPES"
+      ],
+      "com.figma.type": "string"
+    }
+  },
+  "$extensions": {
+    "com.figma.modeName": "TH"
+  }
+}
