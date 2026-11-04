@@ -229,6 +229,8 @@ impl Engine {
         if slot.as_ref().is_none_or(|l| l.path != want) {
             self.set_slot(slot, None); // free the old model before loading the new one
             let model = load_model(&want)?;
+            // After the first load, so it runs before llama.cpp's own exit-time cleanup.
+            register_exit_hook();
             self.set_slot(slot, Some(Loaded { path: want, model, last_used: Instant::now() }));
         }
         let model = &slot.as_ref().expect("model loaded above").model;
@@ -318,6 +320,50 @@ impl Engine {
         {
             self.set_slot(&mut guard, None);
         }
+    }
+}
+
+/// The engine whose model must be released before the process exits.
+static EXIT_ENGINE: OnceLock<Arc<Engine>> = OnceLock::new();
+
+/// Makes sure `engine`'s model is released before the process exits.
+///
+/// llama.cpp frees its Metal device in a C++ static destructor and asserts that every GPU
+/// buffer was released first; a model still loaded at exit (the app's engine is never dropped)
+/// made quitting abort ("quit unexpectedly"). The release runs from an `atexit` handler that is
+/// registered after the first model load: exit handlers run in reverse order of registration,
+/// and llama.cpp registers its destructor during that load, so ours always runs first.
+pub fn unload_at_exit(engine: Arc<Engine>) {
+    let _ = EXIT_ENGINE.set(engine);
+}
+
+fn register_exit_hook() {
+    static REGISTERED: std::sync::Once = std::sync::Once::new();
+    unsafe extern "C" {
+        fn atexit(cb: extern "C" fn()) -> std::ffi::c_int;
+    }
+    REGISTERED.call_once(|| {
+        // SAFETY: registering a plain `extern "C"` function with the C runtime.
+        unsafe {
+            atexit(unload_before_exit);
+        }
+    });
+}
+
+extern "C" fn unload_before_exit() {
+    let Some(engine) = EXIT_ENGINE.get() else { return };
+    engine.cancel_running();
+    // A generation stops at its next token once cancelled; don't hang the exit if it doesn't.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Ok(mut guard) = engine.loaded.try_lock() {
+            engine.set_slot(&mut guard, None);
+            return;
+        }
+        if Instant::now() > deadline {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -473,6 +519,44 @@ mod tests {
             })
             .expect("generates");
         assert!(!out.is_empty(), "empty output");
+    }
+
+    /// Regression: quitting while a model is loaded aborted the app ("quit unexpectedly").
+    /// llama.cpp's Metal device is freed by a C++ static destructor at exit, which asserts that
+    /// every GPU buffer was already released. The child process loads a model into an engine
+    /// that is never dropped (as the app's managed state) and exits; it must exit cleanly.
+    /// RETRANS_SMOKE_MODEL=/path/stories260K-f32.gguf cargo test exit_with_loaded_model -- --ignored
+    #[test]
+    #[ignore]
+    fn exit_with_loaded_model_does_not_abort() {
+        let model = std::env::var("RETRANS_SMOKE_MODEL").expect("set RETRANS_SMOKE_MODEL");
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["mt::engine::tests::exit_child_loads_model_then_exits", "--ignored", "--exact", "--nocapture"])
+            .env("RETRANS_EXIT_CHILD", &model)
+            .status()
+            .expect("spawn child");
+        assert!(status.success(), "child exited with {status:?} (abort at exit?)");
+    }
+
+    /// Child half of `exit_with_loaded_model_does_not_abort`; does nothing unless spawned by it.
+    #[test]
+    #[ignore]
+    fn exit_child_loads_model_then_exits() {
+        let Ok(model) = std::env::var("RETRANS_EXIT_CHILD") else { return };
+        let engine = Arc::new(Engine::default());
+        unload_at_exit(engine.clone());
+        engine
+            .generate(&GenerateRequest {
+                req_id: 1,
+                model_path: model,
+                prompt: "Once upon a time".into(),
+                add_bos: true,
+                max_tokens: 4,
+                stop: vec![],
+            })
+            .expect("generates");
+        std::mem::forget(engine); // like the app: the engine lives until the process ends
+        std::process::exit(0);
     }
 
     /// Needs a real model: RETRANS_TEST_MODEL=/path/translategemma-4b-it-Q4_K_M.gguf cargo test -- --ignored

@@ -19,6 +19,7 @@ pub fn run() {
         .setup(|app| {
             use tauri::Manager;
             let engine = app.state::<Arc<mt::engine::Engine>>().inner().clone();
+            mt::engine::unload_at_exit(engine.clone());
             mt::engine::spawn_idle_unloader(engine);
             Ok(())
         })
