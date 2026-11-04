@@ -12,7 +12,6 @@ import { LoadErrors } from "./LoadErrors";
 import { SharePage } from "./SharePage";
 import { SettingsPage } from "./SettingsPage";
 import { type Page, Sidebar } from "./Sidebar";
-import { UnsavedPrompt } from "./UnsavedPrompt";
 import { SOURCE_INVALID_MESSAGE, SOURCE_MISSING_MESSAGE, useApp, useSessionVersion } from "./store";
 import { keepKey } from "../workspace/actions";
 import { TableView } from "./TableView";
@@ -215,7 +214,6 @@ export function AppShell() {
       {dialog?.kind === "delete" && <DeleteKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
       {dialog?.kind === "export" && <ExportDialog session={session} onClose={() => setDialog(null)} />}
       <ConflictDialog />
-      <UnsavedPrompt />
     </div>
   );
 }

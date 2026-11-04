@@ -1,11 +1,13 @@
 import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { StartScreen } from "./ui/StartScreen";
 import { AppShell } from "./ui/AppShell";
-import { useApp } from "./ui/store";
+import { startUnsavedSync, useApp } from "./ui/store";
 import { useMt } from "./ui/mt-store";
 import { UpdateBanner } from "./ui/UpdateBanner";
 import { TabBar } from "./ui/TabBar";
+import { UnsavedPrompt } from "./ui/UnsavedPrompt";
 
 function RecoveryPrompt() {
   const { recovery, restoreRecovery, discardRecovery } = useApp();
@@ -24,36 +26,39 @@ function RecoveryPrompt() {
   );
 }
 
-/** Intercepts the window's close request while the open project has unsaved changes. */
-function useCloseGuard() {
+/**
+ * Routes every way of quitting through one prompt listing the tabs with unsaved changes: the
+ * window's close button (intercepted here) and Cmd+Q / the app menu's Quit (Rust holds the exit
+ * back while `set_unsaved` says so, and emits "quit-requested").
+ */
+function useQuitGuard() {
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    const stopSync = startUnsavedSync();
+    const unlisteners: Array<() => void> = [];
     let gone = false;
+    const keep = (u: () => void) => (gone ? u() : unlisteners.push(u));
     try {
       getCurrentWindow()
         .onCloseRequested((e) => {
-          const { session, requestClose } = useApp.getState();
-          if (session?.isDirty()) {
-            e.preventDefault();
-            void requestClose("window");
-          }
+          if (useApp.getState().dirtyTabs().length === 0) return;
+          e.preventDefault();
+          void useApp.getState().requestClose("window");
         })
-        .then(
-          (u) => (gone ? u() : (unlisten = u)),
-          () => {},
-        );
+        .then(keep, () => {});
+      listen("quit-requested", () => void useApp.getState().requestClose("window")).then(keep, () => {});
     } catch {
       /* not running inside Tauri */
     }
     return () => {
       gone = true;
-      unlisten?.();
+      stopSync();
+      for (const u of unlisteners) u();
     };
   }, []);
 }
 
 export default function App() {
-  useCloseGuard();
+  useQuitGuard();
   useEffect(() => {
     void useMt.getState().init();
   }, []);
@@ -74,6 +79,8 @@ export default function App() {
       ) : (
         <StartScreen />
       )}
+      {/* Here, not in a tab: quitting from the start screen can still list other tabs. */}
+      <UnsavedPrompt />
     </div>
   );
 }

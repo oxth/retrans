@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
+import { exit } from "@tauri-apps/plugin-process";
 import { appDataDir } from "@tauri-apps/api/path";
 import type { DetectResult, ProjectOptions } from "../formats/adapter";
 import { ProjectSession } from "../core/session";
@@ -75,10 +76,15 @@ export interface AppState {
   recovery: PendingRecovery | null;
   error: string | null;
   /**
-   * Set while the Save / Discard / Cancel prompt is up; `then` is what happens afterwards
-   * ("proceed": the caller of confirmUnsaved goes on, e.g. installing an update).
+   * Set while the Save / Discard / Cancel prompt is up; `then` is what happens afterwards.
+   * "project": the active tab closes. "quit": the app quits; `tabs` are the tabs with unsaved
+   * changes. "proceed": the caller of confirmUnsaved goes on (e.g. installing an update).
    */
-  closePrompt: { then: "project" | "window" } | { then: "proceed"; resolve: (go: boolean) => void } | null;
+  closePrompt:
+    | { then: "project" }
+    | { then: "quit"; tabs: string[] }
+    | { then: "proceed"; tabs: string[]; resolve: (go: boolean) => void }
+    | null;
   switchTab(id: string): void;
   /** The "+" button: keeps every tab and shows the start screen. */
   showStart(): void;
@@ -106,10 +112,13 @@ export interface AppState {
    * Refuses (false, with an error) while conflicts are unresolved.
    */
   save(): Promise<boolean>;
+  /** "project": close the active tab. "window": quit the app (window close button, Cmd+Q). */
   requestClose(then: "project" | "window"): Promise<void>;
   answerClosePrompt(choice: "save" | "discard" | "cancel"): Promise<void>;
-  /** True when there's nothing unsaved, or after the user saved or discarded; false on Cancel. */
+  /** True when no tab has unsaved changes, or after the user saved or discarded them all; false on Cancel. */
   confirmUnsaved(): Promise<boolean>;
+  /** Ids of the tabs with unsaved changes, in tab order (LEGACY_TAB for a session set without a tab). */
+  dirtyTabs(): string[];
   resolveConflict(c: UiConflict, pick: "mine" | "theirs"): void;
   resolveAllConflicts(pick: "mine" | "theirs"): void;
   /**
@@ -431,37 +440,56 @@ export const useApp = create<AppState>((set, get) => {
   },
 
   async requestClose(then) {
-    const { session } = get();
-    if (session?.isDirty()) {
-      set({ closePrompt: { then } });
+    if (then === "project") {
+      if (get().session?.isDirty()) set({ closePrompt: { then: "project" } });
+      else await get().closeProject();
       return;
     }
-    await finishClose(then, get().closeProject);
+    const tabs = get().dirtyTabs();
+    if (tabs.length) set({ closePrompt: { then: "quit", tabs } });
+    else await quitApp();
   },
 
   async answerClosePrompt(choice) {
     const prompt = get().closePrompt;
     if (!prompt) return;
     set({ closePrompt: null });
+    if (prompt.then === "project") {
+      if (choice === "cancel") return;
+      if (choice === "save") {
+        if (!(await get().save())) return;
+      } else await dropTabJournal(get().activeId ?? LEGACY_TAB);
+      await get().closeProject();
+      return;
+    }
     const proceed = prompt.then === "proceed" ? prompt.resolve : null;
     if (choice === "cancel") return proceed?.(false);
     if (choice === "save") {
-      if (!(await get().save())) return proceed?.(false);
+      // In tab order; the first tab that can't be saved stays on screen with its error.
+      for (const id of prompt.tabs) {
+        if (id !== LEGACY_TAB) get().switchTab(id);
+        if (!(await get().save())) return proceed?.(false);
+      }
     } else {
-      const { fs } = get();
-      const rt = activeRuntime();
-      if (rt?.journalFile) await dropJournal(rt, fs, rt.journalFile).catch((e) => console.warn("journal clear failed", e));
-      else cancelJournal(rt);
+      for (const id of prompt.tabs) await dropTabJournal(id);
     }
     if (proceed) proceed(true);
-    else await finishClose(prompt.then as "project" | "window", get().closeProject);
+    else await quitApp();
   },
 
   confirmUnsaved() {
-    if (!get().session?.isDirty()) return Promise.resolve(true);
+    const tabs = get().dirtyTabs();
+    if (!tabs.length) return Promise.resolve(true);
     const prev = get().closePrompt;
     if (prev?.then === "proceed") prev.resolve(false); // a newer request replaces an open one
-    return new Promise<boolean>((resolve) => set({ closePrompt: { then: "proceed", resolve } }));
+    return new Promise<boolean>((resolve) => set({ closePrompt: { then: "proceed", tabs, resolve } }));
+  },
+
+  dirtyTabs() {
+    const s = get();
+    const ids = s.tabs.filter((t) => (t.id === s.activeId ? s.session : t.snap?.session)?.isDirty()).map((t) => t.id);
+    if (s.activeId === null && s.session?.isDirty()) ids.push(LEGACY_TAB);
+    return ids;
   },
 
   resolveConflict(c, pick) {
@@ -521,9 +549,39 @@ async function openSession(fs: Fs, root: string, d: DetectResult, opts: ProjectO
   return ProjectSession.open(fs, root, d, effective);
 }
 
-async function finishClose(then: "project" | "window", closeProject: () => Promise<void>): Promise<void> {
-  if (then === "project") await closeProject();
-  else await getCurrentWindow().destroy();
+/** The tab id used for a session set without a tab (tests, legacy callers). */
+export const LEGACY_TAB = "";
+
+/** Drops a tab's recovery journal (its unsaved changes were discarded). */
+async function dropTabJournal(id: string): Promise<void> {
+  const rt = id === LEGACY_TAB ? activeRuntime() : runtimes.get(id);
+  const { fs } = useApp.getState();
+  if (rt?.journalFile) await dropJournal(rt, fs, rt.journalFile).catch((e) => console.warn("journal clear failed", e));
+  else cancelJournal(rt);
+}
+
+/**
+ * Quits with an explicit exit code. Destroying the window instead would ask Rust to exit with no
+ * code, which the unsaved-changes guard (Cmd+Q) refuses while edits were discarded but not reverted.
+ */
+async function quitApp(): Promise<void> {
+  await exit(0);
+}
+
+/**
+ * Tells Rust whether any tab has unsaved changes, so Cmd+Q / the app menu's Quit is held back and
+ * routed to the quit prompt. Sends only changes. Returns a stop function.
+ */
+export function startUnsavedSync(): () => void {
+  let last = false;
+  const send = () => {
+    const on = useApp.getState().dirtyTabs().length > 0;
+    if (on === last) return;
+    last = on;
+    invoke("set_unsaved", { on }).catch(() => {});
+  };
+  send();
+  return useApp.subscribe(send);
 }
 
 /** Re-renders on every session change; returns the change counter. */

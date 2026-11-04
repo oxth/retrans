@@ -4,6 +4,9 @@ mod watch;
 mod zip_cmds;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use tauri::Emitter;
 
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
@@ -11,6 +14,21 @@ use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 const WINDOW_STATE_FLAGS: StateFlags = StateFlags::SIZE
     .union(StateFlags::POSITION)
     .union(StateFlags::MAXIMIZED);
+
+/// Whether any tab has unsaved changes, kept up to date by the frontend.
+static UNSAVED: AtomicBool = AtomicBool::new(false);
+
+/// Called by the frontend whenever "some tab has unsaved changes" flips.
+#[tauri::command]
+fn set_unsaved(on: bool) {
+    UNSAVED.store(on, Ordering::SeqCst);
+}
+
+/// A quit with no exit code (Cmd+Q, the app menu's Quit, the last window closing) is held back
+/// while edits are unsaved; the frontend's quit prompt decides and then exits with a code.
+fn should_hold_exit(code: Option<i32>) -> bool {
+    code.is_none() && UNSAVED.load(Ordering::SeqCst)
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -54,13 +72,18 @@ pub fn run() {
             mt::download::mt_model_delete,
             mt::engine::mt_generate,
             mt::engine::mt_cancel,
-            mt::engine::mt_unload
+            mt::engine::mt_unload,
+            set_unsaved
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // Also covers quitting through the unsaved-changes prompt, which destroys the window.
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                if should_hold_exit(code) {
+                    api.prevent_exit();
+                    let _ = app.emit("quit-requested", ());
+                    return;
+                }
                 let _ = app.save_window_state(WINDOW_STATE_FLAGS);
             }
         });
@@ -75,6 +98,18 @@ mod tests {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         assert_eq!(conf["identifier"], "com.retrans.app");
+    }
+
+    #[test]
+    fn unsaved_flag_round_trips() {
+        super::set_unsaved(true);
+        assert!(super::should_hold_exit(None));
+        assert!(
+            !super::should_hold_exit(Some(0)),
+            "an explicit exit after the prompt always goes through"
+        );
+        super::set_unsaved(false);
+        assert!(!super::should_hold_exit(None));
     }
 
     #[test]
