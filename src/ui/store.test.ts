@@ -40,7 +40,7 @@ beforeEach(async () => {
 });
 
 describe("store open/close", () => {
-  it("overlapping opens: only the second session is subscribed and watched", async () => {
+  it("overlapping opens of one folder make one tab with one session and one watcher", async () => {
     const { fs, d, opts } = await prep();
     useApp.setState({ fs });
     const stops: Array<ReturnType<typeof vi.fn>> = [];
@@ -49,21 +49,19 @@ describe("store open/close", () => {
     watch.mockImplementation(async () => {
       const stop = vi.fn(async () => {});
       stops.push(stop);
-      if (stops.length === 1) await gate; // first watch resolves late
+      await gate; // the watch resolves late
       return stop;
     });
     const subscribe = vi.spyOn(ProjectSession.prototype, "subscribe");
     const p1 = useApp.getState().openProject("/project", d, opts);
-    await vi.waitFor(() => expect(stops.length).toBe(1));
     const p2 = useApp.getState().openProject("/project", d, opts);
-    await p2;
     release();
-    await p1;
-    expect(stops[0]).toHaveBeenCalled(); // stale watcher stopped
-    expect(stops[1]).not.toHaveBeenCalled();
+    await Promise.all([p1, p2]);
+    expect(useApp.getState().tabs).toHaveLength(1);
+    expect(stops).toHaveLength(1);
+    expect(stops[0]).not.toHaveBeenCalled();
+    expect(subscribe).toHaveBeenCalledTimes(1);
     const live = useApp.getState().session!;
-    const unsub = subscribe.mock.results.map((r) => r.value as () => void);
-    expect(unsub.length).toBe(2);
     const v = useApp.getState().version;
     live.addNamespace("zzz");
     expect(useApp.getState().version).toBeGreaterThan(v);

@@ -19,9 +19,10 @@ import { TableView } from "./TableView";
 import { activeModel, useMt } from "./mt-store";
 import { type FilterState, Toolbar } from "./Toolbar";
 import { TranslateMissingDialog } from "./TranslateMissingDialog";
+import { INITIAL_FILTER } from "./tab-ui";
 import { useShallow } from "zustand/react/shallow";
 
-const INITIAL: FilterState = { search: "", ns: "all", missing: false, needsReview: false, machine: false, status: "all" };
+const INITIAL = INITIAL_FILTER;
 
 export function AppShell() {
   const version = useSessionVersion();
