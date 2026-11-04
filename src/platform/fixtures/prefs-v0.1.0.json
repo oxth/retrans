@@ -1,0 +1,10 @@
+{
+  "recent": [
+    { "root": "/Users/someone/Works/shop", "name": "shop", "format": "next-i18next" },
+    { "root": "/Users/someone/Works/cms", "name": "cms", "format": "paraglide" }
+  ],
+  "mt": { "accepted": ["translategemma-4b"], "custom": null, "enabled": true, "modelId": "translategemma-4b" },
+  "viewMode": { "/Users/someone/Works/cms": "table" },
+  "defaultViewMode": "table",
+  "autoCheckUpdates": false
+}

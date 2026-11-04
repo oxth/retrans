@@ -1,12 +1,26 @@
 import { load, type Store } from "@tauri-apps/plugin-store";
 import type { Format } from "../core/model";
 import type { PromptTemplate } from "../mt/catalog";
+import { migratePrefs } from "./prefs-migrate";
 
 export interface RecentProject { root: string; name: string; format: Format }
 
 const MAX_RECENT = 10;
 let storePromise: Promise<Store> | null = null;
-const getStore = () => (storePromise ??= load("prefs.json", { defaults: {}, autoSave: false }));
+const getStore = () =>
+  (storePromise ??= (async () => {
+    const store = await load("prefs.json", { defaults: {}, autoSave: false });
+    // A failed migration must not take every pref with it: keep the store and retry next launch.
+    try {
+      if ((await migratePrefs(store)) === "migrated") await store.save();
+    } catch (e) {
+      console.warn("Couldn't migrate prefs; will retry next launch:", e);
+    }
+    return store;
+  })().catch((e) => {
+    storePromise = null; // don't cache a failed load for the whole session
+    throw e;
+  }));
 
 export async function getRecent(): Promise<RecentProject[]> {
   const s = await getStore();
