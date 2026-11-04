@@ -163,14 +163,40 @@ describe("close and quit", () => {
     const s = useApp.getState().session!;
     s.setText(s.data.keyOrder.find((k) => k === "common::title")!, "th", text);
   };
+  /** An edit that can't be saved: the tab has an unresolved conflict. */
+  const stuck = (id: string) => {
+    edit(id);
+    useApp.getState().patchTab(id, { conflicts: [{ id: "common::title", locale: "th", mine: { kind: "text", text: "W" } }] });
+  };
+  const title = async (fs: MemoryFs, root: string) => JSON.parse(await fs.readText(`${root}/public/locales/th/common.json`)).title;
 
-  it("quit with two dirty tabs asks once and lists both", async () => {
+  it("quit right after edits saves them and quits without asking", async () => {
+    const { fs, id1, id2 } = await twoProjects();
+    edit(id1, "one");
+    edit(id2, "two");
+    await useApp.getState().requestClose("window");
+    expect(useApp.getState().closePrompt).toBeNull();
+    expect(await title(fs, "/p1")).toBe("one");
+    expect(await title(fs, "/p2")).toBe("two");
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it("quit asks once, listing only the tabs that couldn't save", async () => {
+    const { fs, id1, id2 } = await twoProjects();
+    stuck(id1);
+    edit(id2, "two");
+    await useApp.getState().requestClose("window");
+    expect(useApp.getState().closePrompt).toEqual({ then: "quit", tabs: [id1] });
+    expect(await title(fs, "/p2")).toBe("two");
+    expect(exit).not.toHaveBeenCalled();
+  });
+
+  it("quit with two stuck tabs lists both", async () => {
     const { id1, id2 } = await twoProjects();
-    edit(id1);
-    edit(id2);
+    stuck(id1);
+    stuck(id2);
     await useApp.getState().requestClose("window");
     expect(useApp.getState().closePrompt).toEqual({ then: "quit", tabs: [id1, id2] });
-    expect(exit).not.toHaveBeenCalled();
   });
 
   it("quit with nothing unsaved quits at once", async () => {
@@ -180,24 +206,13 @@ describe("close and quit", () => {
     expect(exit).toHaveBeenCalledWith(0);
   });
 
-  it("quit Save all saves every dirty tab then exits", async () => {
-    const { fs, id1, id2 } = await twoProjects();
-    edit(id1, "one");
-    edit(id2, "two");
-    await useApp.getState().requestClose("window");
-    await useApp.getState().answerClosePrompt("save");
-    expect(JSON.parse(await fs.readText("/p1/public/locales/th/common.json")).title).toBe("one");
-    expect(JSON.parse(await fs.readText("/p2/public/locales/th/common.json")).title).toBe("two");
-    expect(exit).toHaveBeenCalledWith(0);
-  });
-
   it("quit stops at the first tab that fails to save", async () => {
     const { s2, id1, id2 } = await twoProjects();
-    edit(id1);
-    useApp.setState({ conflicts: [{ id: "common::title", locale: "th", mine: { kind: "text", text: "W" } }] });
-    edit(id2);
+    stuck(id1);
+    stuck(id2);
     const save2 = vi.spyOn(s2, "save");
     await useApp.getState().requestClose("window");
+    save2.mockClear();
     await useApp.getState().answerClosePrompt("save");
     expect(exit).not.toHaveBeenCalled();
     expect(useApp.getState().activeId).toBe(id1);
@@ -209,8 +224,8 @@ describe("close and quit", () => {
     const { fs, id1, id2 } = await twoProjects();
     vi.useFakeTimers();
     try {
-      edit(id1);
-      edit(id2);
+      stuck(id1);
+      stuck(id2);
       await vi.advanceTimersByTimeAsync(1500); // both journals written
     } finally {
       vi.useRealTimers();
@@ -223,10 +238,19 @@ describe("close and quit", () => {
     expect(exit).toHaveBeenCalledWith(0);
   });
 
-  it("closing one dirty tab prompts only for that tab", async () => {
+  it("closing a tab right after an edit saves it and closes without asking", async () => {
+    const { fs, id1, id2 } = await twoProjects();
+    edit(id1, "kept");
+    await useApp.getState().closeTab(id1);
+    expect(useApp.getState().closePrompt).toBeNull();
+    expect(useApp.getState().tabs.map((t) => t.id)).toEqual([id2]);
+    expect(await title(fs, "/p1")).toBe("kept");
+  });
+
+  it("closing a stuck tab prompts only for that tab", async () => {
     const { id1, id2 } = await twoProjects();
-    edit(id1);
-    edit(id2);
+    stuck(id1);
+    stuck(id2);
     await useApp.getState().closeTab(id1);
     expect(useApp.getState().closePrompt).toEqual({ then: "project" });
     expect(useApp.getState().activeId).toBe(id1);
@@ -235,12 +259,23 @@ describe("close and quit", () => {
     expect(exit).not.toHaveBeenCalled();
   });
 
-  it("update install asks about every dirty tab", async () => {
+  it("the prompt closes the tab it asked about, even if another tab is clicked meanwhile", async () => {
     const { id1, id2 } = await twoProjects();
-    edit(id1);
+    stuck(id1);
+    await useApp.getState().closeTab(id1);
+    const answered = useApp.getState().answerClosePrompt("discard");
+    useApp.getState().switchTab(id2); // clicked while the journal is being dropped
+    await answered;
+    expect(useApp.getState().tabs.map((t) => t.id)).toEqual([id2]);
+    expect(useApp.getState().activeId).toBe(id2);
+  });
+
+  it("update install saves what it can and asks about the rest", async () => {
+    const { id1, id2 } = await twoProjects();
+    stuck(id1);
     edit(id2);
     const go = useApp.getState().confirmUnsaved();
-    expect(useApp.getState().closePrompt).toMatchObject({ then: "proceed", tabs: [id1, id2] });
+    await vi.waitFor(() => expect(useApp.getState().closePrompt).toMatchObject({ then: "proceed", tabs: [id1] }));
     await useApp.getState().answerClosePrompt("discard");
     expect(await go).toBe(true);
     expect(exit).not.toHaveBeenCalled();

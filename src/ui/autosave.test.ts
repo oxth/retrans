@@ -131,3 +131,22 @@ describe("leftover edits are restored without asking", () => {
     expect(await fs.exists(journalPath("/appdata", "/p1"))).toBe(false);
   });
 });
+
+describe("a save that can't finish", () => {
+  it("is not retried until something changes", async () => {
+    const fs = loadFixtureDir(FIX, "/p1");
+    await fs.writeTextAtomic("/p1/.retrans/state.json", "<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> theirs\n");
+    useApp.setState({ fs });
+    const s = await open(fs, "/p1");
+    expect(s.stateMalformed).toBe(true);
+    const save = vi.spyOn(s, "save");
+    s.markReviewed("common::title", "th");
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS * 6);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(s.isDirty()).toBe(true);
+    editTitle(s, "new"); // a real edit: try again
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS + 100);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(await title(fs, "/p1")).toBe("new");
+  });
+});

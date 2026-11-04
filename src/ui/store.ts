@@ -193,6 +193,16 @@ export const useApp = create<AppState>((set, get) => {
     else if (get().session === session) set((s) => (typeof p === "function" ? p(snapOf(s)) : p));
   };
 
+  /** Saves every dirty tab that can be saved (auto-save would anyway); prompts are only for the rest. */
+  const flushSaves = async () => {
+    const s = get();
+    const sessions = s.tabs.map((t) => (t.id === s.activeId ? s.session : t.snap?.session));
+    if (s.activeId === null && s.session) sessions.push(s.session);
+    for (const session of sessions) {
+      if (session?.isDirty()) await get().saveSession(session, { quiet: true }).catch(() => false);
+    }
+  };
+
   /** Removes a tab and stops its machinery; the right (else left) neighbour becomes active. */
   const removeTab = async (id: string) => {
     const rt = runtimes.get(id);
@@ -455,10 +465,13 @@ export const useApp = create<AppState>((set, get) => {
 
   async requestClose(then) {
     if (then === "project") {
-      if (get().session?.isDirty()) set({ closePrompt: { then: "project" } });
-      else await get().closeProject();
+      const { session } = get();
+      if (session?.isDirty()) await get().saveSession(session, { quiet: true }).catch(() => false);
+      if (session?.isDirty() && get().session === session) set({ closePrompt: { then: "project" } });
+      else if (get().session === session) await get().closeProject();
       return;
     }
+    await flushSaves();
     const tabs = get().dirtyTabs();
     if (tabs.length) set({ closePrompt: { then: "quit", tabs } });
     else await quitApp();
@@ -470,10 +483,13 @@ export const useApp = create<AppState>((set, get) => {
     set({ closePrompt: null });
     if (prompt.then === "project") {
       if (choice === "cancel") return;
+      // The tab asked about, even if another is clicked while this saves or drops its journal.
+      const id = get().activeId;
       if (choice === "save") {
         if (!(await get().save())) return;
-      } else await dropTabJournal(get().activeId ?? LEGACY_TAB);
-      await get().closeProject();
+      } else await dropTabJournal(id ?? LEGACY_TAB);
+      if (id) await removeTab(id);
+      else await get().closeProject();
       return;
     }
     const proceed = prompt.then === "proceed" ? prompt.resolve : null;
@@ -491,9 +507,10 @@ export const useApp = create<AppState>((set, get) => {
     else await quitApp();
   },
 
-  confirmUnsaved() {
+  async confirmUnsaved() {
+    await flushSaves();
     const tabs = get().dirtyTabs();
-    if (!tabs.length) return Promise.resolve(true);
+    if (!tabs.length) return true;
     const prev = get().closePrompt;
     if (prev?.then === "proceed") prev.resolve(false); // a newer request replaces an open one
     return new Promise<boolean>((resolve) => set({ closePrompt: { then: "proceed", tabs, resolve } }));
@@ -563,6 +580,13 @@ async function openSession(fs: Fs, root: string, d: DetectResult, opts: ProjectO
   return ProjectSession.open(fs, root, d, effective);
 }
 
+/** The unresolved conflicts of whichever tab holds `session`. */
+function conflictsOf(session: ProjectSession): UiConflict[] {
+  const st = useApp.getState();
+  if (st.session === session) return st.conflicts;
+  return st.tabs.find((t) => t.snap?.session === session)?.snap?.conflicts ?? [];
+}
+
 /** How long auto-save waits after the last edit in a tab. */
 export const AUTOSAVE_DELAY_MS = 1000;
 
@@ -574,6 +598,15 @@ export function startAutosave(): () => void {
   const timers = new Map<ProjectSession, ReturnType<typeof setTimeout>>();
   const seen = new Map<ProjectSession, number>();
   const saving = new Set<ProjectSession>();
+  /**
+   * Sessions a save left dirty with nothing edited since (e.g. state.json has merge markers):
+   * their unsaved state, so emits from the failed save itself don't retry it every second.
+   */
+  const stuck = new Map<ProjectSession, string>();
+  const fingerprint = (session: ProjectSession) => {
+    const { savedAt: _ignored, ...rest } = session.toJournal() as unknown as Record<string, unknown>;
+    return JSON.stringify(rest);
+  };
   const schedule = (session: ProjectSession) => {
     const prev = timers.get(session);
     if (prev) clearTimeout(prev);
@@ -585,11 +618,23 @@ export function startAutosave(): () => void {
         if (!session.isDirty()) return;
         const st = useApp.getState();
         if (st.tabIdOf(session) === null && st.session !== session) return; // closed meanwhile
+        if (st.closePrompt) return schedule(session); // the user is deciding: Discard must mean discard
+        const before = fingerprint(session);
         saving.add(session);
         void st
           .saveSession(session, { quiet: true })
           .catch(() => {})
-          .finally(() => saving.delete(session));
+          .finally(() => {
+            saving.delete(session);
+            if (!session.isDirty()) return void stuck.delete(session);
+            const after = fingerprint(session);
+            const blocked = conflictsOf(session).length > 0; // resolving them is an edit: saves then
+            if (after === before && !blocked) stuck.set(session, after);
+            else if (after !== before) {
+              stuck.delete(session);
+              schedule(session); // edited while saving
+            }
+          });
       }, AUTOSAVE_DELAY_MS),
     );
   };
@@ -601,11 +646,18 @@ export function startAutosave(): () => void {
     for (const [session, version] of open) {
       if (seen.get(session) === version) continue;
       seen.set(session, version);
-      if (session.isDirty()) schedule(session);
+      if (!session.isDirty()) {
+        stuck.delete(session);
+        continue;
+      }
+      if (saving.has(session)) continue; // decided when that save finishes
+      if (stuck.has(session) && stuck.get(session) === fingerprint(session)) continue; // nothing new to save
+      schedule(session);
     }
     for (const session of [...seen.keys()]) {
       if (open.some(([s]) => s === session)) continue;
       seen.delete(session);
+      stuck.delete(session);
       const t = timers.get(session);
       if (t) clearTimeout(t);
       timers.delete(session);
