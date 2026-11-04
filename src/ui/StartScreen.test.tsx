@@ -157,7 +157,8 @@ describe("layout", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open project" }));
     await userEvent.click(await screen.findByRole("button", { name: "Open" }));
     await screen.findByRole("button", { name: "Close project" });
-    fills(root.firstElementChild);
+    expect(root.firstElementChild).toContainElement(screen.getByRole("tablist")); // the tab bar takes its own row
+    fills(root.lastElementChild);
     expect(container.querySelectorAll(".h-screen, .min-h-screen")).toHaveLength(1);
   });
 });

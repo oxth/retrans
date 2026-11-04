@@ -5,6 +5,7 @@ import { AppShell } from "./ui/AppShell";
 import { useApp } from "./ui/store";
 import { useMt } from "./ui/mt-store";
 import { UpdateBanner } from "./ui/UpdateBanner";
+import { TabBar } from "./ui/TabBar";
 
 function RecoveryPrompt() {
   const { recovery, restoreRecovery, discardRecovery } = useApp();
@@ -57,13 +58,17 @@ export default function App() {
     void useMt.getState().init();
   }, []);
   const session = useApp((s) => s.session);
-  // One window-high column: the update banner takes its row and the page fills the rest.
+  const activeId = useApp((s) => s.activeId);
+  const hasTabs = useApp((s) => s.tabs.length > 0);
+  // One window-high column: the update banner and tab bar take their rows and the page fills the rest.
   return (
     <div className="flex h-screen flex-col">
       <UpdateBanner />
+      {hasTabs && <TabBar />}
       {session ? (
         <>
-          <AppShell />
+          {/* Keyed by tab: dialogs and the cell being edited don't follow you to another tab. */}
+          <AppShell key={activeId ?? "untabbed"} />
           <RecoveryPrompt />
         </>
       ) : (
