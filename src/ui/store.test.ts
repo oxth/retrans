@@ -108,9 +108,7 @@ describe("store open/close", () => {
     s.setText(s.data.keyOrder[0], "th", "x");
     const path = journalPath("/appdata", "/project");
     await fs.writeTextAtomic(path, JSON.stringify({ ...s.toJournal(), root: "/other" }));
-    await useApp.getState().openProject("/project", d, opts);
-    expect(useApp.getState().recovery).not.toBeNull();
-    await useApp.getState().restoreRecovery();
+    await useApp.getState().openProject("/project", d, opts); // the journal is applied on open
     expect(useApp.getState().error).toMatch(/does not match/);
     expect(useApp.getState().recovery).toBeNull();
     expect(await fs.exists(path)).toBe(false);

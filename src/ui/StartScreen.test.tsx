@@ -128,7 +128,7 @@ describe("StartScreen", () => {
     expect(useApp.getState().session).not.toBeNull();
   });
 
-  it("offers to restore a recovery journal and applies it", async () => {
+  it("puts back a recovery journal on open without asking", async () => {
     const fs = loadFixtureDir(FIX + "next-nested");
     const d = (await detectProject(fs, "/project"))!;
     const opts = { baseLocale: d.baseLocale!, localesPath: d.localesPath };
@@ -140,9 +140,9 @@ describe("StartScreen", () => {
     await addRecent({ root: "/project", name: "project", format: "next-i18next" });
     await setup(fs);
     await userEvent.click(await screen.findByRole("button", { name: /^project\// }));
-    expect(await screen.findByText(/Restore unsaved changes from/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
-    await waitFor(() => expect(useApp.getState().session!.isDirty()).toBe(true));
+    await screen.findByRole("button", { name: "Close project" });
+    expect(screen.queryByText(/Restore unsaved changes/)).toBeNull();
+    expect(useApp.getState().session!.value(id, "th")).toEqual({ kind: "text", text: "แก้ไข" });
     expect(useApp.getState().recovery).toBeNull();
   });
 });

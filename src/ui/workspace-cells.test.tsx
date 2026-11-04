@@ -277,7 +277,7 @@ describe("recovery journal and workspace meta", () => {
   });
 });
 
-describe("recovery pending on open: sync waits for the user", () => {
+describe("a recovery journal on open is applied before the source sync", () => {
   const SAVE = keyId("button", "button_save");
   /** Journal: en button_save "Save" → "Store" (unsaved). Source then changes it to "Save it". */
   async function journalAndSourceChange(fs: MemoryFs) {
@@ -288,31 +288,13 @@ describe("recovery pending on open: sync waits for the user", () => {
     await replaceIn(fs, `${LOCALES}/button.tsx`, "button_save: 'Save',", "button_save: 'Save it',");
   }
 
-  it("restore: the journaled edit and the source change surface as a source conflict", async () => {
+  it("the journaled edit and the source change surface as a source conflict", async () => {
     const { session } = await openWs(journalAndSourceChange, { waitSync: false });
-    expect(useApp.getState().recovery).not.toBeNull();
-    // Sync deferred: nothing taken from the source yet; watcher source events ignored too.
-    act(() => watch.cb!([`${LOCALES}/button.tsx`]));
-    await new Promise((r) => setTimeout(r, 20));
-    expect(session.value(SAVE, "en")).toEqual({ kind: "text", text: "Save" });
-    expect(session.pendingBaseline).toBeNull();
-    await act(async () => {
-      await useApp.getState().restoreRecovery();
-    });
+    expect(useApp.getState().recovery).toBeNull();
     await waitFor(() => expect(useApp.getState().conflicts).toEqual([
       { id: SAVE, locale: "en", mine: { kind: "text", text: "Store" }, theirs: { kind: "text", text: "Save it" }, origin: "source" },
     ]));
     expect(session.value(SAVE, "en")).toEqual({ kind: "text", text: "Store" });
-  });
-
-  it("discard: the sync then takes the source change", async () => {
-    const { session } = await openWs(journalAndSourceChange, { waitSync: false });
-    expect(useApp.getState().recovery).not.toBeNull();
-    await act(async () => {
-      await useApp.getState().discardRecovery();
-    });
-    await waitFor(() => expect(session.value(SAVE, "en")).toEqual({ kind: "text", text: "Save it" }));
-    expect(useApp.getState().conflicts).toEqual([]);
   });
 });
 

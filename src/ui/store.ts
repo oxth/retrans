@@ -112,6 +112,11 @@ export interface AppState {
    * Refuses (false, with an error) while conflicts are unresolved.
    */
   save(): Promise<boolean>;
+  /**
+   * `save` for any tab's session. `quiet`: auto-save, which skips a tab with unresolved
+   * conflicts without an error (it saves once they are resolved).
+   */
+  saveSession(session: ProjectSession, opts?: { quiet?: boolean }): Promise<boolean>;
   /** "project": close the active tab. "window": quit the app (window close button, Cmd+Q). */
   requestClose(then: "project" | "window"): Promise<void>;
   answerClosePrompt(choice: "save" | "discard" | "cancel"): Promise<void>;
@@ -253,9 +258,11 @@ export const useApp = create<AppState>((set, get) => {
       get().syncSource(session).catch((e) => patchSession(session, { error: `Sync from source failed: ${msg(e)}` }));
     };
     if (sourceDir !== undefined) {
-      if (recovery) rt.deferredSync = sync; // runs after Restore / Discard
+      if (recovery) rt.deferredSync = sync; // runs right after the journal is applied
       else sync();
     }
+    // Edits left by a crash (or a quit before auto-save ran) come back without asking.
+    if (recovery) await get().restoreRecovery();
 
     try {
       const scope = {
@@ -399,15 +406,22 @@ export const useApp = create<AppState>((set, get) => {
   },
 
   async save() {
-    const { session, fs } = get();
+    const { session } = get();
     if (!session) return false;
+    return get().saveSession(session);
+  },
+
+  async saveSession(session, opts) {
+    const { fs } = get();
     if (!session.isDirty()) return true;
-    if (get().conflicts.length > 0) {
-      set({ error: "Resolve conflicts before saving." });
+    const id = get().tabIdOf(session);
+    const conflicts = id && id !== get().activeId ? (get().tabs.find((t) => t.id === id)?.snap?.conflicts ?? []) : get().conflicts;
+    if (conflicts.length > 0) {
+      if (!opts?.quiet) patchSession(session, { error: "Resolve conflicts before saving." });
       return false;
     }
     // The user may switch tabs while saving: results go to this session's tab.
-    const rt = activeRuntime();
+    const rt = id ? runtimes.get(id) : activeRuntime();
     const current = () => get().session === session || get().tabIdOf(session) !== null;
     try {
       let r = await session.save();
@@ -547,6 +561,63 @@ async function openSession(fs: Fs, root: string, d: DetectResult, opts: ProjectO
     localesPath: d.workspace ? d.localesPath : (st.project.localesPath ?? opts.localesPath),
   };
   return ProjectSession.open(fs, root, d, effective);
+}
+
+/** How long auto-save waits after the last edit in a tab. */
+export const AUTOSAVE_DELAY_MS = 1000;
+
+/**
+ * Saves every tab's edits to its files AUTOSAVE_DELAY_MS after its last change, background tabs
+ * included. A tab with unresolved conflicts waits until they are resolved. Returns a stop function.
+ */
+export function startAutosave(): () => void {
+  const timers = new Map<ProjectSession, ReturnType<typeof setTimeout>>();
+  const seen = new Map<ProjectSession, number>();
+  const saving = new Set<ProjectSession>();
+  const schedule = (session: ProjectSession) => {
+    const prev = timers.get(session);
+    if (prev) clearTimeout(prev);
+    timers.set(
+      session,
+      setTimeout(() => {
+        timers.delete(session);
+        if (saving.has(session)) return schedule(session); // try again once the save in flight is done
+        if (!session.isDirty()) return;
+        const st = useApp.getState();
+        if (st.tabIdOf(session) === null && st.session !== session) return; // closed meanwhile
+        saving.add(session);
+        void st
+          .saveSession(session, { quiet: true })
+          .catch(() => {})
+          .finally(() => saving.delete(session));
+      }, AUTOSAVE_DELAY_MS),
+    );
+  };
+  const check = () => {
+    const st = useApp.getState();
+    const open: Array<[ProjectSession, number]> = [];
+    if (st.session) open.push([st.session, st.version]);
+    for (const t of st.tabs) if (t.snap) open.push([t.snap.session, t.snap.version]);
+    for (const [session, version] of open) {
+      if (seen.get(session) === version) continue;
+      seen.set(session, version);
+      if (session.isDirty()) schedule(session);
+    }
+    for (const session of [...seen.keys()]) {
+      if (open.some(([s]) => s === session)) continue;
+      seen.delete(session);
+      const t = timers.get(session);
+      if (t) clearTimeout(t);
+      timers.delete(session);
+    }
+  };
+  check();
+  const unsub = useApp.subscribe(check);
+  return () => {
+    unsub();
+    for (const t of timers.values()) clearTimeout(t);
+    timers.clear();
+  };
 }
 
 /** The tab id used for a session set without a tab (tests, legacy callers). */
