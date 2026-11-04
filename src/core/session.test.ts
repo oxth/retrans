@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
-import { loadFixtureDir } from "../platform/memory-fs";
+import { loadFixtureDir, MemoryFs } from "../platform/memory-fs";
 import { detectProject } from "../formats/detect";
+import { createWorkspace } from "../workspace/store";
 import { keyId } from "./model";
 import { STATE_PATH } from "./state-file";
 import { KeyError, ProjectSession } from "./session";
@@ -11,6 +12,15 @@ const NEXT = "public/locales";
 
 async function openFx(name: string) {
   const fs = loadFixtureDir(resolve(__dirname, "../test/fixtures", name));
+  const d = (await detectProject(fs, R))!;
+  const opts = { baseLocale: d.baseLocale ?? "en", localesPath: d.localesPath };
+  const s = await ProjectSession.open(fs, R, d, opts);
+  return { fs, s };
+}
+
+async function openWorkspace() {
+  const fs = new MemoryFs({});
+  await createWorkspace(fs, R, { name: "WS", baseLocale: "en", locales: ["en", "th"] });
   const d = (await detectProject(fs, R))!;
   const opts = { baseLocale: d.baseLocale ?? "en", localesPath: d.localesPath };
   const s = await ProjectSession.open(fs, R, d, opts);
@@ -180,6 +190,52 @@ describe("ProjectSession", () => {
     expect((await json(fs, `${NEXT}/th/common.json`)).nav).toEqual({ start: "หน้าแรก" });
     const st = await json(fs, STATE_PATH);
     expect(Object.keys(st.entries)).toEqual([newId]);
+  });
+
+  it("moveKey moves values, review state and meta to another group", async () => {
+    const { s } = await openWorkspace();
+    s.addNamespace("figma-ALL");
+    s.addKey("common", "existing", "Existing");
+    const from = s.addKey("figma-ALL", "Button.Save", "Save");
+    s.setText(from, "th", "บันทึก");
+    s.markReviewed(from, "th");
+    s.setWorkspaceMeta({
+      drafts: { [from]: { en: "draft" } },
+      markers: { [from]: { th: "mark" } },
+      emptyKeys: [from],
+      removedInSource: [from],
+    });
+    const to = keyId("common", "moved.save");
+    const moved = s.moveKey(from, to);
+    expect(moved).toBe(to);
+    expect(s.value(to, "en")).toEqual({ kind: "text", text: "Save" });
+    expect(s.value(to, "th")).toEqual({ kind: "text", text: "บันทึก" });
+    expect(s.meta(to, "th").status).toBe("reviewed");
+    expect(s.workspace?.drafts[to]).toEqual({ en: "draft" });
+    expect(s.workspace?.markers[to]).toEqual({ th: "mark" });
+    expect(s.workspace?.emptyKeys).toEqual([to]);
+    expect(s.workspace?.removedInSource).toEqual([to]);
+    const commonRows = s.data.keyOrder.filter((id) => id.startsWith("common::"));
+    expect(commonRows[commonRows.length - 1]).toBe(to);
+  });
+
+  it("moveKey refuses a collision and an unknown group", async () => {
+    const { s } = await openWorkspace();
+    s.addNamespace("figma-ALL");
+    s.addKey("common", "taken", "Taken");
+    const from = s.addKey("figma-ALL", "Button.Save", "Save");
+    expect(() => s.moveKey(from, keyId("common", "taken"))).toThrow(expect.objectContaining({ code: "exists" }));
+    expect(() => s.moveKey(from, keyId("missing", "new.key"))).toThrow(expect.objectContaining({ code: "invalid" }));
+  });
+
+  it("moveKey records no rename and no deletion", async () => {
+    const { s } = await openWorkspace();
+    s.addNamespace("figma-ALL");
+    const from = s.addKey("figma-ALL", "Button.Save", "Save");
+    s.setWorkspaceMeta({ renames: { "common::old": "common::new" }, deletedKeys: ["common::gone"] });
+    s.moveKey(from, keyId("common", "button.save"));
+    expect(s.workspace?.renames).toEqual({ "common::old": "common::new" });
+    expect(s.workspace?.deletedKeys).toEqual(["common::gone"]);
   });
 
   it("deleteKey removes from all locale files and state", async () => {
