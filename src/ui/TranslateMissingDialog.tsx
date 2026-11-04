@@ -1,17 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { type KeyId, parseKeyId } from "../core/model";
+import { useMemo, useState } from "react";
+import { parseKeyId } from "../core/model";
 import type { ProjectSession } from "../core/session";
-import { type BatchResult, missingItems, translateMissing } from "../mt/batch";
+import { type BatchResult, missingItems } from "../mt/batch";
 import { nextReqId, translateText } from "../mt/translate";
 import { Dialog, btnGhost, btnPrimary, inputCls } from "./Dialog";
 import { activeModel, useMt } from "./mt-store";
-import { useSessionVersion } from "./store";
+import { cancelRun, clearRun, type RunPhase, startRun, UNTABBED, useRuns } from "./runs";
+import { useApp, useSessionVersion } from "./store";
 import { useShallow } from "zustand/react/shallow";
-
-type Phase =
-  | { kind: "setup" }
-  | { kind: "running"; done: number; total: number; current: KeyId | null }
-  | { kind: "done"; result: BatchResult };
 
 const LIST_MAX = 20;
 
@@ -24,66 +20,34 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
   const targets = useMemo(() => locales.filter((l) => l !== baseLocale), [locales, baseLocale]);
   const [locale, setLocale] = useState(p.defaultLocale && targets.includes(p.defaultLocale) ? p.defaultLocale : (targets[0] ?? ""));
   const [ns, setNs] = useState("all");
-  const [phase, setPhase] = useState<Phase>({ kind: "setup" });
-  const alive = useRef(true);
-  const abort = useRef<AbortController | null>(null);
-  const reqId = useRef<number | null>(null);
-
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-      abort.current?.abort();
-      if (reqId.current !== null) void engine.cancel(reqId.current).catch(() => {});
-    };
-  }, [engine]);
+  // The run lives in the tab, not in this dialog: hiding the dialog or switching tabs keeps it going.
+  const tabId = useApp((s) => s.tabIdOf(session)) ?? UNTABBED;
+  const run = useRuns((s) => s.byTab[tabId] as RunPhase | undefined);
+  const phase: { kind: "setup" } | RunPhase = run ?? { kind: "setup" };
 
   const items = useMemo(
     () => (locale ? missingItems(session, locale, ns) : []),
     [session, locale, ns, version],
   );
 
-  const start = async () => {
+  const start = () => {
     if (!model || !items.length) return;
-    const ac = new AbortController();
-    abort.current = ac;
-    const first = items[0].id;
-    setPhase({ kind: "running", done: 0, total: items.length, current: first });
-    let result: BatchResult = { translated: 0, unsafe: [], failed: [], skipped: 0, cancelled: true };
-    try {
-      result = await translateMissing(
-        session,
-        items,
-        locale,
-        async (source) => {
-          const id = nextReqId();
-          reqId.current = id;
-          try {
-            return await translateText(engine, model, format, baseLocale, locale, source, id);
-          } catch (e) {
-            return { ok: false, reason: "error", message: e instanceof Error ? e.message : String(e) };
-          }
-        },
-        (pr) => alive.current && setPhase({ kind: "running", ...pr, current: pr.current ?? (pr.done === 0 ? first : null) }),
-        ac.signal,
-      );
-    } catch (e) {
-      console.warn("[mt] batch translation failed", e);
-    } finally {
-      reqId.current = null;
-      abort.current = null;
-      if (alive.current) setPhase({ kind: "done", result });
-    }
+    startRun(tabId, session, items, locale, async (source, onRequest) => {
+      const id = nextReqId();
+      onRequest(() => void engine.cancel(id).catch(() => {}));
+      return translateText(engine, model, format, baseLocale, locale, source, id);
+    });
   };
 
-  const cancel = () => {
-    abort.current?.abort();
-    if (reqId.current !== null) void engine.cancel(reqId.current).catch(() => {});
+  const cancel = () => cancelRun(tabId);
+  const close = () => {
+    if (phase.kind === "done") clearRun(tabId);
+    p.onClose();
   };
 
   const running = phase.kind === "running";
   return (
-    <Dialog title="Translate missing" onClose={running ? undefined : p.onClose}>
+    <Dialog title="Translate missing" onClose={running ? undefined : close}>
       {phase.kind === "setup" && (
         <div className="space-y-3">
           <label className="block text-sm">
@@ -108,7 +72,7 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
           <p className="text-sm text-gray-600">{items.length} missing</p>
           <div className="flex justify-end gap-2">
             <button className={btnGhost} onClick={p.onClose}>Close</button>
-            <button className={btnPrimary} disabled={!items.length || !model} onClick={() => void start()}>Start</button>
+            <button className={btnPrimary} disabled={!items.length || !model} onClick={start}>Start</button>
           </div>
         </div>
       )}
@@ -126,12 +90,13 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
           </div>
           <p className="text-sm">{phase.done} of {phase.total}</p>
           {phase.current && <p className="truncate font-mono text-xs text-gray-600">{parseKeyId(phase.current).key}</p>}
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <button className={btnGhost} onClick={p.onClose}>Hide (keeps running)</button>
             <button className={btnGhost} onClick={cancel}>Cancel</button>
           </div>
         </div>
       )}
-      {phase.kind === "done" && <Summary result={phase.result} onClose={p.onClose} />}
+      {phase.kind === "done" && <Summary result={phase.result} onClose={close} />}
     </Dialog>
   );
 }
