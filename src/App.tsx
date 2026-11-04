@@ -7,6 +7,7 @@ import { startUnsavedSync, useApp } from "./ui/store";
 import { useMt } from "./ui/mt-store";
 import { UpdateBanner } from "./ui/UpdateBanner";
 import { TabBar } from "./ui/TabBar";
+import { launch, startTabPersistence } from "./ui/restore";
 import { UnsavedPrompt } from "./ui/UnsavedPrompt";
 
 function RecoveryPrompt() {
@@ -61,6 +62,10 @@ export default function App() {
   useQuitGuard();
   useEffect(() => {
     void useMt.getState().init();
+    // Reopen last session's tabs (or not, per Settings → Startup), then keep the saved list current.
+    const stop = startTabPersistence();
+    void launch().catch((e) => console.warn("reopening tabs failed", e));
+    return stop;
   }, []);
   const session = useApp((s) => s.session);
   const activeId = useApp((s) => s.activeId);
