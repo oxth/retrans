@@ -431,9 +431,9 @@ describe("generated TypeScript files", () => {
 });
 
 describe("performance", () => {
-  it("plans a write-back of a 5,000-key split + 5,000-key table source in under 500 ms", async () => {
+  it("plans a write-back of a 10,000-key split + 10,000-key table source in under 2.5 s", async () => {
     const R = "/p";
-    const N = 5000;
+    const N = 10000;
     const keys = Array.from({ length: N }, (_, i) => i);
     const split = [
       "export const bigTH = {", ...keys.map((i) => `  k_${i}: 'ค่า ${i}',`), "};", "",
@@ -461,7 +461,8 @@ describe("performance", () => {
     const ms = performance.now() - t;
     expect(plan.blocked).toBeUndefined();
     expect(plan.files).toHaveLength(2);
-    expect(ms).toBeLessThan(500);
+    // ~0.4 s on an M-series Mac, ~3x that on CI Windows; the old quadratic planner took ~4 s locally.
+    expect(ms).toBeLessThan(2500);
   });
 });
 
