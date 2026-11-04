@@ -8,12 +8,14 @@ import {
 import { type ExportTarget, jsonEqual } from "../workspace/meta";
 import { btnGhost, btnPrimary, Dialog } from "./Dialog";
 import { SOURCE_MISSING_MESSAGE, useApp } from "./store";
+import { isFigmaRow } from "./ListView";
+import { joinPath } from "../platform/fs";
 
 type Kind = ExportTarget["kind"];
 type Namespaces = "per-group" | "single";
 
 export const SOURCE_CONFLICTS_MESSAGE = "Resolve the changes from your code first.";
-const FILE_CONFLICTS_MESSAGE = "Resolve conflicts before saving.";
+const FILE_CONFLICTS_MESSAGE = "Resolve conflicts before exporting.";
 
 const OPTIONS: Array<{ kind: Kind; label: string }> = [
   { kind: "ts-writeback", label: "Write back to the original files" },
@@ -21,6 +23,7 @@ const OPTIONS: Array<{ kind: Kind; label: string }> = [
   { kind: "i18next-json", label: "i18next JSON" },
   { kind: "paraglide", label: "Paraglide" },
   { kind: "ts-modules", label: "TypeScript modules (table style)" },
+  { kind: "figma", label: "Figma Variables (.tokens.json)" },
 ];
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -32,7 +35,7 @@ const fromSource = (kind: Kind) => kind === "ts-writeback" || kind === "ts-copy"
 function initial(session: ProjectSession): { kind: Kind; dir: string | null; namespaces: Namespaces } {
   const hasSource = !!session.workspace?.source;
   const last = session.workspace?.lastExport?.target;
-  if (last && (!fromSource(last.kind) || hasSource)) {
+  if (last && (!fromSource(last.kind) || hasSource) && (last.kind !== "figma" || session.workspace?.figma)) {
     return {
       kind: last.kind,
       dir: "dir" in last ? last.dir : null,
@@ -67,8 +70,12 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
   /** A plan waiting for Replace / Cancel because some of its files already exist. */
   const [confirm, setConfirm] = useState<{ t: ExportTarget; plan: ExportPlan; existing: string[] } | null>(null);
   const source = session.workspace?.source;
-  const options = OPTIONS.filter((o) => !fromSource(o.kind) || source);
-  const target = targetOf(kind, dir, namespaces);
+  const figma = session.workspace?.figma;
+  const options = OPTIONS.filter((o) => (!fromSource(o.kind) || source) && (o.kind !== "figma" || figma));
+  // Figma files go back into the Figma folder unless another folder is chosen.
+  const shownDir = dir ?? (kind === "figma" && figma ? joinPath(session.data.root, figma.dir) : null);
+  const target = targetOf(kind, shownDir, namespaces);
+  const unmapped = session.data.keyOrder.filter((id) => isFigmaRow(session, id)).length;
 
   async function chooseFolder() {
     const picked = await open({ directory: true, multiple: false, defaultPath: dir ?? undefined });
@@ -87,6 +94,14 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
     if (blocked) return fail(blocked);
     if (session.isDirty() && !(await app().save())) {
       return fail(conflictMessage() ?? app().error ?? "Couldn't save your changes.");
+    }
+
+    if (t.kind === "figma") {
+      // Take the latest Figma files first: export never overwrites a change made in Figma.
+      await app().syncSource(session);
+      const after = conflictMessage();
+      if (after) return fail(after);
+      if (session.isDirty() && !(await app().save())) return fail(app().error ?? "Couldn't save your changes.");
     }
 
     let imported;
@@ -134,6 +149,8 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
     try {
       const settings = { target: t };
       if (!jsonEqual(session.workspace?.lastExport, settings)) session.setWorkspaceMeta({ lastExport: settings });
+      const f = session.workspace?.figma;
+      if (plan.figmaModes && f) session.setWorkspaceMeta({ figma: { ...f, modes: { ...f.modes, ...plan.figmaModes } } });
       if (t.kind === "ts-writeback") {
         recordWriteBack(session, plan);
         // Markers and drafts now follow the files just written; nothing should be left to merge.
@@ -205,8 +222,14 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
           <button className={`${btnGhost} border border-gray-300`} disabled={busy || !!confirm} onClick={() => void chooseFolder()}>
             Choose folder…
           </button>
-          <span className="truncate font-mono text-xs text-gray-600">{dir ?? "No folder chosen"}</span>
+          <span className="truncate font-mono text-xs text-gray-600">{shownDir ?? "No folder chosen"}</span>
         </div>
+      )}
+      {unmapped > 0 && kind !== "figma" && (
+        <p className="mt-3 text-sm text-gray-600">
+          {unmapped} Figma {unmapped === 1 ? "string has" : "strings have"} no code key yet —{" "}
+          {fromSource(kind) ? "write-back skips them." : "they use their Figma names as keys."}
+        </p>
       )}
 
       {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}

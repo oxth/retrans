@@ -5,6 +5,8 @@
  * TypeScript write-back edits the source modules with minimal diffs (`applyTsEdits`); every other
  * target is generated from the workspace values alone.
  */
+import { planFigmaExport } from "../figma/export";
+import { figmaGroups } from "../figma/meta";
 import { isTranslated, type KeyId, keyId, parseKeyId } from "../core/model";
 import type { ProjectSession } from "../core/session";
 import { MESSAGE_SCHEMA, paraglideSettingsText } from "../formats/scaffold";
@@ -41,6 +43,8 @@ export interface ExportPlan {
   renamesApplied?: KeyId[];
   /** ts-writeback only: the `meta.deletedKeys` now gone from the source; `recordWriteBack` clears them. */
   deletedApplied?: KeyId[];
+  /** figma only: modes this export creates (mode name -> language), to add to the Figma mode map. */
+  figmaModes?: Record<string, string>;
 }
 
 const emptyPlan = (root: string): ExportPlan => ({ root, files: [], snippets: [], leftOutLocales: [], warnings: [] });
@@ -63,6 +67,8 @@ export async function planExport(session: ProjectSession, target: ExportTarget, 
       return planI18next(session, target.dir, target.namespaces);
     case "paraglide":
       return planParaglide(session, target.dir);
+    case "figma":
+      return planFigmaExport(session, target.dir);
   }
 }
 
@@ -311,8 +317,10 @@ async function planTsSource(
     .map((m) => mapLocaleImport(m.text))
     .find((x) => x !== null) ?? "./mapLocale";
   const idents = groupIdents(session.data.namespaces.filter((g) => !known.has(g)));
+  // Figma strings with no code key yet never go into the code (spec C3).
+  const figma = figmaGroups(meta);
   for (const group of session.data.namespaces) {
-    if (known.has(group)) continue;
+    if (known.has(group) || figma.has(group)) continue;
     const ids = (rows.get(group) ?? []).filter((id) => !removed.has(id));
     const values = tableValues(session, ids, srcLocales, true);
     if (!Object.values(values).some((r) => Object.keys(r).length > 0)) continue;

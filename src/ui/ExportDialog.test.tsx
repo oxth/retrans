@@ -226,7 +226,7 @@ describe("Export dialog", () => {
     await userEvent.click(within(dialog).getByRole("radio", { name: "TypeScript modules (table style)" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Choose folder…" }));
     await exportNow(dialog);
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Resolve conflicts before saving.");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Resolve conflicts before exporting.");
     expect(await fs.exists("/out")).toBe(false);
   });
 
@@ -407,5 +407,53 @@ describe("Export dialog", () => {
     release();
     expect(await within(dialog).findByRole("status")).toHaveTextContent("Exported 1 file.");
     expect(within(dialog).getByRole("button", { name: "Close" })).toBeEnabled();
+  });
+});
+
+describe("Figma export option", () => {
+  const FIG = `${R}/design/figma/ALL`;
+  const withFigma = async (fs: MemoryFs) => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const dir = resolve(__dirname, "../test/fixtures/figma/ALL");
+    for (const f of ["ENG.tokens.json", "TH.tokens.json"]) await fs.writeTextAtomic(`${FIG}/${f}`, readFileSync(`${dir}/${f}`, "utf8"));
+    const metaPath = `${R}/${WORKSPACE_META_PATH}`;
+    const meta = JSON.parse(await fs.readText(metaPath));
+    meta.figma = { dir: "design/figma", modes: { ENG: "en", TH: "th" }, vars: {}, baseline: {} };
+    await fs.writeTextAtomic(metaPath, JSON.stringify(meta, null, 2));
+  };
+
+  it("shows the unmapped count and the Figma option", async () => {
+    const { session } = await openWs(withFigma);
+    await waitFor(() => expect(session.data.keyOrder).toContain(keyId("figma-ALL", "ข้อมูลการรับประกัน")));
+    const dialog = await openDialog();
+    expect(within(dialog).getByText("3 Figma strings have no code key yet — write-back skips them.")).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("radio", { name: "i18next JSON" }));
+    expect(within(dialog).getByText("3 Figma strings have no code key yet — they use their Figma names as keys.")).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Figma Variables (.tokens.json)" }));
+    expect(within(dialog).getByText(`${R}/design/figma`)).toBeInTheDocument();
+  });
+
+  it("exporting to the Figma folder after one edit changes only that $value", async () => {
+    const { fs, session } = await openWs(withFigma);
+    const id = keyId("figma-ALL", "ข้อมูลการรับประกัน");
+    await waitFor(() => expect(session.data.keyOrder).toContain(id));
+    if (session.isDirty()) await useApp.getState().save();
+    const before = await fs.readText(`${FIG}/TH.tokens.json`);
+    session.setText(id, "th", "ข้อมูลประกัน");
+    const dialog = await openDialog();
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Figma Variables (.tokens.json)" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Export" }));
+    await userEvent.click(await within(dialog).findByRole("button", { name: "Replace" }));
+    await within(dialog).findByRole("status");
+    const after = await fs.readText(`${FIG}/TH.tokens.json`);
+    const diff = after.split("\n").filter((l, i) => l !== before.split("\n")[i]);
+    expect(diff).toEqual(['    "$value": "ข้อมูลประกัน",']);
+  });
+
+  it("no Figma option for a workspace without Figma files", async () => {
+    await openWs();
+    const dialog = await openDialog();
+    expect(within(dialog).queryByRole("radio", { name: "Figma Variables (.tokens.json)" })).toBeNull();
   });
 });

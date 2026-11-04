@@ -34,7 +34,8 @@ export type ExportTarget =
   | { kind: "ts-copy"; dir: string }
   | { kind: "ts-modules"; dir: string }
   | { kind: "i18next-json"; dir: string; namespaces: "per-group" | "single" }
-  | { kind: "paraglide"; dir: string };
+  | { kind: "paraglide"; dir: string }
+  | { kind: "figma"; dir: string };
 
 export interface ExportSettings {
   target: ExportTarget;
@@ -137,6 +138,7 @@ function parseTarget(v: unknown): ExportTarget | undefined {
     case "ts-copy":
     case "ts-modules":
     case "paraglide":
+    case "figma":
       return dir === undefined ? undefined : { kind: v.kind, dir };
     case "i18next-json":
       return dir !== undefined && (v.namespaces === "per-group" || v.namespaces === "single")
