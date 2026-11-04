@@ -186,6 +186,46 @@ describe("workspace store", () => {
     expect(parseBaseline(null)).toBeNull();
   });
 
+  it("meta parse keeps valid figma data, drops bad vars and rejects unsafe figma dir", () => {
+    const one = parseWorkspaceMeta(
+      j({
+        retransWorkspace: 1,
+        name: "x",
+        figma: {
+          dir: "design/figma",
+          modes: { ENG: "en", TH: 5, JA: "ja" },
+          vars: {
+            good: { collection: "ALL", name: "Button.Save", row: "common::button.save" },
+            bad: { collection: "ALL", name: "Button.Save", row: 1 },
+          },
+          baseline: {
+            good: { en: "Save", th: "บันทึก", ja: true },
+            bad: 1,
+          },
+        },
+      }),
+    )!;
+    expect(one.figma).toEqual({
+      dir: "design/figma",
+      modes: { ENG: "en", JA: "ja" },
+      vars: {
+        good: { collection: "ALL", name: "Button.Save", row: "common::button.save" },
+      },
+      baseline: {
+        good: { en: "Save", th: "บันทึก" },
+      },
+    });
+
+    const two = parseWorkspaceMeta(
+      j({
+        retransWorkspace: 1,
+        name: "x",
+        figma: { dir: "../x", modes: {}, vars: {}, baseline: {} },
+      }),
+    )!;
+    expect(two.figma).toBeUndefined();
+  });
+
   it("an absolute or `..` source folder is invalid: kept out of `source`, written back unchanged", () => {
     const meta = (localesDir: string) => j({ retransWorkspace: 1, name: "x", source: { type: "ts", localesDir } });
     for (const bad of ["/etc", "\\\\server\\share", "C:\\Users\\x", "c:/x", "..", "../x", "src/../../x", "src\\..\\x"]) {
@@ -216,6 +256,27 @@ describe("workspace store", () => {
     const b = { "common::a": { th: "ก", en: "A" } };
     expect(parseBaseline(serializeBaseline(b))).toEqual(b);
     expect(serializeBaseline(b)).toBe('{\n  "common::a": {\n    "en": "A",\n    "th": "ก"\n  }\n}\n');
+  });
+
+  it("figma meta round-trips through serialize and parse", () => {
+    const m: WorkspaceMeta = {
+      retransWorkspace: 1,
+      name: "N",
+      drafts: {},
+      markers: {},
+      removedInSource: [],
+      duplicates: [],
+      emptyKeys: [],
+      renames: {},
+      deletedKeys: [],
+      figma: {
+        dir: "design/figma",
+        modes: { ENG: "en", TH: "th" },
+        vars: { "VariableID:1": { collection: "ALL", name: "Button.Save", row: "figma-ALL::Button.Save" } },
+        baseline: { "VariableID:1": { en: "Save", th: "บันทึก" } },
+      },
+    };
+    expect(parseWorkspaceMeta(serializeWorkspaceMeta(m))).toEqual(m);
   });
 
   it("a plain next-i18next project still detects as before", async () => {
