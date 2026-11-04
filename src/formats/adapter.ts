@@ -1,6 +1,7 @@
 import type { Fs } from "../platform/fs";
 import type { JsonStyle } from "../core/json-text";
 import type { Format, MessageValue, ProjectData } from "../core/model";
+import type { WorkspaceMeta } from "../workspace/meta";
 
 export interface DetectResult {
   format: Format;
@@ -9,6 +10,8 @@ export interface DetectResult {
   namespaces: string[];
   localesPath: string; // relative to root, e.g. "public/locales"; for Paraglide the pathPattern, e.g. "messages/{locale}.json"
   keyCount: number;
+  /** Set when the folder is a Retrans workspace (next-i18next layout under .retrans/workspace). */
+  workspace?: WorkspaceMeta;
 }
 
 export interface ProjectOptions {

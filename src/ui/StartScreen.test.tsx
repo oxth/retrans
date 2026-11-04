@@ -16,7 +16,7 @@ vi.mock("../platform/zip", () => ({
     return zip.entries;
   }),
 }));
-vi.mock("@tauri-apps/api/path", () => ({ appDataDir: vi.fn(async () => "/appdata") }));
+vi.mock("@tauri-apps/api/path", () => ({ appDataDir: vi.fn(async () => "/appdata"), documentDir: vi.fn(async () => "/docs") }));
 vi.mock("@tauri-apps/plugin-store", () => ({
   load: vi.fn(async () => ({
     get: async (k: string) => prefs.get(k),
@@ -103,22 +103,19 @@ describe("StartScreen", () => {
     expect(await screen.findByText(/No next-i18next or Paraglide project found/)).toBeInTheDocument();
   });
 
-  it("wizard creates a project and opens it", async () => {
+  it("wizard creates a workspace and opens it", async () => {
     const fs = new MemoryFs();
     await setup(fs);
-    pick.value = "/new";
     await userEvent.click(screen.getByRole("button", { name: "New project" }));
-    await userEvent.click(screen.getByRole("button", { name: "Next" })); // format: next-i18next
+    await userEvent.type(screen.getByLabelText("Project name"), "My App");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
     await userEvent.click(screen.getByRole("radio", { name: /^en\s*English$/ }));
     await userEvent.type(screen.getByLabelText("Search target languages"), "Thai");
     await userEvent.click(screen.getByRole("checkbox", { name: /^th\s*Thai$/ }));
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByLabelText("Namespace")).toHaveValue("common");
-    await userEvent.click(screen.getByRole("button", { name: "Next" }));
-    await userEvent.click(screen.getByRole("button", { name: /Choose folder/ }));
-    await userEvent.click(await screen.findByRole("button", { name: "Create project" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Create" }));
     await screen.findByRole("button", { name: "Close project" });
-    expect(await fs.exists("/new/public/locales/th")).toBe(true);
+    expect(await fs.exists("/docs/Retrans/My App/.retrans/workspace.json")).toBe(true);
     expect(useApp.getState().session!.data.locales).toEqual(["en", "th"]);
   });
 

@@ -63,6 +63,26 @@ A translator package is a `.zip` that is a complete, openable project: the local
 6. **Import (developer).** On the Import / Export page choose **Import package (.zip)…** (or **Import folder…**). Cells the translator filled are added, status changes are applied, and cells both of you changed differently are listed as conflicts to resolve. Your own edits elsewhere are untouched, and the base language is never changed.
 7. **Review and save.** Check the imported cells, then Save.
 
+## TypeScript translations and workspaces
+
+Some projects keep their translations in TypeScript modules instead of JSON, for example `const common = { email: { th: 'อีเมล', en: 'Email' } }` passed through `mapLocale`, or one object per language (`buttonTH`, `buttonEN`). Retrans edits these through a **workspace**.
+
+- **Import.** Choose **Open project** and pick the project folder (or its locales folder). When Retrans finds TypeScript locale modules but no JSON project, it shows **Import TypeScript translations**. It looks in `src/assets/locales`, `src/locales`, `src/i18n` and `locales`, ignores `mapLocale.ts`, `__tests__/` and `*.test.*` / `*.spec.*` files, and never edits `src/utils/i18n.ts` or any other code. The base language defaults to `th` when the project has it. Each file becomes a **Group**. Values computed in code (a template literal, a variable) are shown read-only.
+- **Where it lives.** The workspace is stored in `<project>/.retrans/`: the translations as JSON under `.retrans/workspace/`, the workspace settings in `.retrans/workspace.json`, review status in `.retrans/state.json`, and what the TypeScript files held at the last import, sync or export in `.retrans/source-baseline.json`. Commit `.retrans/` with the project if you want to share review status.
+- **Save vs Export.** **Save** writes only the workspace in `.retrans/`; it never touches your TypeScript files. **Export…** is the only thing that writes outside the workspace.
+- **Export kinds.**
+  1. **TypeScript:** **Write back to the original files** (a minimal diff: only the changed string literals change, and quotes, indentation, line breaks and comments stay as they were), **Write TypeScript files to another folder**, or **TypeScript modules (table style)** for new code.
+  2. **i18next JSON:** one file per group (`<locale>/<group>.json`) or one `translation.json` per language.
+  3. **Paraglide:** `messages/<locale>.json` plus `project.inlang/settings.json`. `{{x}}` placeholders become `{x}`; i18next format modifiers are dropped, with a warning.
+
+  Untranslated keys are left out of JSON and Paraglide exports (never written as `""`). A language added in Retrans is not written into existing TypeScript files: write-back lists it as left out and shows a snippet to add it by hand.
+- **Auto-sync.** When a workspace opens, and whenever the TypeScript files change on disk (a `git pull`, an edit in your code editor), Retrans merges the change into the workspace, cell by cell: a value changed only in the code is taken, a value changed only in Retrans is kept, and a value changed differently on both sides is a conflict to resolve. Keys removed from the code are marked **Removed in source** (Keep or Delete them); they are never deleted silently. Write-back syncs first and refuses while a conflict is open. If the source folder is missing (for example in a translator package), the app shows "Source files not found — showing the saved workspace." and changes nothing.
+- **The " (EN)" rule.** A value in language `xx` that ends with ` (XX)`, such as `'Reset password (EN)'` in `en`, is an untranslated marker and counts as **missing**. If the text before the marker isn't just the base-language value, Retrans offers it as a **Draft**; accepting it makes it a normal translation. On write-back, a cell that is still missing keeps its original marker text, so the code still shows the fallback.
+- **Duplicate keys.** The same key in two groups gives two rows, each marked **Duplicate key**. Export to single-file i18next JSON and to Paraglide is blocked until they are renamed; per-group JSON and the TypeScript exports still work.
+- **Renames.** Renaming a key in Retrans survives syncs. Write-back carries it to the code: the old key is removed from the TypeScript object and the new key written in its place.
+- **Format-free new projects.** **New project** creates an empty workspace (default location `~/Documents/Retrans/<name>/`, or any empty folder you choose) that isn't tied to a file format. Add groups, keys and languages, then pick the format at **Export…** time.
+- **Translator packages** work for workspaces too. The package holds the workspace (without the TypeScript files and the source baseline), so the translator works on it like any project; importing it back works as described above. Write back to the code afterwards with **Export…**.
+
 ## First launch of an unsigned build
 
 The macOS download is for Apple Silicon Macs (M1 and later) running macOS 11 Big Sur or newer.
@@ -74,7 +94,7 @@ Releases are not code-signed for the OS, so the system warns on first launch.
 
 ## Manual checklist
 
-The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts`, `src/test/e2e-mt.test.ts` for batch machine translation with a fake engine, and `src/test/e2e-package.test.ts` for the translator package round trip). These GUI checks need a person, using `pnpm tauri dev` on a copy of each fixture in `src/test/fixtures/`:
+The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts`, `src/test/e2e-mt.test.ts` for batch machine translation with a fake engine, `src/test/e2e-package.test.ts` for the translator package round trip, and `src/test/e2e-workspace.test.ts` for the TypeScript workspace round trip). These GUI checks need a person, using `pnpm tauri dev` on a copy of each fixture in `src/test/fixtures/`:
 
 - [ ] The window opens and the project loads from the chosen folder.
 - [ ] Tab moves to the next missing cell; fill a missing Thai cell this way and mark it reviewed.
@@ -92,6 +112,12 @@ The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts
 - [ ] Delete the model: the space used drops.
 - [ ] **Fallback check:** if TranslateGemma 4B fails to load or gives poor Thai to English output, swap catalog entry 1 for the Qwen3 4B fallback given in Task 2 of `docs/superpowers/plans/2026-10-31-paratrans-local-mt.md`.
 - [ ] Translator packages: export, open the zip as a translator, translate, re-export, then import with a conflict, and resolve it.
+- [ ] TypeScript workspace on `src/test/fixtures/ts-locales` (a copy): Open project offers **Import TypeScript translations**; after import the " (EN)" cells show as missing, drafts can be accepted, `change_pw` shows **Duplicate key** and `maguro_brand` is read-only. Save leaves the `.ts`/`.tsx` files unchanged.
+- [ ] Workspace auto-sync: with the workspace open, add a key to a `.ts` file in a text editor; it appears in the app. Change the same cell in both the app and the file: a conflict appears, and **Write back to the original files** refuses until it is resolved.
+- [ ] Workspace exports: write back, write TypeScript to another folder, i18next JSON per group and single file (blocked while duplicates exist), Paraglide (blocked likewise), and TypeScript modules (table style).
+- [ ] Workspace translator package: export it, open the zip as a translator (it opens as a workspace with no row marked **Removed in source**, and **Export…** doesn't offer **Write back to the original files**), translate, send back, import into the workspace, then write back to the code.
+- [ ] **New project:** the default location is `~/Documents/Retrans/<name>/`; a non-empty folder is refused; add keys and languages, then export to each format.
+- [ ] **`axons-cms` run:** on a fresh copy (`cp -R ~/Works/AXONS/axons-cms /tmp/axons-cms-copy`; never the original), open it, import, check the " (EN)" placeholders are flagged as missing, edit and review a few cells (one Thai, one English, one placeholder), Save, then **Write back to the original files**. In the copy, `git diff` shows only the changed strings, one line each, and `git status` shows no other changed files besides the new `.retrans/` folder.
 - [ ] Updates: an update banner appears against a draft-free test release (after the first real release).
 - [ ] Windows: suggestions work on a non-AVX2 machine if one is available, otherwise on any machine.
 

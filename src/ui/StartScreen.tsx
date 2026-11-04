@@ -7,7 +7,9 @@ import { MANIFEST_PATH, parseManifest } from "../package/manifest";
 import { joinPath } from "../platform/fs";
 import { zipRead } from "../platform/zip";
 import { getRecent, type RecentProject } from "../platform/prefs";
+import { resolveTsSource } from "../tssource/import";
 import { btnGhost, btnPrimary, Dialog } from "./Dialog";
+import { ImportTsDialog } from "./ImportTsDialog";
 import { NewProjectWizard } from "./NewProjectWizard";
 import { OpenProjectDialog } from "./OpenProjectDialog";
 import { savedBaseLocale, useApp } from "./store";
@@ -17,6 +19,8 @@ export function StartScreen() {
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [pending, setPending] = useState<{ root: string; detected: DetectResult; savedBase?: string | null } | null>(null);
   const [wizard, setWizard] = useState(false);
+  /** TypeScript locale modules found where no project was: offered for import. */
+  const [importing, setImporting] = useState<{ root: string; localesDir: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   /** A package's folder that already holds that package (re-opened zip): offered instead of extracting. */
   const [existing, setExisting] = useState<string | null>(null);
@@ -42,11 +46,30 @@ export function StartScreen() {
       const p = await pickFile({ directory: true });
       if (typeof p !== "string") return;
       const root = p.replace(/\\/g, "/");
-      const detected = await detect(root);
-      if (detected) setPending({ root, detected, savedBase: await savedBaseLocale(fs, root, detected) });
+      const found = await findProject(root);
+      if (found) setPending({ ...found, savedBase: await savedBaseLocale(fs, found.root, found.detected) });
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     }
+  };
+
+  /**
+   * The project in `root`. Failing that, TypeScript locale modules: the workspace of the project
+   * around them when it has one (the user picked the locales folder), else the Import dialog is
+   * shown and null returned. null with a message when there is nothing at all.
+   */
+  const findProject = async (root: string): Promise<{ root: string; detected: DetectResult } | null> => {
+    setMessage(null);
+    const detected = await detectProject(fs, root);
+    if (detected) return { root, detected };
+    const ts = await resolveTsSource(fs, root);
+    if (ts && ts.root !== root) {
+      const d = await detectProject(fs, ts.root);
+      if (d?.workspace) return { root: ts.root, detected: d };
+    }
+    if (ts) setImporting(ts);
+    else setMessage("No next-i18next or Paraglide project found in this folder.");
+    return null;
   };
 
   /** Open an extracted package folder: ask for the base language only when detection can't tell. */
@@ -104,12 +127,18 @@ export function StartScreen() {
   };
 
   const openRecent = async (r: RecentProject) => {
-    const d = await detect(r.root);
-    if (!d) return;
-    const base = d.baseLocale ?? (await savedBaseLocale(fs, r.root, d));
-    if (base === null) return setPending({ root: r.root, detected: d });
+    let found: Awaited<ReturnType<typeof findProject>>;
     try {
-      await openProject(r.root, d, { baseLocale: base, localesPath: d.localesPath });
+      found = await findProject(r.root); // an import never saved is offered again
+    } catch (e) {
+      return setMessage(e instanceof Error ? e.message : String(e));
+    }
+    if (!found) return;
+    const { root, detected: d } = found;
+    const base = d.baseLocale ?? (await savedBaseLocale(fs, root, d));
+    if (base === null) return setPending({ root, detected: d });
+    try {
+      await openProject(root, d, { baseLocale: base, localesPath: d.localesPath });
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     }
@@ -150,6 +179,7 @@ export function StartScreen() {
       </div>
       {pending && <OpenProjectDialog {...pending} onCancel={() => setPending(null)} />}
       {wizard && <NewProjectWizard onCancel={() => setWizard(false)} />}
+      {importing && <ImportTsDialog {...importing} onCancel={() => setImporting(null)} />}
       {existing && (
         <Dialog title="Package already open" onClose={() => setExisting(null)}>
           <p className="break-words text-sm">This package is already open in {existing}. Open it?</p>

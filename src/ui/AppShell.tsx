@@ -6,13 +6,15 @@ import type { EditActions } from "./Cell";
 import { ListView } from "./ListView";
 import { AddKeyDialog, DeleteKeyDialog, RenameKeyDialog } from "./KeyDialogs";
 import { ConflictDialog } from "./ConflictDialog";
+import { ExportDialog } from "./ExportDialog";
 import { LanguagesPage } from "./LanguagesPage";
 import { LoadErrors } from "./LoadErrors";
 import { SharePage } from "./SharePage";
 import { SettingsPage } from "./SettingsPage";
 import { type Page, Sidebar } from "./Sidebar";
 import { UnsavedPrompt } from "./UnsavedPrompt";
-import { useApp, useSessionVersion } from "./store";
+import { SOURCE_INVALID_MESSAGE, SOURCE_MISSING_MESSAGE, useApp, useSessionVersion } from "./store";
+import { keepKey } from "../workspace/actions";
 import { TableView } from "./TableView";
 import { activeModel, useMt } from "./mt-store";
 import { type FilterState, Toolbar } from "./Toolbar";
@@ -25,13 +27,14 @@ export function AppShell() {
   const version = useSessionVersion();
   const session = useApp((s) => s.session);
   const error = useApp((s) => s.error);
+  const sourceMissing = useApp((s) => s.sourceMissing);
   const requestClose = useApp((s) => s.requestClose);
   const [page, setPage] = useState<Page>("translations");
   const [filter, setFilter] = useState<FilterState>(INITIAL);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [viewMode, setMode] = useState<"list" | "table">("list");
   const root = session?.data.root;
-  const [dialog, setDialog] = useState<{ kind: "add" } | { kind: "translate" } | { kind: "rename" | "delete"; row: Row } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "add" | "translate" | "export" } | { kind: "rename" | "delete"; row: Row } | null>(null);
   const hasModel = useMt(useShallow((s) => activeModel(s))) !== null;
   const dirty = !!session && (version >= 0 ? session.isDirty() : false);
 
@@ -125,7 +128,12 @@ export function AppShell() {
     [],
   );
 
-  const onRowAction = useCallback((row: Row, kind: "rename" | "delete") => setDialog({ kind, row }), []);
+  const onRowAction = useCallback((row: Row, kind: "rename" | "delete" | "keep") => {
+    if (kind === "keep") {
+      const s = live.current.session;
+      if (s) keepKey(s, row.id);
+    } else setDialog({ kind, row });
+  }, []);
 
   if (!session) return null;
   const toggleLocale = (l: string) =>
@@ -141,6 +149,14 @@ export function AppShell() {
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-8 shrink-0 items-center justify-end gap-3 border-b border-gray-100 px-4 text-xs">
           {dirty && <span className="font-medium text-amber-700">• Unsaved</span>}
+          {session.workspace && (
+            <button
+              className="rounded border border-gray-300 px-2 py-0.5 hover:bg-gray-50"
+              onClick={() => setDialog({ kind: "export" })}
+            >
+              Export…
+            </button>
+          )}
           <button
             className="rounded border border-gray-300 px-2 py-0.5 hover:bg-gray-50 disabled:opacity-40"
             disabled={!dirty}
@@ -150,6 +166,11 @@ export function AppShell() {
           </button>
         </div>
         <LoadErrors session={session} />
+        {(sourceMissing || session.workspace?.invalidSource) && (
+          <div role="status" className="bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            {session.workspace?.invalidSource ? SOURCE_INVALID_MESSAGE : SOURCE_MISSING_MESSAGE}
+          </div>
+        )}
         {error && (
           <div role="alert" className="flex items-center justify-between gap-3 bg-red-50 px-4 py-2 text-sm text-red-700">
             <span>{error}</span>
@@ -164,6 +185,7 @@ export function AppShell() {
               missingCount={missingCount}
               namespaces={session.data.namespaces}
               showNamespaces={session.data.format === "next-i18next"}
+              nsLabel={session.workspace ? "Group" : "Namespace"}
               targetLocales={targets}
               hidden={hidden}
               onToggleLocale={toggleLocale}
@@ -192,6 +214,7 @@ export function AppShell() {
       {dialog?.kind === "translate" && <TranslateMissingDialog session={session} defaultLocale={visible[0]} onClose={() => setDialog(null)} />}
       {dialog?.kind === "rename" && <RenameKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
       {dialog?.kind === "delete" && <DeleteKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "export" && <ExportDialog session={session} onClose={() => setDialog(null)} />}
       <ConflictDialog />
       <UnsavedPrompt />
     </div>

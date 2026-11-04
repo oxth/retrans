@@ -96,9 +96,9 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
           </label>
           {format === "next-i18next" && (
             <label className="block text-sm">
-              Namespace
+              {session.workspace ? "Group" : "Namespace"}
               <select className={inputCls} value={ns} onChange={(e) => setNs(e.target.value)}>
-                <option value="all">All namespaces</option>
+                <option value="all">{session.workspace ? "All groups" : "All namespaces"}</option>
                 {namespaces.map((n) => (
                   <option key={n} value={n}>{n}</option>
                 ))}

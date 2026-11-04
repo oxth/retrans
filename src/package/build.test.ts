@@ -6,6 +6,10 @@ import { ProjectSession } from "../core/session";
 import { parseState, STATE_PATH } from "../core/state-file";
 import { MANIFEST_PATH, parseManifest, serializeManifest } from "./manifest";
 import { buildPackage, ExportError, packageFileName } from "./build";
+import { openFixtureWorkspace } from "../test/workspace-fixture";
+import { parseWorkspaceMeta, WORKSPACE_META_PATH } from "../workspace/meta";
+import { syncFromSource } from "../workspace/sync";
+import { openIncoming } from "./diff";
 
 const R = "/project";
 const j = (o: unknown) => JSON.stringify(o, null, 2) + "\n";
@@ -110,6 +114,44 @@ describe("buildPackage", () => {
     expect(m.sourceProjectId).toBe("dev-1");
     expect(m.exportedAt).toBe(NOW.toISOString());
     expect(m.locales).toEqual(["th"]);
+  });
+
+  it("workspace: the workspace, its meta without source and state.json; no baseline, no TS sources", async () => {
+    const { session: s } = await openFixtureWorkspace();
+    const renamed = s.renameKey(keyId("button", "button_ok"), "button_okay");
+    s.setWorkspaceMeta({ lastExport: { target: { kind: "i18next-json", dir: "/Users/dev/out", namespaces: "per-group" } } });
+    s.setProjectSetting({ id: "ws-1" });
+    await s.save();
+    const meta = s.workspace!;
+    expect(meta.source).toEqual({ type: "ts", localesDir: "src/assets/locales" });
+
+    const out = await buildPackage(s, { locales: ["en"], now: NOW });
+    const groups = ["button", "change-password", "common", "dashboardMaguro"];
+    expect(out.map((f) => f.path)).toEqual([
+      ".retrans/package.json", ".retrans/state.json", ".retrans/workspace.json",
+      ...groups.map((g) => `.retrans/workspace/en/${g}.json`),
+      ...groups.map((g) => `.retrans/workspace/th/${g}.json`),
+    ]);
+    const get = (p: string) => out.find((f) => f.path === p)!.text;
+    const packaged = parseWorkspaceMeta(get(WORKSPACE_META_PATH))!;
+    expect(packaged.source).toBeUndefined();
+    expect(packaged.lastExport).toBeUndefined();
+    expect(packaged.renames).toEqual({ [keyId("button", "button_ok")]: renamed });
+    const { source: _s, lastExport: _l, ...kept } = meta;
+    expect(packaged).toEqual(kept);
+    expect(parseState(get(STATE_PATH)).state.project).toMatchObject({ id: "ws-1", baseLocale: "th" });
+    expect(parseManifest(get(MANIFEST_PATH))!.localesPath).toBe(".retrans/workspace");
+
+    // Opened by the translator (or for import): a workspace with no source, so sync does nothing.
+    const inc = await openIncoming(out);
+    expect(inc.baseKnown).toBe(true);
+    expect(inc.session.data.baseLocale).toBe("th");
+    expect(inc.session.workspace?.source).toBeUndefined();
+    expect(inc.session.value(renamed, "en")).toEqual({ kind: "text", text: "OK" });
+    const r = await syncFromSource(inc.session);
+    expect(r.sourceAvailable).toBe(false);
+    expect(inc.session.workspace!.removedInSource).toEqual([]);
+    expect(inc.session.isDirty()).toBe(false);
   });
 
   it("packageFileName", () => {

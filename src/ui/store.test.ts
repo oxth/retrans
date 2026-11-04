@@ -274,3 +274,53 @@ describe("review fixes: malformed state.json", () => {
     expect(await fs.readText("/project/.retrans/state.json")).toBe("<<<<<<< HEAD\n{}\n");
   });
 });
+
+describe("workspaces", () => {
+  async function wsPrep() {
+    const { createWorkspace } = await import("../workspace/store");
+    const fs = new MemoryFs({});
+    await createWorkspace(fs, "/project", { name: "Demo", baseLocale: "th", locales: ["th", "en"] });
+    // A locales-path override left in state.json must not move a workspace's files.
+    const st = JSON.parse(await fs.readText("/project/.retrans/state.json"));
+    st.project.localesPath = "public/locales";
+    await fs.writeTextAtomic("/project/.retrans/state.json", JSON.stringify(st, null, 2) + "\n");
+    const d = (await detectProject(fs, "/project"))!;
+    return { fs, d, opts: { baseLocale: d.baseLocale!, localesPath: d.localesPath } };
+  }
+
+  it("ignores the locales-path override and saves inside .retrans/workspace", async () => {
+    const { fs, d, opts } = await wsPrep();
+    useApp.setState({ fs });
+    await useApp.getState().openProject("/project", d, opts);
+    const s = useApp.getState().session!;
+    expect(s.opts.localesPath).toBe(".retrans/workspace");
+    s.addKey("common", "hello", "สวัสดี");
+    expect(await useApp.getState().save()).toBe(true);
+    expect(await fs.readText("/project/.retrans/workspace/th/common.json")).toContain("hello");
+    expect(await fs.exists("/project/public/locales/th/common.json")).toBe(false);
+  });
+
+  it("a workspace.json change is watched, and save recovers from a stale meta", async () => {
+    const { fs, d, opts } = await wsPrep();
+    useApp.setState({ fs });
+    let fire!: (paths: string[]) => void;
+    watch.mockImplementation(async (_r, cb) => {
+      fire = cb;
+      return async () => {};
+    });
+    await useApp.getState().openProject("/project", d, opts);
+    const s = useApp.getState().session!;
+    const reload = vi.spyOn(s, "reloadFromDisk");
+    fire(["/project/.retrans/workspace.json"]);
+    expect(reload).toHaveBeenCalledTimes(1);
+    await reload.mock.results[0].value;
+    reload.mockRestore();
+
+    s.setWorkspaceMeta({ duplicates: ["a"] });
+    const meta = JSON.parse(await fs.readText("/project/.retrans/workspace.json"));
+    await fs.writeTextAtomic("/project/.retrans/workspace.json", JSON.stringify({ ...meta, name: "Renamed" }, null, 2) + "\n");
+    expect(await useApp.getState().save()).toBe(true);
+    expect(useApp.getState().error).toBeNull();
+    expect(JSON.parse(await fs.readText("/project/.retrans/workspace.json"))).toMatchObject({ name: "Renamed", duplicates: ["a"] });
+  });
+});

@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from "react";
 import { isApplicable } from "../core/plurals";
-import type { ProjectSession } from "../core/session";
+import { READ_ONLY_MESSAGE, type ProjectSession } from "../core/session";
+import { acceptDraft } from "../workspace/actions";
 import { isTranslated, type KeyId } from "../core/model";
 import { CellEditor } from "./CellEditor";
 import { useSuggestion } from "./Suggestion";
@@ -57,6 +58,18 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     );
   }
   const v = session.value(id, locale);
+  const readOnly = session.readOnlyReason(id, locale);
+
+  if (readOnly !== null) {
+    // Computed in code (TypeScript source): shown, never edited here.
+    return (
+      <div className="flex items-start gap-2 rounded bg-gray-50 px-1.5 py-1 text-gray-500" data-cell="read-only" data-locale={locale} title={readOnly}>
+        {code}
+        {v?.kind === "text" && <span className="min-w-0 whitespace-pre-wrap break-words">{v.text}</span>}
+        <span className="italic">{READ_ONLY_MESSAGE}</span>
+      </div>
+    );
+  }
 
   if (editing) {
     const complex = v?.kind === "complex";
@@ -98,9 +111,10 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
   };
 
   if (!v || !isTranslated(v)) {
+    const draft = session.workspace?.drafts[id]?.[locale];
     return (
       <div
-        className="flex cursor-text items-center gap-2 rounded bg-red-50 px-1.5 py-1 italic text-red-600"
+        className="flex cursor-text flex-wrap items-center gap-2 rounded bg-red-50 px-1.5 py-1 italic text-red-600"
         data-cell="missing"
         ref={el}
         data-locale={locale}
@@ -111,6 +125,24 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
         {code}
         <StatusDot status="untranslated" needsReview={false} machine={false} />
         <span>{v ? "Missing (empty string in file) — click to translate" : "Missing — click to translate"}</span>
+        {draft !== undefined && (
+          <span className="flex basis-full items-center gap-2 not-italic text-gray-700" data-draft>
+            <span className="min-w-0 whitespace-pre-wrap break-words">Draft: {draft}</span>
+            <button
+              className="shrink-0 rounded border border-gray-300 bg-white px-1.5 text-xs hover:bg-gray-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                try {
+                  acceptDraft(session, id, locale);
+                } catch (err) {
+                  actions.error?.(err instanceof Error ? err.message : String(err));
+                }
+              }}
+            >
+              Accept draft
+            </button>
+          </span>
+        )}
       </div>
     );
   }

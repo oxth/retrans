@@ -34,7 +34,7 @@ export function ConflictDialog() {
                   <button className={`${btnGhost} mt-1 border border-gray-300`} onClick={() => resolve(c, "mine")}>Mine</button>
                 </div>
                 <div>
-                  <div className="text-xs font-semibold text-gray-500">On disk</div>
+                  <div className="text-xs font-semibold text-gray-500">{c.origin === "source" ? "In the source files" : "On disk"}</div>
                   <div className="whitespace-pre-wrap break-words">{show(c.theirs)}</div>
                   <button className={`${btnGhost} mt-1 border border-gray-300`} onClick={() => resolve(c, "theirs")}>Theirs</button>
                 </div>

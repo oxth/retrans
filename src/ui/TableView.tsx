@@ -2,7 +2,9 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useRef } from "react";
 import { Cell } from "./Cell";
 import { RowMenu } from "./RowMenu";
-import type { ViewProps } from "./ListView";
+import { isRemovedInSource, type ViewProps } from "./ListView";
+import { RowWarnings } from "./Warnings";
+import { duplicateGroups } from "../workspace/actions";
 
 const KEY_W = 220;
 const COL_W = 260;
@@ -50,6 +52,7 @@ export function TableView({ session, rows, locales, version, editing, actions, o
           <div style={{ height: virt.getTotalSize(), position: "relative" }}>
             {virt.getVirtualItems().map((vi) => {
               const row = rows[vi.index];
+              const removed = isRemovedInSource(session, row.id);
               return (
                 <div
                   key={vi.key}
@@ -63,10 +66,18 @@ export function TableView({ session, rows, locales, version, editing, actions, o
                     <div className="flex items-start gap-1">
                       <div className="min-w-0 flex-1 break-all font-mono font-semibold text-gray-700">{row.key}</div>
                       {onRowAction && (
-                        <RowMenu name={row.key} onRename={() => onRowAction(row, "rename")} onDelete={() => onRowAction(row, "delete")} />
+                        <RowMenu
+                          name={row.key}
+                          onRename={() => onRowAction(row, "rename")}
+                          onDelete={() => onRowAction(row, "delete")}
+                          onKeep={removed ? () => onRowAction(row, "keep") : undefined}
+                        />
                       )}
                     </div>
                     {row.ns && <div className="text-[10px] text-gray-400">{row.ns}</div>}
+                    <div className="text-[10px]">
+                      <RowWarnings duplicateOf={duplicateGroups(session, row.id)} removedInSource={removed} />
+                    </div>
                   </div>
                   <div className="shrink-0 border-r border-gray-100 bg-white" style={{ width: COL_W, ...pin(KEY_W) }}>
                     <Cell session={session} id={row.id} locale={base} showCode={false} version={version} editing={editId === row.id && editLocale === base} actions={actions} />

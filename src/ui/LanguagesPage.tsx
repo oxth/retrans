@@ -9,6 +9,7 @@ const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function LanguagesPage({ session, stats }: { session: ProjectSession; stats: Map<string, { done: number; total: number }> }) {
   const { locales, baseLocale, format } = session.data;
+  const isWs = !!session.workspace;
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [snippet, setSnippet] = useState<string | null>(null);
@@ -18,7 +19,8 @@ export function LanguagesPage({ session, stats }: { session: ProjectSession; sta
 
   const showSnippet = () => {
     setCopied(false);
-    setSnippet(format === "next-i18next" ? localesSnippet(session.data.locales) : null);
+    // A workspace has no next-i18next config to update.
+    setSnippet(format === "next-i18next" && !isWs ? localesSnippet(session.data.locales) : null);
   };
   const addNs = () => {
     try {
@@ -88,11 +90,11 @@ export function LanguagesPage({ session, stats }: { session: ProjectSession; sta
 
       {format === "next-i18next" && (
         <div className="mt-6">
-          <h2 className="mb-2 text-sm font-semibold">Namespaces</h2>
+          <h2 className="mb-2 text-sm font-semibold">{isWs ? "Groups" : "Namespaces"}</h2>
           <div className="mb-2 text-xs text-gray-500">{session.data.namespaces.join(", ")}</div>
           <div className="flex gap-2">
-            <input aria-label="New namespace" className={inputCls} value={ns} onChange={(e) => { setNs(e.target.value); setError(null); }} />
-            <button className={btnGhost + " border border-gray-300 whitespace-nowrap"} disabled={!ns.trim()} onClick={addNs}>Add namespace</button>
+            <input aria-label={isWs ? "New group" : "New namespace"} className={inputCls} value={ns} onChange={(e) => { setNs(e.target.value); setError(null); }} />
+            <button className={btnGhost + " border border-gray-300 whitespace-nowrap"} disabled={!ns.trim()} onClick={addNs}>{isWs ? "Add group" : "Add namespace"}</button>
           </div>
         </div>
       )}

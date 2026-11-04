@@ -45,6 +45,19 @@ describe("detectProject with a package manifest", () => {
     const fs = new MemoryFs({ "/p/public/locales/en/c.json": '{"a":"A"}', "/p/.retrans/package.json": "nope" });
     expect((await detectProject(fs, "/p"))?.format).toBe("next-i18next");
   });
+  it("a package of a workspace opens as that workspace, base language from the manifest first", async () => {
+    const fs = new MemoryFs({
+      "/p/.retrans/workspace/en/common.json": '{"a":"A"}',
+      "/p/.retrans/workspace/th/common.json": '{"a":"ก"}',
+      "/p/.retrans/workspace.json": '{"retransWorkspace":1,"name":"w"}',
+      "/p/.retrans/package.json": manifest({ baseLocale: "th", localesPath: ".retrans/workspace" }),
+    });
+    const d = await detectProject(fs, "/p");
+    expect(d?.workspace?.name).toBe("w");
+    expect(d?.localesPath).toBe(".retrans/workspace");
+    expect(d?.baseLocale).toBe("th");
+    expect(d?.locales).toEqual(["th", "en"]);
+  });
   it("paraglide without a manifest is unchanged", async () => {
     const d = await detectProject(fx("paraglide"), "/project");
     expect(d?.format).toBe("paraglide");

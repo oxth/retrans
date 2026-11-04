@@ -19,6 +19,12 @@ import type { Journal } from "./recovery";
 import { planReload } from "./session-reload";
 import { parseState, reconcile, serializeState, STATE_PATH, type StateEntry, type StateFile } from "./state-file";
 import { cellMeta, recordCleared, recordEdit, recordReviewed, renameInState } from "./status";
+import {
+  type Baseline, BASELINE_PATH, jsonEqual, parseBaseline, parseWorkspaceMeta, serializeBaseline, serializeWorkspaceMeta,
+  WORKSPACE_DIR, WORKSPACE_META_ERROR, WORKSPACE_META_PATH, type WorkspaceMeta,
+} from "../workspace/meta";
+import { emptyKeysOf, type TsImport } from "../tssource/import";
+import { workspaceAdapter } from "../workspace/store";
 
 export { KeyError } from "./session-helpers";
 
@@ -54,6 +60,12 @@ function projectEqual(a: StateFile["project"], b: StateFile["project"]): boolean
   return a.baseLocale === b.baseLocale && a.localesPath === b.localesPath;
 }
 
+/** A TypeScript source entry Retrans can't edit; without `locale` the whole key. */
+export interface SourceReadOnly { id: KeyId; reason: string; locale?: string }
+
+export const READ_ONLY_MESSAGE = "Can't edit here (computed in code)";
+export const RENAME_READ_ONLY_MESSAGE = "Can't rename — this key is computed in code.";
+
 export class ProjectSession {
   readonly fs: Fs;
   readonly adapter: FormatAdapter;
@@ -82,11 +94,29 @@ export class ProjectSession {
   private batchDepth = 0;
   private batchEmitted = false;
   private dirtyCache: { version: number; cells: Array<{ id: KeyId; locale: string }> } | null = null;
+  /** Workspace meta (null for plain projects); written by save() when it differs from metaBaseline. */
+  private wsMeta: WorkspaceMeta | null;
+  private metaBaseline: string | null; // serialized meta as loaded / last saved
+  private metaDiskText: string | null = null; // raw workspace.json as loaded / last written (stale check)
+  /** Set while workspace.json on disk can't be parsed: it is then never written. */
+  private metaMalformed = false;
+  /**
+   * Workspace only: the source baseline after a sync, written by the next successful save(). Kept
+   * in memory until then so the baseline on disk never claims source changes that aren't saved.
+   */
+  private pendingBase: Baseline | null = null;
+  /** Workspace only: source entries computed in code (from the import / last sync); never editable here. */
+  private roCells: SourceReadOnly[] = [];
+  /**
+   * Workspace only: the keys (workspace ids) the TS source has, from the import / last sync (on
+   * open: the stored baseline's keys). Deleting one records it in meta.deletedKeys.
+   */
+  private sourceIds = new Set<KeyId>();
 
   private constructor(
     fs: Fs, root: string, adapter: FormatAdapter, opts: ProjectOptions,
     load: { data: ProjectData; files: LoadedFile[]; errors: FileError[] }, state: StateFile,
-    stateText: string | null, stateError: string | undefined,
+    stateText: string | null, stateError: string | undefined, workspace: WorkspaceMeta | null,
   ) {
     this.fs = fs;
     this.root = root;
@@ -100,14 +130,150 @@ export class ProjectSession {
     this.stateDiskText = stateText;
     this.stateError = stateError;
     this.errors = this.withStateError(load.errors);
+    this.wsMeta = workspace ? structuredClone(workspace) : null;
+    this.metaBaseline = workspace ? serializeWorkspaceMeta(workspace) : null;
   }
 
   static async open(fs: Fs, root: string, d: DetectResult, opts: ProjectOptions): Promise<ProjectSession> {
-    const adapter = d.format === "paraglide" ? paraglideAdapter : nextI18nextAdapter;
+    const adapter = d.workspace ? workspaceAdapter : d.format === "paraglide" ? paraglideAdapter : nextI18nextAdapter;
     const load = await adapter.load(fs, root, opts);
     const stateText = await readOrNull(fs, joinPath(root, STATE_PATH));
     const { state, error } = parseState(stateText);
-    return new ProjectSession(fs, root, adapter, opts, load, state, stateText, error);
+    const s = new ProjectSession(fs, root, adapter, opts, load, state, stateText, error, d.workspace ?? null);
+    if (d.workspace) {
+      s.metaDiskText = await readOrNull(fs, joinPath(root, WORKSPACE_META_PATH));
+      if (d.workspace.source) {
+        s.sourceIds = new Set(Object.keys(parseBaseline(await readOrNull(fs, joinPath(root, BASELINE_PATH))) ?? {}));
+      }
+      s.addExtraRows();
+    }
+    return s;
+  }
+
+  /**
+   * A workspace made from an imported TypeScript project, in memory only: every file under
+   * .retrans/ (workspace files, meta, state.json with the base language, source baseline) is
+   * written by the first save(). Nothing is written here.
+   */
+  static async fromImport(
+    fs: Fs, root: string, imp: TsImport, o: { name: string; localesDir: string; baseLocale: string },
+  ): Promise<ProjectSession> {
+    const base = o.baseLocale;
+    const keyOrder = [...imp.keyOrder];
+    const namespaces = [...new Set(keyOrder.map((id) => parseKeyId(id).ns))].sort();
+    const locales = [base, ...imp.locales.filter((l) => l !== base).sort()];
+    const values: CellMap = new Map();
+    for (const [id, cells] of imp.values) if (cells.size) values.set(id, new Map(cells));
+    const data: ProjectData = { format: "next-i18next", root, baseLocale: base, locales, namespaces, keyOrder, values };
+    const opts: ProjectOptions = { baseLocale: base, localesPath: WORKSPACE_DIR };
+    const stateText = await readOrNull(fs, joinPath(root, STATE_PATH));
+    const { state, error } = parseState(stateText);
+    const meta: WorkspaceMeta = {
+      retransWorkspace: 1,
+      name: o.name,
+      source: { type: "ts", localesDir: o.localesDir },
+      drafts: structuredClone(imp.drafts),
+      markers: structuredClone(imp.markers),
+      removedInSource: [],
+      duplicates: [...imp.duplicates],
+      emptyKeys: emptyKeysOf(imp),
+      renames: {},
+      deletedKeys: [],
+    };
+    const s = new ProjectSession(fs, root, workspaceAdapter, opts, { data, files: [], errors: [] }, state, stateText, error, meta);
+    s.disk = new Map(); // nothing on disk yet: every value is unsaved
+    s.metaBaseline = null;
+    s.metaDiskText = await readOrNull(fs, joinPath(root, WORKSPACE_META_PATH));
+    for (const locale of locales) {
+      for (const ns of namespaces) s.creates.set(workspaceAdapter.filePath(opts, locale, ns), { locale, ns });
+    }
+    s.pendingBase = structuredClone(imp.baseline);
+    s.roCells = imp.readOnly.map((r) => ({ ...r }));
+    s.sourceIds = new Set(imp.keyOrder);
+    s.state.project.baseLocale = base;
+    s.stateTouched = true;
+    s.setKeyOrder(keyOrder);
+    return s;
+  }
+
+  /** Workspace only: why this cell can't be edited (computed in code), else null. */
+  readOnlyReason(id: KeyId, locale: string): string | null {
+    for (const r of this.roCells) if (r.id === id && (r.locale === undefined || r.locale === locale)) return r.reason;
+    return null;
+  }
+
+  /** Workspace only: every key (workspace id) the TS source has now (from a sync). */
+  setSourceKeys(ids: Iterable<KeyId>): void {
+    if (this.wsMeta) this.sourceIds = new Set(ids);
+  }
+
+  /** Workspace only: the source's read-only entries (from a sync); they get rows even without values. */
+  setSourceReadOnly(list: SourceReadOnly[]): void {
+    if (!this.wsMeta || jsonEqual(list, this.roCells)) return;
+    this.roCells = list.map((r) => ({ ...r }));
+    this.addExtraRows();
+    this.emit();
+  }
+
+  /**
+   * Workspace rows that have no values, so the workspace files don't list them: keys empty in
+   * every language (meta.emptyKeys) and read-only source entries. Each goes after the last row of
+   * its group. Doesn't make the session dirty.
+   */
+  private addExtraRows(): void {
+    if (!this.wsMeta) return;
+    const known = keySet(this.data.keyOrder);
+    const extra = [...new Set([...this.wsMeta.emptyKeys, ...this.roCells.map((r) => r.id)])].filter(
+      (id) => !known.has(id) && this.data.namespaces.includes(parseKeyId(id).ns),
+    );
+    if (!extra.length) return;
+    const order = [...this.data.keyOrder];
+    for (const id of extra) {
+      const { ns } = parseKeyId(id);
+      let at = -1;
+      for (let i = order.length - 1; i >= 0; i--) {
+        if (parseKeyId(order[i]).ns === ns) {
+          at = i;
+          break;
+        }
+      }
+      order.splice(at < 0 ? order.length : at + 1, 0, id);
+    }
+    this.setKeyOrder(order);
+  }
+
+  /** The workspace meta (.retrans/workspace.json); null when this isn't a workspace. */
+  get workspace(): WorkspaceMeta | null {
+    return this.wsMeta;
+  }
+
+  /** Workspace only: merge `patch` into the meta; written by the next save(). */
+  setWorkspaceMeta(patch: Partial<WorkspaceMeta>): void {
+    if (!this.wsMeta) throw new Error("This project is not a workspace");
+    this.wsMeta = { ...this.wsMeta, ...patch, retransWorkspace: 1 };
+    if (patch.emptyKeys) this.addExtraRows();
+    this.emit();
+  }
+
+  /** The source baseline waiting for the next save (see setPendingBaseline); null when none. */
+  get pendingBaseline(): Baseline | null {
+    return this.pendingBase;
+  }
+
+  /**
+   * Workspace only: the baseline save() writes to .retrans/source-baseline.json after the
+   * workspace files and meta (null drops it). Makes the session dirty; lost when not saved.
+   */
+  setPendingBaseline(b: Baseline | null): void {
+    if (!this.wsMeta) throw new Error("This project is not a workspace");
+    const same = b === null || this.pendingBase === null ? b === this.pendingBase : jsonEqual(b, this.pendingBase);
+    if (same) return;
+    this.pendingBase = b === null ? null : structuredClone(b);
+    this.emit();
+  }
+
+  private metaDirty(): boolean {
+    return this.wsMeta !== null && serializeWorkspaceMeta(this.wsMeta) !== this.metaBaseline;
   }
 
   // ---- reading ---------------------------------------------------------------------------
@@ -160,8 +326,9 @@ export class ProjectSession {
     return out;
   }
 
-  /** False when the file holding this cell couldn't be read: edits to it are refused. */
+  /** False when the file holding this cell couldn't be read, or it is computed in code: edits to it are refused. */
   isWritable(id: KeyId, locale: string): boolean {
+    if (this.readOnlyReason(id, locale) !== null) return false;
     const relPath = this.adapter.filePath(this.opts, locale, parseKeyId(id).ns);
     return !this.files.find((f) => f.relPath === relPath)?.readOnly;
   }
@@ -182,7 +349,7 @@ export class ProjectSession {
   }
 
   isDirty(): boolean {
-    if (this.creates.size || this.removed.size || this.localesChanged) return true;
+    if (this.creates.size || this.removed.size || this.localesChanged || this.metaDirty() || this.pendingBase) return true;
     if (this.dirtyCells().length) return true;
     return this.stateTouched && serializeState(reconcile(this.state, this.data)) !== this.stateBaseline;
   }
@@ -209,6 +376,7 @@ export class ProjectSession {
 
   setText(id: KeyId, locale: string, text: string | null, opts?: { machine?: boolean }): void {
     this.requireCell(id, locale);
+    this.requireEditable(id, locale);
     if (text === null || text === "") {
       this.put(id, locale, undefined);
       recordCleared(this.state, id, locale);
@@ -240,6 +408,7 @@ export class ProjectSession {
 
   setComplex(id: KeyId, locale: string, raw: unknown): void {
     this.requireCell(id, locale);
+    this.requireEditable(id, locale);
     this.put(id, locale, { kind: "complex", raw: structuredClone(raw) });
     recordEdit(this.data, this.state, id, locale, false);
     this.stateTouched = true;
@@ -266,9 +435,30 @@ export class ProjectSession {
     this.assertWritable(base, ns);
     const ids = keys.map((k) => keyId(ns, k));
     for (const id of ids) this.put(id, base, { kind: "text", text: baseText });
+    if (this.wsMeta?.deletedKeys.some((d) => ids.includes(d))) {
+      // Added again: no longer a deleted source key.
+      this.wsMeta = { ...this.wsMeta, deletedKeys: this.wsMeta.deletedKeys.filter((d) => !ids.includes(d)) };
+    }
     this.setKeyOrder([...this.data.keyOrder, ...ids]);
     this.emit();
     return opts?.plural ? keyId(ns, `${key}_other`) : ids[0];
+  }
+
+  /**
+   * Adds a row with no values yet (e.g. a key that appeared in the TS source), right after `after`
+   * when that is a row, else at the end. Fill it with importCell().
+   */
+  insertKey(id: KeyId, after?: KeyId): void {
+    const { ns, key } = parseKeyId(id);
+    validateKey(key);
+    if (!this.data.namespaces.includes(ns)) throw new KeyError("invalid", `namespace "${ns}" does not exist`);
+    checkCollision(this.data.keyOrder, ns, key);
+    this.assertWritable(this.data.baseLocale, ns);
+    const order = [...this.data.keyOrder];
+    const at = after === undefined ? -1 : order.indexOf(after);
+    order.splice(at < 0 ? order.length : at + 1, 0, id);
+    this.setKeyOrder(order);
+    this.emit();
   }
 
   renameKey(id: KeyId, newKey: string): KeyId {
@@ -289,6 +479,7 @@ export class ProjectSession {
     const ignore = new Set(pairs.keys());
     for (const target of pairs.values()) checkCollision(this.data.keyOrder, ns, parseKeyId(target).key, ignore);
     for (const src of pairs.keys()) this.assertWritableKey(src);
+    if ([...pairs.keys()].some((src) => this.roCells.some((r) => r.id === src))) throw new Error(RENAME_READ_ONLY_MESSAGE);
 
     for (const [src, dst] of pairs) {
       const cells = this.data.values.get(src);
@@ -296,6 +487,7 @@ export class ProjectSession {
       if (cells) this.data.values.set(dst, cells);
       renameInState(this.state, src, dst);
     }
+    if (this.wsMeta) this.renameInMeta(pairs);
     this.setKeyOrder(this.data.keyOrder.map((k) => pairs.get(k) ?? k));
     this.stateTouched = true;
     this.emit();
@@ -313,7 +505,58 @@ export class ProjectSession {
     }
     this.setKeyOrder(this.data.keyOrder.filter((k) => !drop.has(k)));
     this.stateTouched = true;
+    if (this.wsMeta) this.forgetInMeta(drop);
     this.emit();
+  }
+
+  /** A renamed key takes its workspace meta along (empty-key row, draft, marker, removed-in-source). */
+  private renameInMeta(pairs: Map<KeyId, KeyId>): void {
+    const meta = this.wsMeta!;
+    const ids = (list: KeyId[]) => [...new Set(list.map((id) => pairs.get(id) ?? id))];
+    const table = <T>(t: Record<KeyId, T>) =>
+      Object.fromEntries(Object.entries(t).map(([id, v]) => [pairs.get(id) ?? id, v])) as Record<KeyId, T>;
+    const renames = { ...meta.renames };
+    for (const [from, to] of pairs) {
+      // The source id this key came from (chains collapse); renaming back to it drops the entry.
+      const origin = Object.keys(renames).find((k) => renames[k] === from) ?? from;
+      if (to === origin) delete renames[origin];
+      else renames[origin] = to;
+    }
+    this.sourceIds = new Set([...this.sourceIds].map((id) => pairs.get(id) ?? id));
+    this.wsMeta = {
+      ...meta,
+      renames,
+      emptyKeys: ids(meta.emptyKeys).sort(),
+      removedInSource: ids(meta.removedInSource),
+      drafts: table(meta.drafts),
+      markers: table(meta.markers),
+    };
+  }
+
+  /** A deleted key leaves the workspace meta too (so it doesn't come back as a row or a mark). */
+  private forgetInMeta(drop: Set<KeyId>): void {
+    const meta = this.wsMeta!;
+    // A key the source has stays deleted: recorded by its source id (before any rename).
+    const deleted = [...meta.deletedKeys];
+    if (meta.source) {
+      for (const id of drop) {
+        const inSource = this.sourceIds.has(id) || meta.emptyKeys.includes(id) || this.roCells.some((r) => r.id === id);
+        if (!inSource || meta.removedInSource.includes(id)) continue; // gone from the source already
+        const origin = Object.keys(meta.renames).find((k) => meta.renames[k] === id) ?? id;
+        if (!deleted.includes(origin)) deleted.push(origin);
+      }
+    }
+    const without = <T>(table: Record<KeyId, T>) =>
+      Object.fromEntries(Object.entries(table).filter(([id]) => !drop.has(id))) as Record<KeyId, T>;
+    const patch: Partial<WorkspaceMeta> = {
+      deletedKeys: deleted,
+      removedInSource: meta.removedInSource.filter((id) => !drop.has(id)),
+      emptyKeys: meta.emptyKeys.filter((id) => !drop.has(id)),
+      drafts: without(meta.drafts),
+      markers: without(meta.markers),
+    };
+    this.wsMeta = { ...meta, ...patch };
+    this.roCells = this.roCells.filter((r) => !drop.has(r.id));
   }
 
   addLanguage(locale: string): { configSnippet?: string } {
@@ -329,7 +572,7 @@ export class ProjectSession {
     this.setKeyOrder(this.data.keyOrder);
     this.localesChanged = true;
     this.emit();
-    return this.data.format === "next-i18next" ? { configSnippet: localesSnippet(locales) } : {};
+    return this.data.format === "next-i18next" && !this.wsMeta ? { configSnippet: localesSnippet(locales) } : {};
   }
 
   removeLanguage(locale: string): void {
@@ -417,6 +660,7 @@ export class ProjectSession {
 
   private async saveNow(): Promise<SaveResult> {
     const res: SaveResult = { written: [], deleted: [], stale: [] };
+    const pendingBase = this.pendingBase; // what the values saved below were merged against
     const byFile = new Map<string, { locale: string; ns: string; changes: CellChange[] }>();
     for (const { id, locale } of this.dirtyCells()) {
       const { ns, key } = parseKeyId(id);
@@ -479,6 +723,27 @@ export class ProjectSession {
       }
     }
 
+    if (this.wsMeta && this.metaDirty() && !this.metaMalformed) {
+      const text = serializeWorkspaceMeta(this.wsMeta);
+      const path = joinPath(this.root, WORKSPACE_META_PATH);
+      if ((await readOrNull(this.fs, path)) !== this.metaDiskText) {
+        res.stale.push(WORKSPACE_META_PATH); // changed on disk: don't clobber it; stays dirty
+      } else {
+        await this.fs.writeTextAtomic(path, text);
+        res.written.push(WORKSPACE_META_PATH);
+        this.metaBaseline = text;
+        this.metaDiskText = text;
+      }
+    }
+
+    // Only once every workspace file and the meta are on disk: otherwise a later sync would see
+    // the source as already merged while the merge isn't saved.
+    if (pendingBase && res.stale.length === 0) {
+      await this.fs.writeTextAtomic(joinPath(this.root, BASELINE_PATH), serializeBaseline(pendingBase));
+      res.written.push(BASELINE_PATH);
+      if (this.pendingBase === pendingBase) this.pendingBase = null;
+    }
+
     // this.state stays the live object: status edits made while the write is in flight survive,
     // and stay dirty because they differ from the baseline captured here.
     const serialized = serializeState(reconcile(this.state, this.data));
@@ -519,6 +784,7 @@ export class ProjectSession {
   private async reloadNow(): Promise<Conflict[]> {
     const load = await this.adapter.load(this.fs, this.root, this.opts);
     const stateText = await readOrNull(this.fs, joinPath(this.root, STATE_PATH));
+    const metaText = this.wsMeta ? await readOrNull(this.fs, joinPath(this.root, WORKSPACE_META_PATH)) : null;
     // Everything below is synchronous, so edits made during the awaits are included as "mine".
     const plan = planReload({ data: this.data, disk: this.disk, creates: this.creates, removed: this.removed, load });
     for (const p of plan.adopted) this.creates.delete(p);
@@ -542,10 +808,50 @@ export class ProjectSession {
     this.stateDiskText = stateText;
     this.stateTouched = true;
     this.errors = this.withStateError(load.errors.filter((e) => plan.files.some((f) => f.relPath === e.relPath)));
+    if (this.wsMeta) {
+      this.mergeMetaFromDisk(metaText);
+      this.addExtraRows();
+    }
 
     this.conflicts = plan.conflicts;
     this.emit();
     return plan.conflicts;
+  }
+
+  /**
+   * Workspace meta from disk: fields not changed locally since the last load/save adopt the disk's,
+   * locally changed fields win. A deleted file is written again by the next save; an unparseable
+   * one is reported and never overwritten until it parses again.
+   */
+  private mergeMetaFromDisk(text: string | null): void {
+    const local = this.wsMeta!;
+    if (text === null) {
+      this.metaMalformed = false;
+      this.metaDiskText = null;
+      this.metaBaseline = null; // so the meta counts as changed and is re-created
+      return;
+    }
+    const disk = parseWorkspaceMeta(text);
+    this.metaMalformed = !disk;
+    if (!disk) {
+      this.errors = [
+        ...this.errors.filter((e) => e.relPath !== WORKSPACE_META_PATH),
+        { relPath: WORKSPACE_META_PATH, message: WORKSPACE_META_ERROR },
+      ];
+      return;
+    }
+    // Compared in file form (as metaBaseline is), e.g. an invalid source is `source` there.
+    const base = (this.metaBaseline ? JSON.parse(this.metaBaseline) : {}) as Record<string, unknown>;
+    const mine = JSON.parse(serializeWorkspaceMeta(local)) as Record<string, unknown>;
+    const theirs = JSON.parse(serializeWorkspaceMeta(disk)) as Record<string, unknown>;
+    const merged: Record<string, unknown> = {};
+    for (const k of new Set([...Object.keys(mine), ...Object.keys(theirs), ...Object.keys(base)])) {
+      const v = jsonEqual(mine[k], base[k]) ? theirs[k] : mine[k];
+      if (v !== undefined) merged[k] = v;
+    }
+    this.wsMeta = parseWorkspaceMeta(JSON.stringify(merged)) ?? disk;
+    this.metaBaseline = serializeWorkspaceMeta(disk);
+    this.metaDiskText = text;
   }
 
   /**
@@ -615,7 +921,20 @@ export class ProjectSession {
       ]),
       stateCells,
       state: structuredClone(this.state),
+      ...(this.metaDirty() ? { workspaceMeta: this.metaPatch() } : {}),
     };
+  }
+
+  /** Meta fields changed since the last load/save (all of them when the meta was never saved). */
+  private metaPatch(): NonNullable<Journal["workspaceMeta"]> {
+    const cur = JSON.parse(serializeWorkspaceMeta(this.wsMeta!)) as Record<string, unknown>; // file form
+    if (this.metaBaseline === null) return cur as Partial<WorkspaceMeta>;
+    const base = JSON.parse(this.metaBaseline) as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of new Set([...Object.keys(cur), ...Object.keys(base)])) {
+      if (!jsonEqual(cur[k], base[k])) out[k] = cur[k] ?? null; // null: field removed
+    }
+    return out as NonNullable<Journal["workspaceMeta"]>;
   }
 
   /**
@@ -651,6 +970,19 @@ export class ProjectSession {
       touched.push([id, locale]);
     }
     if (added.size) this.setKeyOrder([...this.data.keyOrder, ...added]);
+    if (this.wsMeta && j.workspaceMeta) {
+      // The journal's meta changes win; anything that doesn't parse as meta is ignored.
+      const merged = JSON.parse(serializeWorkspaceMeta(this.wsMeta)) as Record<string, unknown>; // file form
+      for (const [k, v] of Object.entries(j.workspaceMeta)) {
+        if (v === null) delete merged[k];
+        else merged[k] = v;
+      }
+      const meta = parseWorkspaceMeta(JSON.stringify(merged));
+      if (meta) {
+        this.wsMeta = meta;
+        this.addExtraRows();
+      }
+    }
     for (const [id, l] of touched) {
       const e = j.state.entries[id]?.[l];
       if (e) (this.state.entries[id] ??= {})[l] = { ...e };
@@ -735,6 +1067,11 @@ export class ProjectSession {
     this.requireKey(id);
     if (!this.data.locales.includes(locale)) throw new Error(`Unknown language ${locale}`);
     this.assertWritable(locale, parseKeyId(id).ns);
+  }
+
+  /** Read-only source entries (computed in code) are never edited here. */
+  private requireEditable(id: KeyId, locale: string): void {
+    if (this.readOnlyReason(id, locale) !== null) throw new Error(READ_ONLY_MESSAGE);
   }
 
   private assertWritable(locale: string, ns: string): void {

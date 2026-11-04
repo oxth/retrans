@@ -8,6 +8,7 @@ import { buildPackage, ExportError, packageFileName } from "../package/build";
 import { diffPackage, type ImportDiff, openIncoming, openIncomingFolder } from "../package/diff";
 import { MANIFEST_PATH, parseManifest } from "../package/manifest";
 import { btnGhost, btnPrimary } from "./Dialog";
+import { ExportDialog } from "./ExportDialog";
 import { ImportDialog } from "./ImportDialog";
 import { useApp, useSessionVersion } from "./store";
 
@@ -24,6 +25,7 @@ export function SharePage({ session }: { session: ProjectSession }) {
   const [error, setError] = useState<string | null>(null);
   const [diff, setDiff] = useState<ImportDiff | null>(null);
   const [fromPackage, setFromPackage] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -99,6 +101,13 @@ export function SharePage({ session }: { session: ProjectSession }) {
   return (
     <div className="mx-auto w-full max-w-xl space-y-8 p-6 text-sm">
       <h1 className="text-lg font-semibold">Import / Export</h1>
+      {session.workspace && (
+        <section aria-label="Export translations" className="space-y-3">
+          <h2 className="font-medium">Export translations</h2>
+          <p className="text-gray-600">Write the translations back to your code, or to another format.</p>
+          <button className={btnPrimary} onClick={() => setExporting(true)}>Export…</button>
+        </section>
+      )}
       <section aria-label="Export" className="space-y-3">
         <h2 className="font-medium">{fromPackage ? "Send back to the developer" : "Export for translator"}</h2>
         <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -140,6 +149,7 @@ export function SharePage({ session }: { session: ProjectSession }) {
       </section>
       {done && <p role="status" className="text-green-700">{done}</p>}
       {error && <p role="alert" className="text-red-700">{error}</p>}
+      {exporting && <ExportDialog session={session} onClose={() => setExporting(false)} />}
       {diff && (
         <ImportDialog
           session={session}
