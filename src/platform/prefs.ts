@@ -10,16 +10,17 @@ let storePromise: Promise<Store> | null = null;
 const getStore = () =>
   (storePromise ??= (async () => {
     const store = await load("prefs.json", { defaults: {}, autoSave: false });
-    const state = await migratePrefs(store);
-    if (state === "migrated") {
-      try {
-        await store.save();
-      } catch (e) {
-        console.warn("Failed to save migrated prefs:", e);
-      }
+    // A failed migration must not take every pref with it: keep the store and retry next launch.
+    try {
+      if ((await migratePrefs(store)) === "migrated") await store.save();
+    } catch (e) {
+      console.warn("Couldn't migrate prefs; will retry next launch:", e);
     }
     return store;
-  })());
+  })().catch((e) => {
+    storePromise = null; // don't cache a failed load for the whole session
+    throw e;
+  }));
 
 export async function getRecent(): Promise<RecentProject[]> {
   const s = await getStore();

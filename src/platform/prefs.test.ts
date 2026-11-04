@@ -6,17 +6,28 @@ const state = vi.hoisted(() => ({
   prefs: new Map<string, unknown>(),
   saveCalls: 0,
   saveThrows: false,
+  versionGetThrows: false,
+  loadThrowsOnce: false,
 }));
 
 const load = vi.hoisted(() =>
-  vi.fn(async () => ({
-    get: async (k: string) => state.prefs.get(k),
-    set: async (k: string, v: unknown) => void state.prefs.set(k, v),
-    save: async () => {
-      state.saveCalls += 1;
-      if (state.saveThrows) throw new Error("save failed");
-    },
-  })),
+  vi.fn(async () => {
+    if (state.loadThrowsOnce) {
+      state.loadThrowsOnce = false;
+      throw new Error("load failed");
+    }
+    return {
+      get: async (k: string) => {
+        if (k === "prefsVersion" && state.versionGetThrows) throw new Error("read failed");
+        return state.prefs.get(k);
+      },
+      set: async (k: string, v: unknown) => void state.prefs.set(k, v),
+      save: async () => {
+        state.saveCalls += 1;
+        if (state.saveThrows) throw new Error("save failed");
+      },
+    };
+  }),
 );
 
 vi.mock("@tauri-apps/plugin-store", () => ({ load }));
@@ -27,6 +38,8 @@ describe("prefs store migration wiring", () => {
     state.prefs.clear();
     state.saveCalls = 0;
     state.saveThrows = false;
+    state.versionGetThrows = false;
+    state.loadThrowsOnce = false;
     load.mockClear();
   });
 
@@ -60,5 +73,22 @@ describe("prefs store migration wiring", () => {
     const { getRecent } = await import("./prefs");
     await getRecent();
     expect(load).toHaveBeenCalledWith("prefs.json", expect.anything());
+  });
+
+  it("a failed migration read does not break every later prefs call", async () => {
+    for (const [k, v] of Object.entries(structuredClone(fixture))) state.prefs.set(k, v);
+    state.versionGetThrows = true;
+
+    const { getRecent } = await import("./prefs");
+    await expect(getRecent()).resolves.toEqual(fixture.recent);
+  });
+
+  it("retries loading the store after a failed load", async () => {
+    for (const [k, v] of Object.entries(structuredClone(fixture))) state.prefs.set(k, v);
+    state.loadThrowsOnce = true;
+
+    const { getRecent } = await import("./prefs");
+    await expect(getRecent()).rejects.toThrow("load failed");
+    await expect(getRecent()).resolves.toEqual(fixture.recent);
   });
 });
