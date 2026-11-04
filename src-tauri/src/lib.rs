@@ -5,6 +5,13 @@ mod zip_cmds;
 
 use std::sync::Arc;
 
+use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+
+/// Window state remembered across launches. Not VISIBLE: the window must always open visible.
+const WINDOW_STATE_FLAGS: StateFlags = StateFlags::SIZE
+    .union(StateFlags::POSITION)
+    .union(StateFlags::MAXIMIZED);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -13,6 +20,11 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(WINDOW_STATE_FLAGS)
+                .build(),
+        )
         .manage(watch::WatchState::default())
         .manage(mt::download::Downloads::default())
         .manage(Arc::new(mt::engine::Engine::default()))
@@ -44,6 +56,33 @@ pub fn run() {
             mt::engine::mt_cancel,
             mt::engine::mt_unload
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Also covers quitting through the unsaved-changes prompt, which destroys the window.
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                let _ = app.save_window_state(WINDOW_STATE_FLAGS);
+            }
+        });
+}
+
+#[cfg(test)]
+mod tests {
+    /// The data folder (prefs, models, window state, recovery) is named after the identifier
+    /// alone, never the version: changing it would orphan every user's settings.
+    #[test]
+    fn app_identifier_never_changes() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["identifier"], "com.retrans.app");
+    }
+
+    #[test]
+    fn window_state_flags_cover_size_position_maximized() {
+        use tauri_plugin_window_state::StateFlags;
+        assert_eq!(
+            super::WINDOW_STATE_FLAGS.bits(),
+            (StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED).bits()
+        );
+    }
 }

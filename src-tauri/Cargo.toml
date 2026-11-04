@@ -32,6 +32,7 @@ tokio = { version = "1", features = ["fs", "io-util", "rt", "time", "sync", "mac
 zip = { version = "9", default-features = false, features = ["deflate"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-window-state = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 llama-cpp-2 = { version = "0.1.160", default-features = false, features = ["metal"] }
