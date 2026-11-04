@@ -5,7 +5,7 @@ import { keyId } from "../core/model";
 import { importTsLocales } from "../tssource/import";
 import { openFixtureWorkspace } from "../test/workspace-fixture";
 import { planExport } from "../workspace/export";
-import { planFigmaExport } from "./export";
+import { mergeBaseline, planFigmaExport } from "./export";
 import { linkToKey } from "./link";
 import { syncFromFigma } from "./sync";
 import { parseTokens } from "./tokens";
@@ -112,5 +112,30 @@ describe("Figma export", () => {
     const plan = await planExport(w.session, { kind: "i18next-json", dir: OUT, namespaces: "per-group" });
     const en = plan.files.find((f) => f.path === `${OUT}/en/figma-ALL.json`);
     expect(JSON.parse(en!.text)["ข้อมูลการรับประกัน"]).toBe("Warranty info");
+  });
+});
+
+describe("review fixes", () => {
+  it("a new mode file's base-text fallbacks don't come back as translations", async () => {
+    const w = await setup();
+    w.session.addLanguage("ja");
+    const plan = await planFigmaExport(w.session, `${w.root}/design/figma`);
+    for (const f of plan.files) await w.fs.writeTextAtomic(f.path, f.text);
+    const f = w.session.workspace!.figma!;
+    w.session.setWorkspaceMeta({
+      figma: { ...f, modes: { ...f.modes, ...plan.figmaModes }, baseline: mergeBaseline(f.baseline, plan.figmaBaseline ?? {}) },
+    });
+    await syncFromFigma(w.session);
+    expect(w.session.value(WARRANTY, "ja")).toBeUndefined();
+  });
+
+  it("an existing file for an unmapped mode is never overwritten", async () => {
+    const w = await setup();
+    w.session.addLanguage("ja");
+    const ja = TH.replace('"com.figma.modeName": "TH"', '"com.figma.modeName": "JA"');
+    await w.fs.writeTextAtomic(`${w.root}/design/figma/ALL/JA.tokens.json`, ja);
+    const plan = await planFigmaExport(w.session, OUT);
+    expect(w.fileOf(plan, "JA.tokens.json")).toBeUndefined();
+    expect(plan.warnings).toEqual([expect.stringContaining("JA")]);
   });
 });

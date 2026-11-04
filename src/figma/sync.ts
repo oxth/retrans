@@ -16,6 +16,8 @@ import { type ParsedTokens, parseTokens } from "./tokens";
 /** A Figma conflict also carries the value both sides started from. */
 export interface FigmaConflict extends Conflict {
   base?: MessageValue;
+  /** The Figma variable this conflict is about (several can share one row once linked). */
+  varId?: string;
 }
 
 export interface FigmaSyncResult {
@@ -84,6 +86,7 @@ async function syncNow(session: ProjectSession): Promise<FigmaSyncResult> {
 
   const result: FigmaSyncResult = { ...unavailable(), available: true };
   const unreadable = new Set<string>(); // collections with a file that couldn't be read
+  const mappedRead = new Set<string>(); // collections with at least one readable, mapped file
   const unmapped = new Set<string>();
   /** variableId -> { collection, name, locale -> value } from the readable, mapped files. */
   const read = new Map<string, { collection: string; name: string; values: Record<string, string> }>();
@@ -99,6 +102,7 @@ async function syncNow(session: ProjectSession): Promise<FigmaSyncResult> {
       unmapped.add(file.parsed.mode);
       continue;
     }
+    mappedRead.add(file.collection);
     for (const v of file.parsed.vars) {
       if (v.type !== "string" || typeof v.value !== "string") continue;
       let entry = read.get(v.id);
@@ -125,19 +129,40 @@ async function syncNow(session: ProjectSession): Promise<FigmaSyncResult> {
       let link = vars[id];
       if (!link || !session.data.keyOrder.includes(link.row)) {
         const row = keyId(group, v.name);
-        if (!session.data.namespaces.includes(group)) session.addNamespace(group);
-        if (!session.data.keyOrder.includes(row)) session.insertKey(row);
+        try {
+          if (!session.data.namespaces.includes(group)) session.addNamespace(group);
+          if (!session.data.keyOrder.includes(row)) {
+            session.insertKey(row);
+            added.add(row);
+          }
+        } catch (e) {
+          result.warnings.push(`Couldn't add "${v.name}" from Figma: ${e instanceof Error ? e.message : String(e)}`);
+          continue;
+        }
+        // A variable recreated in Figma (new id, same name) takes over the row: drop the old id,
+        // keeping its baseline so nothing is reported as changed.
+        for (const [old, l] of Object.entries(vars)) {
+          if (old === id || l.row !== row || read.has(old)) continue;
+          delete vars[old];
+          if (baseline[old] && !baseline[id]) baseline[id] = baseline[old];
+          delete baseline[old];
+        }
         link = { collection: v.collection, name: v.name, row };
         vars[id] = link;
-        added.add(row);
       } else if (link.name !== v.name) {
         // Renamed in Figma: an unmapped row follows the new name; a row with a code key keeps it.
         let row = link.row;
+        let renamed = true;
         if (parseKeyId(row).ns === figmaGroupName(link.collection)) {
-          row = session.renameKey(row, v.name);
-          result.renamed.push({ from: link.row, to: row });
+          try {
+            row = session.renameKey(row, v.name);
+            result.renamed.push({ from: link.row, to: row });
+          } catch (e) {
+            renamed = false; // keep the old name, so the next sync tries again
+            result.warnings.push(`Couldn't rename "${link.name}" to "${v.name}": ${e instanceof Error ? e.message : String(e)}`);
+          }
         }
-        link = { ...link, name: v.name, row };
+        link = { ...link, name: renamed ? v.name : link.name, row };
         vars[id] = link;
       }
       const ix = removedInSource.indexOf(link.row);
@@ -162,7 +187,7 @@ async function syncNow(session: ProjectSession): Promise<FigmaSyncResult> {
           if (!added.has(link.row)) updated.add(link.row);
           continue;
         }
-        const c: FigmaConflict = { id: link.row, locale, theirs };
+        const c: FigmaConflict = { id: link.row, locale, theirs, varId: id };
         if (mine) c.mine = mine;
         if (base) c.base = base;
         result.conflicts.push(c); // the baseline keeps the old value until resolved
@@ -172,7 +197,8 @@ async function syncNow(session: ProjectSession): Promise<FigmaSyncResult> {
     // Gone from Figma: only for collections whose files were all read.
     for (const [id, link] of Object.entries(vars)) {
       if (read.has(id) || unreadable.has(link.collection)) continue;
-      if (!folder.files.some((x) => x.collection === link.collection)) continue;
+      // Only collections actually read (an unmapped or missing mode file says nothing about removal).
+      if (!mappedRead.has(link.collection)) continue;
       const unmappedRow = parseKeyId(link.row).ns === figmaGroupName(link.collection);
       if (unmappedRow && session.data.keyOrder.includes(link.row) && !removedInSource.includes(link.row)) {
         removedInSource.push(link.row);
@@ -199,11 +225,12 @@ async function syncNow(session: ProjectSession): Promise<FigmaSyncResult> {
  * workspace value. Either way the cell's Figma baseline becomes the Figma value read, so the next
  * sync no longer reports it.
  */
-export function resolveFigmaConflict(session: ProjectSession, c: Conflict, pick: "mine" | "theirs"): void {
+export function resolveFigmaConflict(session: ProjectSession, c: FigmaConflict, pick: "mine" | "theirs"): void {
   const f = session.workspace?.figma;
   if (!f) throw new Error("This workspace has no Figma source");
-  const varId = Object.keys(f.vars).find((id) => f.vars[id].row === c.id);
-  const figmaValue = varId ? lastRead.get(session)?.[varId]?.[c.locale] : undefined;
+  const varId = c.varId ?? Object.keys(f.vars).find((id) => f.vars[id].row === c.id);
+  // The Figma side of the conflict is the Figma value: settle that variable's baseline on it.
+  const figmaValue = c.theirs?.kind === "text" ? c.theirs.text : varId ? lastRead.get(session)?.[varId]?.[c.locale] : undefined;
   session.batch(() => {
     if (pick === "theirs" && c.theirs) {
       if (!session.data.locales.includes(c.locale)) session.addLanguage(c.locale);

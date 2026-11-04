@@ -93,6 +93,7 @@ export function linkToKey(session: ProjectSession, row: KeyId, target: KeyId): F
   if (figmaGroups(meta).has(parseKeyId(target).ns)) throw new KeyError("invalid", "Pick a code key, not a Figma string");
   const varIds = Object.keys(f.vars).filter((id) => f.vars[id].row === row);
   const conflicts: FigmaConflict[] = [];
+  const differing: string[] = [];
   session.batch(() => {
     for (const locale of session.data.locales) {
       const fig = session.value(row, locale);
@@ -103,16 +104,21 @@ export function linkToKey(session: ProjectSession, row: KeyId, target: KeyId): F
         continue;
       }
       if (valuesEqual(code, fig)) continue;
-      const c: FigmaConflict = { id: target, locale, mine: code, theirs: fig };
+      const c: FigmaConflict = { id: target, locale, mine: code, theirs: fig, varId: varIds[0] };
       const base = varIds.length ? f.baseline[varIds[0]]?.[locale] : undefined;
       if (base !== undefined) c.base = { kind: "text", text: base };
       conflicts.push(c);
+      differing.push(locale);
     }
     const cur = session.workspace!.figma!;
+    // Forget the Figma baseline of differing languages: every sync then reports them again
+    // (mine ≠ theirs, no common base) until the user resolves them, and export stays blocked.
+    const baseline = structuredClone(cur.baseline);
+    for (const id of varIds) for (const l of differing) delete baseline[id]?.[l];
     const vars = Object.fromEntries(
       Object.entries(cur.vars).map(([id, link]) => [id, link.row === row ? { ...link, row: target } : link]),
     );
-    session.setWorkspaceMeta({ figma: { ...cur, vars } });
+    session.setWorkspaceMeta({ figma: { ...cur, vars, baseline } });
     session.deleteKey(row);
   });
   return conflicts;

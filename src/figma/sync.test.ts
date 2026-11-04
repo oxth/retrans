@@ -67,7 +67,7 @@ describe("syncFromFigma", () => {
     await w.edit("ENG.tokens.json", '"Warranty info"', '"Warranty details"');
     const r = await syncFromFigma(w.session);
     expect(r.conflicts).toEqual([
-      { id: WARRANTY, locale: "en", mine: text("Guarantee"), theirs: text("Warranty details"), base: text("Warranty info") },
+      { id: WARRANTY, locale: "en", mine: text("Guarantee"), theirs: text("Warranty details"), base: text("Warranty info"), varId: V_WARRANTY },
     ]);
     expect(w.session.value(WARRANTY, "en")).toEqual(text("Guarantee"));
     resolveFigmaConflict(w.session, r.conflicts[0], "theirs");
@@ -184,5 +184,49 @@ describe("syncFromFigma", () => {
     w.session.setWorkspaceMeta({ figma: { dir: "design/nothing", modes: {}, vars: {}, baseline: {} } });
     expect((await syncFromFigma(w.session)).available).toBe(false);
     expect(w.session.data.keyOrder).toEqual(before);
+  });
+});
+
+describe("review fixes", () => {
+  it("a collection whose modes are all unmapped is not marked removed", async () => {
+    const w = await setup();
+    await syncFromFigma(w.session);
+    w.session.setWorkspaceMeta({ figma: { ...w.session.workspace!.figma!, modes: {} } });
+    const r = await syncFromFigma(w.session);
+    expect(r.removed).toEqual([]);
+    expect(w.session.workspace!.removedInSource).not.toContain(WARRANTY);
+  });
+
+  it("a rename that collides keeps the row, warns, and the sync still finishes", async () => {
+    const w = await setup();
+    await syncFromFigma(w.session);
+    // Figma renames "ข้อมูลการรับประกัน" to the name another variable already has.
+    for (const f of ["ENG.tokens.json", "TH.tokens.json"]) {
+      const d = JSON.parse(await w.fs.readText(`${w.dir}/${f}`));
+      const v = d["ข้อมูลการรับประกัน"];
+      delete d["ข้อมูลการรับประกัน"];
+      d["เลือกไฮไลต์เซนเซอร์"] = { ...d["เลือกไฮไลต์เซนเซอร์"] };
+      d["เลือกไฮไลต์เซนเซอร์.x"] = v; // a prefix collision with the existing row
+      await w.fs.writeTextAtomic(`${w.dir}/${f}`, JSON.stringify(d, null, 2));
+    }
+    const r = await syncFromFigma(w.session);
+    expect(r.warnings).toEqual([expect.stringContaining("Couldn't rename")]);
+    expect(w.session.data.keyOrder).toContain(WARRANTY);
+  });
+
+  it("a variable recreated in Figma under the same name takes over its row and drops the old id", async () => {
+    const w = await setup();
+    await syncFromFigma(w.session);
+    for (const f of ["ENG.tokens.json", "TH.tokens.json"]) {
+      const t = await w.fs.readText(`${w.dir}/${f}`);
+      await w.fs.writeTextAtomic(`${w.dir}/${f}`, t.replace(V_WARRANTY, "VariableID:9999:1"));
+    }
+    const r = await syncFromFigma(w.session);
+    expect(r.removed).toEqual([]);
+    const vars = w.session.workspace!.figma!.vars;
+    expect(vars[V_WARRANTY]).toBeUndefined();
+    expect(vars["VariableID:9999:1"].row).toBe(WARRANTY);
+    expect(w.session.workspace!.removedInSource).not.toContain(WARRANTY);
+    expect(r.conflicts).toEqual([]);
   });
 });

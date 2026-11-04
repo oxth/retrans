@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { keyId } from "../core/model";
 import { openFixtureWorkspace } from "../test/workspace-fixture";
 import { linkToKey, setCodeKey, suggestLinks } from "./link";
-import { syncFromFigma } from "./sync";
+import { resolveFigmaConflict, syncFromFigma } from "./sync";
 
 const FIX = resolve(__dirname, "../test/fixtures/figma/ALL");
 const ENG = readFileSync(`${FIX}/ENG.tokens.json`, "utf8");
@@ -64,7 +64,7 @@ describe("linkToKey", () => {
     // SAVE en is "Save" in code, Figma EN is "Warranty info": differs.
     const conflicts = linkToKey(w.session, WARRANTY, SAVE);
     expect(conflicts).toEqual([
-      { id: SAVE, locale: "en", mine: text("Save"), theirs: text("Warranty info"), base: text("Warranty info") },
+      { id: SAVE, locale: "en", mine: text("Save"), theirs: text("Warranty info"), base: text("Warranty info"), varId: V_WARRANTY },
     ]);
     expect(w.session.data.keyOrder).not.toContain(WARRANTY);
     expect(w.session.workspace!.figma!.vars[V_WARRANTY].row).toBe(SAVE);
@@ -90,5 +90,39 @@ describe("linkToKey", () => {
     expect(r.added).toEqual([]);
     expect(w.session.data.keyOrder).not.toContain(WARRANTY);
     expect(w.session.value(SAVE, "en")).toEqual(text("Warranty"));
+  });
+});
+
+describe("review fixes", () => {
+  it("link conflicts are reported again by the next sync until resolved, then settle", async () => {
+    const w = await setup();
+    w.session.setText(SAVE, "th", "ข้อมูลการรับประกัน");
+    const [c] = linkToKey(w.session, WARRANTY, SAVE);
+    expect(c).toMatchObject({ id: SAVE, locale: "en", varId: V_WARRANTY });
+    const again = await syncFromFigma(w.session);
+    expect(again.conflicts).toEqual([expect.objectContaining({ id: SAVE, locale: "en", varId: V_WARRANTY })]);
+    resolveFigmaConflict(w.session, again.conflicts[0], "mine");
+    expect((await syncFromFigma(w.session)).conflicts).toEqual([]);
+  });
+
+  it("resolving a link conflict before any sync still settles it", async () => {
+    const w = await setup();
+    w.session.setText(SAVE, "th", "ข้อมูลการรับประกัน");
+    const [c] = linkToKey(w.session, WARRANTY, SAVE);
+    resolveFigmaConflict(w.session, c, "mine");
+    expect((await syncFromFigma(w.session)).conflicts).toEqual([]);
+  });
+
+  it("two Figma strings linked to one code key: each conflict settles its own variable", async () => {
+    const w = await setup();
+    w.session.setText(SAVE, "th", "ข้อมูลการรับประกัน");
+    linkToKey(w.session, WARRANTY, SAVE);
+    linkToKey(w.session, SENSOR, SAVE);
+    let r = await syncFromFigma(w.session);
+    for (let i = 0; i < 4 && r.conflicts.length; i++) {
+      for (const c of r.conflicts) resolveFigmaConflict(w.session, c, "mine");
+      r = await syncFromFigma(w.session);
+    }
+    expect(r.conflicts).toEqual([]);
   });
 });

@@ -22,6 +22,8 @@ export async function planFigmaExport(session: ProjectSession, dir: string): Pro
     return v?.kind === "text" ? v.text : undefined;
   };
   const newModes: Record<string, string> = {};
+  /** What new mode files hold (variableId -> locale -> text), so syncing them back changes nothing. */
+  const written: Record<string, Record<string, string>> = {};
 
   for (const collection of [...new Set(folder.files.map((x) => x.collection))]) {
     const files = folder.files.filter((x) => x.collection === collection);
@@ -50,9 +52,15 @@ export async function planFigmaExport(session: ProjectSession, dir: string): Pro
     const template = readable[0];
     if (!template?.parsed.ok) continue;
     const have = new Set(readable.map((x) => x.locale));
+    // Files whose mode isn't mapped are Figma's own: never replaced by a generated one.
+    const taken = new Set(files.flatMap((x) => [fileName(x.relPath).toUpperCase(), ...(x.parsed.ok && x.parsed.mode ? [x.parsed.mode.toUpperCase()] : [])]));
     for (const locale of locales) {
       if (have.has(locale)) continue;
       const mode = locale.toUpperCase();
+      if (taken.has(mode) || taken.has(`${mode}.TOKENS.JSON`)) {
+        plan.warnings.push(`Mode ${mode} isn't mapped to a language; ${mode}.tokens.json was left as it is. Map it in Settings → Figma.`);
+        continue;
+      }
       const values = new Map<string, string>();
       const fallback: string[] = [];
       for (const v of template.parsed.vars) {
@@ -60,11 +68,11 @@ export async function planFigmaExport(session: ProjectSession, dir: string): Pro
         if (v.type !== "string" || !link) continue;
         const t = text(link.row, locale);
         const base = text(link.row, baseLocale);
-        if (t !== undefined) values.set(v.id, t);
-        else if (base !== undefined) {
-          values.set(v.id, base);
-          fallback.push(v.name);
-        }
+        const value = t ?? base;
+        if (value === undefined) continue;
+        values.set(v.id, value);
+        (written[v.id] ??= {})[locale] = value;
+        if (t === undefined) fallback.push(v.name);
       }
       plan.files.push({ path: out(`${mode}.tokens.json`), text: newModeFile(template.text, mode, values) });
       newModes[mode] = locale;
@@ -74,6 +82,19 @@ export async function planFigmaExport(session: ProjectSession, dir: string): Pro
       }
     }
   }
-  if (Object.keys(newModes).length) plan.figmaModes = newModes;
+  if (Object.keys(newModes).length) {
+    plan.figmaModes = newModes;
+    plan.figmaBaseline = written;
+  }
   return plan;
+}
+
+/** `extra` cells added to a Figma baseline (variableId -> locale -> value); `extra` wins. */
+export function mergeBaseline(
+  base: Record<string, Record<string, string>>,
+  extra: Record<string, Record<string, string>>,
+): Record<string, Record<string, string>> {
+  const out = structuredClone(base);
+  for (const [id, cells] of Object.entries(extra)) out[id] = { ...out[id], ...cells };
+  return out;
 }

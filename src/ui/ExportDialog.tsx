@@ -9,6 +9,7 @@ import { type ExportTarget, jsonEqual } from "../workspace/meta";
 import { btnGhost, btnPrimary, Dialog } from "./Dialog";
 import { SOURCE_MISSING_MESSAGE, useApp } from "./store";
 import { isFigmaRow } from "./ListView";
+import { mergeBaseline } from "../figma/export";
 import { joinPath } from "../platform/fs";
 
 type Kind = ExportTarget["kind"];
@@ -150,7 +151,11 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
       const settings = { target: t };
       if (!jsonEqual(session.workspace?.lastExport, settings)) session.setWorkspaceMeta({ lastExport: settings });
       const f = session.workspace?.figma;
-      if (plan.figmaModes && f) session.setWorkspaceMeta({ figma: { ...f, modes: { ...f.modes, ...plan.figmaModes } } });
+      if (plan.figmaModes && f) {
+        session.setWorkspaceMeta({
+          figma: { ...f, modes: { ...f.modes, ...plan.figmaModes }, baseline: mergeBaseline(f.baseline, plan.figmaBaseline ?? {}) },
+        });
+      }
       if (t.kind === "ts-writeback") {
         recordWriteBack(session, plan);
         // Markers and drafts now follow the files just written; nothing should be left to merge.

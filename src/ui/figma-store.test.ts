@@ -107,4 +107,21 @@ describe("Figma in the app", () => {
     await useApp.getState().syncSource(s);
     expect(useApp.getState().conflicts.filter((c) => c.origin === "figma")).toEqual([]);
   });
+
+  it("a failing Figma sync still applies the TypeScript sync and says what failed", async () => {
+    await openWithFigma();
+    await vi.waitFor(() => expect(useApp.getState().session!.data.keyOrder).toContain(WARRANTY));
+    const s = useApp.getState().session!;
+    s.setText(keyId("button", "button_save"), "en", "Keep");
+    const btn = `${s.data.root}/src/assets/locales/button.tsx`;
+    await s.fs.writeTextAtomic(btn, (await s.fs.readText(btn)).replace("button_save: 'Save',", "button_save: 'Store',"));
+    const real = s.fs.listFiles.bind(s.fs);
+    vi.spyOn(s.fs, "listFiles").mockImplementation(async (root, depth) => {
+      if (root.includes("design/figma")) throw new Error("disk error");
+      return real(root, depth);
+    });
+    await useApp.getState().syncSource(s).catch(() => {});
+    expect(useApp.getState().conflicts.some((c) => c.origin === "source")).toBe(true);
+    expect(useApp.getState().error).toBe("Figma sync failed: disk error");
+  });
 });

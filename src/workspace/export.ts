@@ -45,6 +45,11 @@ export interface ExportPlan {
   deletedApplied?: KeyId[];
   /** figma only: modes this export creates (mode name -> language), to add to the Figma mode map. */
   figmaModes?: Record<string, string>;
+  /**
+   * figma only: what the new mode files hold. Added to the Figma baseline after writing, so their
+   * base-language fallbacks never come back as translations when the files are synced.
+   */
+  figmaBaseline?: Record<string, Record<string, string>>;
 }
 
 const emptyPlan = (root: string): ExportPlan => ({ root, files: [], snippets: [], leftOutLocales: [], warnings: [] });

@@ -546,7 +546,12 @@ export const useApp = create<AppState>((set, get) => {
     try {
       r = hasTs ? await syncFromSource(session) : { ...NO_TS_SYNC };
       if (session.workspace?.figma) {
-        const f = await syncFromFigma(session);
+        // A Figma failure must not swallow the TypeScript result above: report it and go on.
+        const f = await syncFromFigma(session).catch((e) => {
+          patchSession(session, { error: `Figma sync failed: ${msg(e)}` });
+          return null;
+        });
+        if (f) {
         // Each sync reports every open conflict of its origin: they replace the previous ones.
         const fresh: UiConflict[] = f.conflicts.map((c) => ({ ...c, origin: "figma" }));
         const problems = [
@@ -559,6 +564,7 @@ export const useApp = create<AppState>((set, get) => {
           conflicts: [...cur.conflicts.filter((c) => c.origin !== "figma"), ...fresh],
           ...(problems.length ? { error: problems.join(" ") } : {}),
         }));
+        }
       }
     } finally {
       if (busyId) get().markBusy(busyId, -1);
