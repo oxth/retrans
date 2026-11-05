@@ -47,6 +47,7 @@ pub fn run() {
         .manage(watch::WatchState::default())
         .manage(secrets::Secrets::default())
         .manage(mt::cloud::CloudCalls::default())
+        .manage(mt::acp::AcpAgents::default())
         .manage(mt::download::Downloads::default())
         .manage(Arc::new(mt::engine::Engine::default()))
         .setup(|app| {
@@ -76,6 +77,9 @@ pub fn run() {
             mt::engine::mt_generate,
             mt::engine::mt_cancel,
             mt::engine::mt_unload,
+            mt::acp::mt_acp_prompt,
+            mt::acp::mt_acp_cancel,
+            mt::acp::mt_acp_stop,
             mt::cloud::mt_cloud_chat,
             mt::cloud::mt_cloud_cancel,
             mt::cloud::mt_cloud_models,
@@ -87,6 +91,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // AI agents started for translation never outlive the app.
+                use tauri::Manager;
+                tauri::async_runtime::block_on(app.state::<mt::acp::AcpAgents>().stop_all());
+                return;
+            }
             if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
                 if should_hold_exit(code) {
                     api.prevent_exit();
