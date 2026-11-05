@@ -16,8 +16,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest # Apple Silicon only (M1 and later)
+          - platform: macos-latest # Apple Silicon (M1 and later)
             args: '--target aarch64-apple-darwin'
+          - platform: macos-latest # Intel Macs, cross-compiled on the Apple Silicon runner
+            args: '--target x86_64-apple-darwin'
           - platform: windows-latest
             args: ''
           # Built on the oldest supported Ubuntu so the AppImage runs on older glibc versions too.
@@ -57,7 +59,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: swatinem/rust-cache@v2
         with:

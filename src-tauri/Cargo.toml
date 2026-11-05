@@ -36,8 +36,14 @@ tauri-plugin-process = "2"
 tauri-plugin-window-state = "2"
 keyring = "4"
 
-[target.'cfg(target_os = "macos")'.dependencies]
+# Apple Silicon: llama.cpp runs on the GPU through Metal.
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
 llama-cpp-2 = { version = "0.1.160", default-features = false, features = ["metal"] }
+
+# Intel Macs: CPU only. Their GPUs (often integrated) gain little from Metal, and a generic
+# CPU build runs on every Intel Mac that macOS 11 supports.
+[target.'cfg(all(target_os = "macos", target_arch = "x86_64"))'.dependencies]
+llama-cpp-2 = { version = "0.1.160", default-features = false }
 
 # Windows: every CPU variant as ggml-cpu-*.dll, the best one picked at runtime. build.rs reads
 # DEP_LLAMA_BACKENDS_DIR, which only reaches direct dependents of llama-cpp-sys-2.

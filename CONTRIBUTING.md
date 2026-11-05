@@ -90,7 +90,7 @@ The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts
 
 ## Releasing
 
-Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed. It builds macOS installers for Apple Silicon (M1 and later) only, Windows installers, and a Linux AppImage and .deb (built on Ubuntu 22.04 so they run on older systems too), signs the updater artifacts, and uploads everything, including `latest.json`, to a **draft** GitHub release.
+Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed. It builds macOS installers for Apple Silicon and for Intel Macs, Windows installers, and a Linux AppImage and .deb (built on Ubuntu 22.04 so they run on older systems too), signs the updater artifacts, and uploads everything, including `latest.json`, to a **draft** GitHub release.
 
 1. Bump `version` in `src-tauri/tauri.conf.json` and `package.json` (they must match; the workflow fails if the tag doesn't match both).
 2. In `CHANGELOG.md`, rename `## [Unreleased]` to the new version and date, and add its link at the bottom.
