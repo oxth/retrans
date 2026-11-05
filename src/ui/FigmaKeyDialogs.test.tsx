@@ -66,8 +66,8 @@ describe("Figma rows", () => {
     const row = rowOf(WARRANTY);
     expect(within(row).getByText("No code key yet")).toBeInTheDocument();
     await userEvent.click(within(row).getByRole("button", { name: "Actions for ข้อมูลการรับประกัน" }));
-    expect(within(row).getByRole("menuitem", { name: "Set code key…" })).toBeInTheDocument();
-    expect(within(row).getByRole("menuitem", { name: "Link to code key…" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Set code key…" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Link to code key…" })).toBeInTheDocument();
   });
 
   it("code rows have neither the badge nor the Figma menu items", async () => {
@@ -77,7 +77,8 @@ describe("Figma rows", () => {
     const row = rowOf(save);
     expect(within(row).queryByText("No code key yet")).toBeNull();
     await userEvent.click(within(row).getByRole("button", { name: "Actions for button_save" }));
-    expect(within(row).queryByRole("menuitem", { name: "Set code key…" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Set code key…" })).toBeNull();
   });
 
   it("Set code key… moves the row", async () => {
