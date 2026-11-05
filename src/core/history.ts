@@ -17,8 +17,9 @@ export interface CellImage {
 
 export interface Image {
   cells: Map<KeyId, CellImage>;
-  keyOrder: KeyId[];
-  meta: WorkspaceMeta | null;
+  /** Unset for a group step (a Translate-missing run only writes cells). */
+  keyOrder?: KeyId[];
+  meta?: WorkspaceMeta | null;
 }
 
 export interface Step {
@@ -49,10 +50,55 @@ export const sameOrder = (a: KeyId[], b: KeyId[]) => a === b || (a.length === b.
 /** True when a finished step changed nothing (it is then dropped). */
 export function isEmpty(s: Step): boolean {
   if (s.lang) return false;
-  if (!sameOrder(s.before.keyOrder, s.after.keyOrder) || s.before.meta !== s.after.meta) return false;
+  if (s.before.keyOrder && s.after.keyOrder && !sameOrder(s.before.keyOrder, s.after.keyOrder)) return false;
+  if (s.before.meta !== s.after.meta) return false;
   for (const [id, b] of s.before.cells) {
     const a = s.after.cells.get(id)!;
     if (localesOf(a, b).some((l) => !sameCell(a, b, l))) return false;
   }
   return true;
+}
+
+/**
+ * `current` moved from `from` to `to` by the step's own key-order changes: ids the step added are
+ * removed, ids it removed are put back after their nearest earlier neighbour. Rows anything else
+ * added or removed since stay as they are. `missing` counts ids that were expected but are gone.
+ */
+export function moveOrder(current: KeyId[], from: KeyId[], to: KeyId[]): { order: KeyId[]; missing: number } {
+  const fromSet = new Set(from);
+  const toSet = new Set(to);
+  let missing = 0;
+  const order = current.filter((id) => {
+    if (fromSet.has(id) && !toSet.has(id)) return false;
+    return true;
+  });
+  for (const id of from) if (!toSet.has(id) && !current.includes(id)) missing++;
+  for (let i = 0; i < to.length; i++) {
+    const id = to[i];
+    if (fromSet.has(id) || order.includes(id)) continue;
+    let at = -1;
+    for (let j = i - 1; j >= 0 && at < 0; j--) at = order.indexOf(to[j]);
+    order.splice(at + 1, 0, id);
+  }
+  return { order, missing };
+}
+
+/** Meta fields the step changed (from → to), applied to `current` only where it still matches `from`. */
+export function moveMeta(current: WorkspaceMeta, from: WorkspaceMeta, to: WorkspaceMeta): { meta: WorkspaceMeta; missing: number } {
+  const next = { ...current } as Record<string, unknown>;
+  const f = from as unknown as Record<string, unknown>;
+  const t = to as unknown as Record<string, unknown>;
+  const c = current as unknown as Record<string, unknown>;
+  let missing = 0;
+  for (const k of new Set([...Object.keys(f), ...Object.keys(t)])) {
+    const before = JSON.stringify(f[k]);
+    if (before === JSON.stringify(t[k])) continue;
+    if (JSON.stringify(c[k]) !== before) {
+      missing++;
+      continue;
+    }
+    if (t[k] === undefined) delete next[k];
+    else next[k] = t[k];
+  }
+  return { meta: next as unknown as WorkspaceMeta, missing };
 }

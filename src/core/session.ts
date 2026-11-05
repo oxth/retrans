@@ -15,7 +15,12 @@ import { expandPluralKeys, isApplicable, pluralCategories, splitPlural } from ".
 import {
   applyChanges, type CellChange, checkCollision, isValidLocale, KeyError, newFile, validateKey,
 } from "./session-helpers";
-import { type CellImage, HISTORY_LIMIT, isEmpty, localesOf, sameCell, sameOrder, type Step } from "./history";
+import { type CellImage, HISTORY_LIMIT, isEmpty, localesOf, moveMeta, moveOrder, sameCell, sameOrder, type Step } from "./history";
+
+/** See ProjectSession.beginGroup. */
+export interface UndoGroup {
+  step: Step;
+}
 import type { Journal } from "./recovery";
 import { planReload } from "./session-reload";
 import { parseState, reconcile, serializeState, STATE_PATH, type StateEntry, type StateFile } from "./state-file";
@@ -100,7 +105,8 @@ export class ProjectSession {
   private openStep: Step | null = null;
   /** > 0 while changes must not be recorded: external changes, or undo/redo applying a step. */
   private noRecord = 0;
-  private groupDepth = 0;
+  /** The group whose writes are being recorded right now (inside inGroup). */
+  private activeGroup: UndoGroup | null = null;
   private dirtyCache: { version: number; cells: Array<{ id: KeyId; locale: string }> } | null = null;
   /** Workspace meta (null for plain projects); written by save() when it differs from metaBaseline. */
   private wsMeta: WorkspaceMeta | null;
@@ -868,6 +874,13 @@ export class ProjectSession {
     const stateText = await readOrNull(this.fs, joinPath(this.root, STATE_PATH));
     const metaText = this.wsMeta ? await readOrNull(this.fs, joinPath(this.root, WORKSPACE_META_PATH)) : null;
     // Everything below is synchronous, so edits made during the awaits are included as "mine".
+    // A reload brings in what's on disk (often our own auto-save): never an undo step.
+    return this.external(() => this.applyReload(load, stateText, metaText));
+  }
+
+  private applyReload(
+    load: Awaited<ReturnType<FormatAdapter["load"]>>, stateText: string | null, metaText: string | null,
+  ): Conflict[] {
     const plan = planReload({ data: this.data, disk: this.disk, creates: this.creates, removed: this.removed, load });
     for (const p of plan.adopted) this.creates.delete(p);
     for (const f of load.files) if (this.removed.has(f.relPath)) this.removed.set(f.relPath, f);
@@ -1121,13 +1134,33 @@ export class ProjectSession {
     }
   }
 
-  /** Every change until the matching endGroup() is one undo step (e.g. a Translate-missing run). */
-  beginGroup(): void {
-    this.groupDepth++;
+  /**
+   * A long action recorded as one undo step (a Translate-missing run): only the writes made inside
+   * inGroup(group, …) belong to it, so the user's own edits meanwhile stay their own steps.
+   */
+  beginGroup(): UndoGroup {
+    return { step: { before: { cells: new Map() }, after: { cells: new Map() } } };
   }
 
-  endGroup(): void {
-    if (this.groupDepth > 0 && --this.groupDepth === 0) this.closeStep();
+  inGroup<T>(group: UndoGroup, fn: () => T): T {
+    const prev = this.activeGroup;
+    this.closeStep();
+    this.activeGroup = group;
+    try {
+      return this.batch(fn);
+    } finally {
+      this.activeGroup = prev;
+    }
+  }
+
+  endGroup(group: UndoGroup): void {
+    const step = group.step;
+    step.after = { cells: new Map([...step.before.cells.keys()].map((id) => [id, this.cellImage(id)])) };
+    group.step = { before: { cells: new Map() }, after: { cells: new Map() } };
+    if (isEmpty(step)) return;
+    this.undoStack.push(step);
+    if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
+    this.redoStack = [];
   }
 
   undo(): { done: boolean; skipped: number } {
@@ -1157,6 +1190,7 @@ export class ProjectSession {
   /** Opens a step (capturing key order and meta) unless recording is off. */
   private stepNow(): Step | null {
     if (this.noRecord > 0) return null;
+    if (this.activeGroup) return this.activeGroup.step;
     this.openStep ??= {
       before: { cells: new Map(), keyOrder: this.data.keyOrder, meta: this.wsMeta },
       after: { cells: new Map(), keyOrder: this.data.keyOrder, meta: this.wsMeta },
@@ -1173,7 +1207,7 @@ export class ProjectSession {
 
   private closeStep(): void {
     const step = this.openStep;
-    if (!step || this.groupDepth > 0 || this.batchDepth > 0) return;
+    if (!step || this.activeGroup || this.batchDepth > 0) return;
     this.openStep = null;
     step.after = {
       cells: new Map([...step.before.cells.keys()].map((id) => [id, this.cellImage(id)])),
@@ -1222,8 +1256,19 @@ export class ProjectSession {
             }
           }
         }
-        if (sameOrder(this.data.keyOrder, from.keyOrder)) this.data.keyOrder = to.keyOrder;
-        if (this.wsMeta === from.meta) this.wsMeta = to.meta;
+        // Only the step's own row and meta changes move; anything a sync changed since stays.
+        if (from.keyOrder && to.keyOrder && !sameOrder(from.keyOrder, to.keyOrder)) {
+          const m = moveOrder(this.data.keyOrder, from.keyOrder, to.keyOrder);
+          skipped += m.missing;
+          this.setKeyOrder(m.order);
+        }
+        if (from.meta && to.meta && this.wsMeta && from.meta !== to.meta) {
+          const m = moveMeta(this.wsMeta, from.meta, to.meta);
+          skipped += m.missing;
+          this.wsMeta = m.meta;
+        } else if (from.meta !== undefined && to.meta !== undefined && from.meta !== to.meta && this.wsMeta === from.meta) {
+          this.wsMeta = to.meta;
+        }
         if (dropLang && this.data.locales.includes(dropLang)) this.removeLanguage(dropLang);
         this.stateTouched = true;
         this.emit();

@@ -46,6 +46,8 @@ export async function translateMissing(
   translate: (source: string) => Promise<TranslateResult>,
   onProgress: (p: { done: number; total: number; current: KeyId | null }) => void,
   signal: AbortSignal,
+  /** Wraps each write (e.g. to record the whole run as one undo step). */
+  write: (fn: () => void) => void = (fn) => fn(),
 ): Promise<BatchResult> {
   const result: BatchResult = { translated: 0, unsafe: [], failed: [], skipped: 0, cancelled: false };
   const total = items.length;
@@ -63,7 +65,7 @@ export async function translateMissing(
       let written = false;
       try {
         if (!isTranslated(session.value(id, locale))) {
-          session.setText(id, locale, r.text, { machine: true });
+          write(() => session.setText(id, locale, r.text, { machine: true }));
           written = true;
         }
       } catch {

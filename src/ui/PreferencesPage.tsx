@@ -33,7 +33,7 @@ export function PreferencesPage() {
   }, [closePrefs]);
 
   return (
-    <div className="fixed inset-0 z-50 overflow-auto bg-white">
+    <div role="dialog" aria-label="Preferences" className="fixed inset-0 z-50 overflow-auto bg-white">
       <div className="mx-auto flex min-h-full w-full max-w-xl flex-col space-y-6 p-6 text-sm">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">Preferences</h1>

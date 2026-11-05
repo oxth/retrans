@@ -12,8 +12,17 @@ function stepTab(delta: 1 | -1): void {
   switchTab(tabs[(i + delta + tabs.length) % tabs.length].id);
 }
 
+/**
+ * While a dialog (or Preferences) is open, menu items do nothing: their shortcuts would otherwise
+ * act on the project behind it (the native menu takes the key before the page sees it).
+ */
+const guarded = (actions: Record<string, () => void>): Record<string, () => void> =>
+  Object.fromEntries(
+    Object.entries(actions).map(([id, fn]) => [id, () => (document.querySelector('[role="dialog"]') ? undefined : fn())]),
+  );
+
 /** What each menu item does (ids from platform/menu.ts). */
-export const MENU_ACTIONS: Record<string, () => void> = {
+export const MENU_ACTIONS: Record<string, () => void> = guarded({
   settings: () => app().openPrefs(),
   "check-updates": () => app().openPrefs(), // the Updates section has Check for updates
   "new-project": () => {
@@ -39,4 +48,4 @@ export const MENU_ACTIONS: Record<string, () => void> = {
   "next-tab": () => stepTab(1),
   "prev-tab": () => stepTab(-1),
   github: () => void openUrl("https://github.com/oxth/retrans").catch(() => {}),
-};
+});

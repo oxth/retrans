@@ -146,12 +146,12 @@ describe("undo history", () => {
     expect(s.value(TITLE, "th")).toEqual(text("v4"));
   });
 
-  it("beginGroup/endGroup makes one step of many edits", async () => {
+  it("a group makes one step of the writes made inside it", async () => {
     const { s } = await open();
-    s.beginGroup();
-    s.setText(TITLE, "th", "a");
-    s.setText(HOME, "th", "b");
-    s.endGroup();
+    const g = s.beginGroup();
+    s.inGroup(g, () => s.setText(TITLE, "th", "a"));
+    s.inGroup(g, () => s.setText(HOME, "th", "b"));
+    s.endGroup(g);
     s.undo();
     expect(s.value(TITLE, "th")).toEqual(text("สวัสดี"));
     expect(s.value(HOME, "th")).toEqual(text("หน้าแรก"));
@@ -212,5 +212,67 @@ describe("undo history", () => {
     await s.reloadFromDisk();
     expect(s.value(TITLE, "th")).toEqual(text("จากดิสก์"));
     expect(s.canUndo).toBe(false);
+  });
+
+  it("review fix: a reload after auto-save neither records a step nor clears redo (workspace)", async () => {
+    const w = await openFixtureWorkspace();
+    const s = w.session;
+    const id = keyId("button", "button_save");
+    s.setText(id, "en", "Keep it");
+    await s.save();
+    await s.reloadFromDisk(); // what the watcher does after auto-save writes
+    expect(s.canUndo).toBe(true);
+    s.undo();
+    expect(s.canUndo).toBe(false);
+    await s.save();
+    await s.reloadFromDisk();
+    expect(s.canUndo).toBe(false);
+    expect(s.canRedo).toBe(true);
+  });
+
+  it("review fix: user edits during a group are their own steps", async () => {
+    const { s } = await open();
+    const g = s.beginGroup();
+    s.inGroup(g, () => s.setText(TITLE, "th", "machine"));
+    s.setText(HOME, "th", "by hand");
+    s.endGroup(g);
+    s.undo(); // the run
+    expect(s.value(TITLE, "th")).toEqual(text("สวัสดี"));
+    expect(s.value(HOME, "th")).toEqual(text("by hand"));
+    s.undo(); // the hand edit
+    expect(s.value(HOME, "th")).toEqual(text("หน้าแรก"));
+  });
+
+  it("review fix: rows a sync added during a group survive undoing the group", async () => {
+    const { s } = await open();
+    const g = s.beginGroup();
+    s.inGroup(g, () => s.setText(TITLE, "th", "machine"));
+    s.external(() => s.insertKey("common::from_sync"));
+    s.endGroup(g);
+    s.undo();
+    expect(s.data.keyOrder).toContain("common::from_sync");
+  });
+
+  it("review fix: undoing a rename after a sync added a row restores the key, keeps the new row", async () => {
+    const { s } = await open();
+    const renamed = s.renameKey(TITLE, "heading");
+    s.external(() => s.insertKey("common::from_sync"));
+    expect(s.undo()).toEqual({ done: true, skipped: 0 });
+    expect(s.data.keyOrder).toContain(TITLE);
+    expect(s.data.keyOrder).not.toContain(renamed);
+    expect(s.data.keyOrder).toContain("common::from_sync");
+    expect(s.value(TITLE, "th")).toEqual(text("สวัสดี"));
+  });
+
+  it("review fix: undoing a meta change keeps other meta fields a sync changed since", async () => {
+    const w = await openFixtureWorkspace();
+    const s = w.session;
+    const id = keyId("button", "button_save");
+    s.external(() => s.setWorkspaceMeta({ removedInSource: [id] }));
+    keepKey(s, id);
+    s.external(() => s.setWorkspaceMeta({ duplicates: ["from_sync"] }));
+    s.undo();
+    expect(s.workspace!.removedInSource).toContain(id);
+    expect(s.workspace!.duplicates).toEqual(["from_sync"]);
   });
 });

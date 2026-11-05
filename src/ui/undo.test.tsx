@@ -136,3 +136,21 @@ describe("undo / redo in the app", () => {
     expect(useApp.getState().activeId).toBe(id2);
   });
 });
+
+describe("review fix: menu actions and dialogs", () => {
+  it("menu actions do nothing while a dialog is open", async () => {
+    const s = await openTwo();
+    act(() => s.setText(TITLE, "th", "แก้"));
+    const dlg = document.createElement("div");
+    dlg.setAttribute("role", "dialog");
+    document.body.appendChild(dlg);
+    const tabs = useApp.getState().tabs.length;
+    MENU_ACTIONS.undo();
+    MENU_ACTIONS["close-tab"]();
+    expect(s.value(TITLE, "th")).toEqual(text("แก้"));
+    expect(useApp.getState().tabs.length).toBe(tabs);
+    dlg.remove();
+    MENU_ACTIONS.undo();
+    expect(s.value(TITLE, "th")).toEqual(text("สวัสดี"));
+  });
+});
