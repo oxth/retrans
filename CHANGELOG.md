@@ -4,7 +4,7 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] - 2026-11-05
 
 ### What's new
 
@@ -98,6 +98,7 @@ First release.
 - **Crash recovery.** Unsaved edits are kept and offered back after a crash.
 - **Automatic updates** on macOS (Apple Silicon) and Windows.
 
+[0.4.0]: https://github.com/oxth/retrans/releases/tag/v0.4.0
 [0.3.0]: https://github.com/oxth/retrans/releases/tag/v0.3.0
 [0.2.0]: https://github.com/oxth/retrans/releases/tag/v0.2.0
 [0.1.1]: https://github.com/oxth/retrans/releases/tag/v0.1.1
