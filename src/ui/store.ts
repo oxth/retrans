@@ -61,6 +61,7 @@ export const normRoot = (root: string) => root.replace(/[\\/]+$/, "") || root;
 
 export interface AppState {
   fs: Fs;
+  prefsOpen: boolean;
   /** Open projects, in tab order. */
   tabs: Tab[];
   /** The tab on screen; null shows the start screen (other tabs may still be open). */
@@ -88,6 +89,8 @@ export interface AppState {
     | { then: "quit"; tabs: string[] }
     | { then: "proceed"; tabs: string[]; resolve: (go: boolean) => void }
     | null;
+  openPrefs(): void;
+  closePrefs(): void;
   switchTab(id: string): void;
   /** The "+" button: keeps every tab and shows the start screen. */
   showStart(): void;
@@ -318,11 +321,20 @@ export const useApp = create<AppState>((set, get) => {
 
   return {
   fs: tauriFs,
+  prefsOpen: false,
   tabs: [],
   activeId: null,
   notice: null,
   ...emptyFlat(),
   closePrompt: null,
+
+  openPrefs() {
+    set({ prefsOpen: true });
+  },
+
+  closePrefs() {
+    set({ prefsOpen: false });
+  },
 
   switchTab(id) {
     const s = get();

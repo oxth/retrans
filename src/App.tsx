@@ -9,6 +9,7 @@ import { UpdateBanner } from "./ui/UpdateBanner";
 import { TabBar } from "./ui/TabBar";
 import { launch, startTabPersistence } from "./ui/restore";
 import { UnsavedPrompt } from "./ui/UnsavedPrompt";
+import { PreferencesPage } from "./ui/PreferencesPage";
 
 /**
  * Routes every way of quitting through one prompt listing the tabs with unsaved changes: the
@@ -55,6 +56,7 @@ export default function App() {
   const session = useApp((s) => s.session);
   const activeId = useApp((s) => s.activeId);
   const hasTabs = useApp((s) => s.tabs.length > 0);
+  const prefsOpen = useApp((s) => s.prefsOpen);
   // One window-high column: the update banner and tab bar take their rows and the page fills the rest.
   return (
     <div className="flex h-screen flex-col">
@@ -68,6 +70,7 @@ export default function App() {
       ) : (
         <StartScreen />
       )}
+      {prefsOpen && <PreferencesPage />}
       {/* Here, not in a tab: quitting from the start screen can still list other tabs. */}
       <UnsavedPrompt />
     </div>
