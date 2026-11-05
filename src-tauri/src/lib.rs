@@ -1,5 +1,6 @@
 mod fs_cmds;
 mod mt;
+mod secrets;
 mod watch;
 mod zip_cmds;
 
@@ -44,6 +45,7 @@ pub fn run() {
                 .build(),
         )
         .manage(watch::WatchState::default())
+        .manage(secrets::Secrets::default())
         .manage(mt::download::Downloads::default())
         .manage(Arc::new(mt::engine::Engine::default()))
         .setup(|app| {
@@ -73,6 +75,9 @@ pub fn run() {
             mt::engine::mt_generate,
             mt::engine::mt_cancel,
             mt::engine::mt_unload,
+            secrets::secret_set,
+            secrets::secret_has,
+            secrets::secret_delete,
             set_unsaved
         ])
         .build(tauri::generate_context!())
