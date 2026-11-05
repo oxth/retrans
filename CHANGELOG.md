@@ -4,6 +4,32 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-05
+
+### What's new
+
+- **A fresh look, with dark mode.** Retrans follows your system's light or dark setting. Colors are calmer and consistent, icons replace text symbols, and the header shows at a glance whether everything is saved.
+- **One-click review.** Every translation that isn't reviewed yet has a **✓ Review** button. When the base text changes after a translation was written, the cell says **Needs review**, so you know to check it.
+  - A status key in the sidebar explains what each dot means.
+  - The cell editor lists its shortcuts: Enter to save, ⌘⇧R / Ctrl+Shift+R to save and mark reviewed, Tab for the next missing cell, Esc to cancel.
+- **Tidy recent projects.** Remove a project from the start screen's recent list with **×**. A project whose folder was moved or deleted is marked **Folder not found**, and opening it offers to take it off the list. Your files are never touched.
+
+### Improvements
+
+- The start screen explains each way to begin: open a project, create one, or open a translator package.
+- The toolbar groups search, filters and actions. The Missing count is a badge, the Languages menu shows how many languages are visible, and **+ Key** is now **Add key**.
+- Missing translations are outlined instead of filled red, so large projects are easier to read.
+- Keyboard focus is visible everywhere, and text meets WCAG AA contrast in both light and dark mode.
+- The Settings and Import / Export pages scroll when they're taller than the window.
+- The Open project and New project dialogs match the rest of the app, and the new-project wizard shows its steps.
+- Retrans is now open source under the MIT License.
+
+### Bug fixes
+
+- Escape closes dialogs straight away. Before, it only worked after clicking inside the dialog, and never in Open project or New project.
+- Closing a dialog puts keyboard focus back where it was.
+- The toolbar's Languages menu closes when you click elsewhere or press Escape.
+
 ## [0.2.0] - 2026-11-05
 
 ### What's new
@@ -62,6 +88,7 @@ First release.
 - **Crash recovery.** Unsaved edits are kept and offered back after a crash.
 - **Automatic updates** on macOS (Apple Silicon) and Windows.
 
+[0.3.0]: https://github.com/oxth/retrans/releases/tag/v0.3.0
 [0.2.0]: https://github.com/oxth/retrans/releases/tag/v0.2.0
 [0.1.1]: https://github.com/oxth/retrans/releases/tag/v0.1.1
 [0.1.0]: https://github.com/oxth/retrans/releases/tag/v0.1.0

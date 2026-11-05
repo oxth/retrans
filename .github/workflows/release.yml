@@ -59,6 +59,19 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      # The release text (and the in-app update notes) is this version's section of CHANGELOG.md.
+      - name: Release notes from CHANGELOG.md
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#v}"
+          notes=$(awk -v v="$v" 'index($0, "## [" v "]") == 1 { f = 1; next } /^## \[/ { if (f) exit } /^\[[^]]+\]: / { next } f' CHANGELOG.md)
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            echo "::error::CHANGELOG.md has no section for $v"; exit 1
+          fi
+          { echo 'body<<RETRANS_NOTES_EOF'; printf '%s\n' "$notes"; echo 'RETRANS_NOTES_EOF'; } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -67,6 +80,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: 'Retrans v__VERSION__'
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           updaterJsonPreferNsis: true
