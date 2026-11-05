@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { buildBatchPrompt, parseBatchReply } from "../mt/cloud-prompt";
+import { protect, restore } from "../mt/protect";
+import { nextReqId } from "../mt/translate";
 import { PROVIDER_LABELS } from "../mt/translator";
 import type { MtSettings, ProviderId } from "../platform/prefs";
 import { deleteSecret, hasSecret, setSecret } from "../platform/secrets";
@@ -59,6 +62,7 @@ export function ProviderSettings() {
         <CloudFields provider={settings.provider} />
       )}
       {settings.provider === "acp" && <AcpFields />}
+      {settings.provider !== "local" && <RemoteTest />}
       {asking && (
         <Dialog title={`Send text to ${PROVIDER_LABELS[asking]}?`} onClose={() => setAsking(null)}>
           <p className="text-sm">
@@ -80,6 +84,68 @@ export function ProviderSettings() {
             </button>
           </div>
         </Dialog>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Test this model, for cloud and agent providers: sends one string exactly as a run would and shows
+ * what was sent (instructions included) and the reply.
+ */
+function RemoteTest() {
+  const settings = useMt((s) => s.settings);
+  const [text, setText] = useState("");
+  const [target, setTarget] = useState("th");
+  const [sent, setSent] = useState<string | null>(null);
+  const [out, setOut] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const test = async () => {
+    const p = protect("next-i18next", text);
+    const { system, user } = buildBatchPrompt({
+      src: "en",
+      targets: [target],
+      strings: [{ id: "test", key: "test", group: "", masked: p.masked, base: text, others: {} }],
+      instructions: settings.instructions,
+    });
+    setSent(`${system}\n\n${user}`);
+    setOut(null);
+    setBusy(true);
+    try {
+      const reqId = nextReqId();
+      let reply: string;
+      if (settings.provider === "acp") {
+        if (!settings.acp) throw new Error("Choose an agent first.");
+        reply = await invoke<string>("mt_acp_prompt", { req: { command: settings.acp.command, args: settings.acp.args, text: `${system}\n\n${user}`, reqId } });
+      } else {
+        const p2 = settings.provider as Cloud;
+        const cfg = settings.cloud[p2];
+        if (!cfg?.model) throw new Error("Choose a model first.");
+        const baseUrl = p2 === "compatible" ? (settings.cloud.compatible?.baseUrl ?? null) : null;
+        reply = await invoke<string>("mt_cloud_chat", { req: { provider: p2, baseUrl, model: cfg.model, system, user, reqId } });
+      }
+      const raw = parseBatchReply(reply, ["test"], [target]).values.get("test")?.get(target);
+      const back = raw === undefined ? null : restore(raw, p);
+      setOut(raw === undefined ? "The model's reply was incomplete." : back?.ok ? back.text : "Couldn't translate safely");
+    } catch (e) {
+      setOut(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-2 rounded-md border border-gray-200 p-3">
+      <div className="flex gap-2">
+        <input aria-label="Test text" className={inputCls} placeholder="Text to translate" value={text} onChange={(e) => setText(e.target.value)} />
+        <input aria-label="Translate to" className={`${inputCls} w-20`} value={target} onChange={(e) => setTarget(e.target.value.trim())} />
+        <button className={btnGhost} disabled={busy || !text.trim() || !target} onClick={() => void test()}>Test this model</button>
+      </div>
+      {out !== null && <div role="status" className="text-sm">{out}</div>}
+      {sent !== null && (
+        <details>
+          <summary className="cursor-pointer text-xs text-gray-500">What was sent</summary>
+          <pre aria-label="Sent to the provider" className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap text-xs text-gray-600">{sent}</pre>
+        </details>
       )}
     </div>
   );

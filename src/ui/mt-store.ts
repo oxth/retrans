@@ -252,7 +252,7 @@ export function activeTranslator(
 ): Translator | null {
   const { settings } = s;
   if (!settings.enabled) return null;
-  const provider = (override ?? settings.provider) as ProviderId;
+  const provider = (override ?? settings.provider ?? "local") as ProviderId;
   if (provider === "local") {
     const model = activeModel(s);
     return model ? localTranslator(s.engine, model, format) : null;

@@ -213,6 +213,7 @@ export async function translateMissingMulti(
   const jobs = [...byId.values()].flat();
   onProgress({ perLocale: structuredClone(perLocale), current: jobs[0]?.id ?? null });
 
+  let reported = 0;
   const run = new AbortController();
   const abort = () => run.abort();
   signal.addEventListener("abort", abort, { once: true });
@@ -242,7 +243,9 @@ export async function translateMissingMulti(
         return;
       }
       perLocale[job.locale].done++;
-      onProgress({ perLocale: structuredClone(perLocale), current: job.id });
+      reported++;
+      // "current" is the string being translated now: the next one not yet reported.
+      onProgress({ perLocale: structuredClone(perLocale), current: jobs[reported]?.id ?? null });
     }, run.signal);
   } finally {
     signal.removeEventListener("abort", abort);

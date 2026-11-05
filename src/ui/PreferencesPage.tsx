@@ -2,9 +2,41 @@ import { useEffect, useState } from "react";
 import { getDefaultViewMode, setDefaultViewMode } from "../platform/prefs";
 import { inputCls } from "./Dialog";
 import { MtSettings } from "./MtSettings";
+import { useMt } from "./mt-store";
+import { findModel } from "../mt/catalog";
 import { StartupSettings } from "./StartupSettings";
 import { useApp } from "./store";
 import { UpdateSettings } from "./UpdateBanner";
+
+/** Custom instructions for all projects (combined with each project's and language's own). */
+function GlobalInstructions() {
+  const instructions = useMt((s) => s.settings.instructions);
+  const fixedPrompt = useMt((s) => {
+    const { provider, modelId, custom } = s.settings;
+    if ((provider ?? "local") !== "local") return false;
+    const template = modelId === "custom" ? custom?.template : modelId ? findModel(modelId)?.template : undefined;
+    return template === "translategemma";
+  });
+  return (
+    <label className="block">
+      <span className="mb-1 block">Instructions for all projects</span>
+      <textarea
+        aria-label="Instructions for all projects"
+        className={inputCls}
+        rows={3}
+        placeholder="e.g. Keep translations short: this is UI text."
+        defaultValue={instructions}
+        onBlur={(e) => void useMt.getState().setInstructions(e.target.value.trim())}
+      />
+      <span className="mt-1 block text-xs text-gray-500">
+        Sent with every translation by cloud providers, AI agents and Qwen models. Each project can add its own in its Settings.
+      </span>
+      {fixedPrompt && (
+        <span className="mt-1 block text-xs text-amber-700">TranslateGemma uses a fixed prompt and ignores custom instructions.</span>
+      )}
+    </label>
+  );
+}
 
 export function PreferencesPage() {
   const closePrefs = useApp((s) => s.closePrefs);
@@ -66,6 +98,10 @@ export function PreferencesPage() {
         <section className="space-y-3">
           <h2 className="text-base font-semibold">Machine translation</h2>
           <MtSettings session={null} />
+        </section>
+        <section className="space-y-3">
+          <h2 className="text-base font-semibold">Instructions for the AI</h2>
+          <GlobalInstructions />
         </section>
         <section className="space-y-3">
           <h2 className="text-base font-semibold">Updates</h2>

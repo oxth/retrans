@@ -10,23 +10,38 @@ vi.mock("../platform/watch", () => ({ watchDir: vi.fn(async () => async () => {}
 import { detectProject } from "../formats/detect";
 import { missingItems } from "../mt/batch";
 import type { TranslateResult } from "../mt/translate";
+import type { Translator } from "../mt/translator";
 import { loadFixtureDir } from "../platform/memory-fs";
 import { cancelRun, clearRun, resetRuns, startRun, useRuns } from "./runs";
 import { useApp } from "./store";
 
 const FIX = resolve(__dirname, "../test/fixtures/next-nested");
 
-/** A translate function whose calls wait until the test releases them. */
-function gatedTranslate() {
-  const pending: Array<(r: TranslateResult) => void> = [];
-  const translate = vi.fn(
-    (source: string, onRequest: (cancel: () => void) => void) =>
-      new Promise<TranslateResult>((res) => {
-        onRequest(() => {});
-        pending.push(() => res({ ok: true, text: `T:${source}` }));
-      }),
-  );
-  return { translate, pending };
+/**
+ * A one-string-at-a-time translator whose calls wait until the test releases them (answering
+ * "T:<source>"). Cancel resolves the call in flight as cancelled, like the real ones.
+ */
+function gatedTranslator() {
+  const pending: Array<() => void> = [];
+  const cancelled = vi.fn();
+  const translator: Translator = {
+    label: "Fake",
+    remote: false,
+    async translate(jobs, _ctx, onResult, signal) {
+      for (const job of jobs) {
+        if (signal.aborted) return;
+        const r = await new Promise<TranslateResult>((res) => {
+          pending.push(() => res({ ok: true, text: `T:${job.source}` }));
+          signal.addEventListener("abort", () => {
+            cancelled();
+            res({ ok: false, reason: "cancelled" });
+          }, { once: true });
+        });
+        onResult(job, r);
+      }
+    },
+  };
+  return { translator, pending, cancelled };
 }
 
 async function openOne() {
@@ -49,11 +64,11 @@ describe("background Translate missing runs", () => {
     const { session, id, target } = await openOne();
     const items = missingItems(session, target, "all");
     expect(items.length).toBeGreaterThan(0);
-    const { translate, pending } = gatedTranslate();
-    startRun(id, session, items, target, translate);
+    const { translator, pending } = gatedTranslator();
+    startRun(id, session, [target], "all", translator);
     for (let i = 0; i < items.length; i++) {
       await vi.waitFor(() => expect(pending.length).toBe(1));
-      pending.shift()!({ ok: true, text: "" }); // the gate answers T:<source>
+      pending.shift()!();
     }
     await vi.waitFor(() => expect(useRuns.getState().byTab[id]?.kind).toBe("done"));
     expect(session.value(items[0].id, target)).toEqual({ kind: "text", text: `T:${items[0].source}` });
@@ -63,42 +78,38 @@ describe("background Translate missing runs", () => {
 
   it("marks its tab busy while running", async () => {
     const { session, id, target } = await openOne();
-    const items = missingItems(session, target, "all").slice(0, 1);
-    const { translate, pending } = gatedTranslate();
-    startRun(id, session, items, target, translate);
+    const { translator, pending } = gatedTranslator();
+    startRun(id, session, [target], "all", translator);
     await vi.waitFor(() => expect(pending.length).toBe(1));
     expect(useApp.getState().tabs[0].busy).toBe(1);
-    pending.shift()!({ ok: true, text: "x" });
-    await vi.waitFor(() => expect(useRuns.getState().byTab[id]?.kind).toBe("done"));
+    while (useRuns.getState().byTab[id]?.kind !== "done") {
+      await vi.waitFor(() => expect(pending.length + (useRuns.getState().byTab[id]?.kind === "done" ? 1 : 0)).toBeGreaterThan(0));
+      pending.shift()?.();
+    }
     expect(useApp.getState().tabs[0].busy).toBe(0);
   });
 
-  it("cancelRun stops the run and cancels the in-flight request", async () => {
+  it("cancelRun stops the run and cancels the request in flight", async () => {
     const { session, id, target } = await openOne();
     const items = missingItems(session, target, "all");
-    const cancelReq = vi.fn();
-    const pending: Array<(r: TranslateResult) => void> = [];
-    startRun(id, session, items, target, (_s, onRequest) => {
-      onRequest(cancelReq);
-      return new Promise((res) => pending.push(res));
-    });
+    const { translator, pending, cancelled } = gatedTranslator();
+    startRun(id, session, [target], "all", translator);
     await vi.waitFor(() => expect(pending.length).toBe(1));
     cancelRun(id);
-    expect(cancelReq).toHaveBeenCalled();
-    pending.shift()!({ ok: true, text: "late" });
+    expect(cancelled).toHaveBeenCalled();
+    pending.shift()!(); // a late answer
     await vi.waitFor(() => expect(useRuns.getState().byTab[id]?.kind).toBe("done"));
-    expect(session.value(items[0].id, target)).not.toEqual({ kind: "text", text: "late" });
+    expect(session.value(items[0].id, target)).toBeUndefined();
   });
 
   it("closing a tab cancels its run", async () => {
     const { session, id, target } = await openOne();
-    const items = missingItems(session, target, "all");
-    const { translate, pending } = gatedTranslate();
+    const { translator, pending } = gatedTranslator();
     const setText = vi.spyOn(session, "setText");
-    startRun(id, session, items, target, translate);
+    startRun(id, session, [target], "all", translator);
     await vi.waitFor(() => expect(pending.length).toBe(1));
     await useApp.getState().closeProject();
-    pending.shift()!({ ok: true, text: "late" });
+    pending.shift()!();
     await new Promise((r) => setTimeout(r, 10));
     expect(setText).not.toHaveBeenCalled();
     expect(useRuns.getState().byTab[id]).toBeUndefined();
@@ -110,9 +121,17 @@ describe("undo", () => {
     const { session, id, target } = await openOne();
     const items = missingItems(session, target, "all").slice(0, 3);
     expect(items.length).toBe(3);
-    startRun(id, session, items, target, async (source) => ({ ok: true, text: `T:${source}` }));
+    const t: Translator = {
+      label: "Fake",
+      remote: false,
+      async translate(jobs, _ctx, onResult) {
+        for (const job of jobs) onResult(job, { ok: true, text: `T:${job.source}` });
+      },
+    };
+    startRun(id, session, [target], "all", t);
     await vi.waitFor(() => expect(useRuns.getState().byTab[id]?.kind).toBe("done"));
-    expect(items.every((it) => session.value(it.id, target) !== undefined)).toBe(true);
+    const all = missingItems(session, target, "all");
+    expect(all).toEqual([]);
     session.undo();
     expect(items.every((it) => session.value(it.id, target) === undefined)).toBe(true);
     expect(session.canUndo).toBe(false);
