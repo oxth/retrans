@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tauri::State;
+use tauri::{Emitter, State};
 use tokio::sync::Notify;
 
 use crate::secrets::{KEY_MESSAGE, SecretError, SecretStore, Secrets, secret_get};
@@ -140,10 +140,27 @@ async fn send_with_retries(
     label: &str,
     backoff: impl Fn(u32) -> Duration,
 ) -> Result<String, String> {
+    send_ok(req, label, backoff)
+        .await?
+        .text()
+        .await
+        .map_err(|e| format!("{label}: {e}"))
+}
+
+/// Sends with retries (429/5xx); returns the successful response with its body unread (so it can
+/// be streamed), or the error message for anything else.
+async fn send_ok(
+    req: impl Fn() -> reqwest::RequestBuilder,
+    label: &str,
+    backoff: impl Fn(u32) -> Duration,
+) -> Result<reqwest::Response, String> {
     let mut attempt = 0;
     loop {
         let res = req().send().await.map_err(|e| format!("{label}: {e}"))?;
         let status = res.status().as_u16();
+        if (200..=299).contains(&status) {
+            return Ok(res);
+        }
         let retry_after = res
             .headers()
             .get("retry-after")
@@ -152,7 +169,6 @@ async fn send_with_retries(
             .map(Duration::from_secs);
         let body = res.text().await.map_err(|e| format!("{label}: {e}"))?;
         match status {
-            200..=299 => return Ok(body),
             401 | 403 => return Err("The API key was rejected.".into()),
             429 | 500..=599 if attempt < RETRIES => {
                 let wait = if retry_after.is_some() {
@@ -189,16 +205,41 @@ fn default_backoff(attempt: u32) -> Duration {
     Duration::from_secs(1 << attempt)
 }
 
-/// One chat turn: the reply text.
+/// How long a streamed reply may go quiet before giving up.
+const IDLE: Duration = Duration::from_secs(90);
+
+/// One chat turn: the reply text. The reply is streamed when the server supports it, and each
+/// piece of text goes to `on_delta` as it arrives; a server that rejects streaming is asked again
+/// without it, and one that ignores it answers as usual.
 pub async fn chat(
     client: &reqwest::Client,
     ep: &Endpoint,
     model: &str,
     system: &str,
     user: &str,
-    backoff: impl Fn(u32) -> Duration,
+    backoff: impl Fn(u32) -> Duration + Copy,
+    on_delta: &mut (dyn FnMut(&str) + Send),
 ) -> Result<String, String> {
-    let body = match ep.kind {
+    match chat_once(client, ep, model, system, user, backoff, true, on_delta).await {
+        Err(e) if e.to_ascii_lowercase().contains("stream") => {
+            chat_once(client, ep, model, system, user, backoff, false, on_delta).await
+        }
+        r => r,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn chat_once(
+    client: &reqwest::Client,
+    ep: &Endpoint,
+    model: &str,
+    system: &str,
+    user: &str,
+    backoff: impl Fn(u32) -> Duration,
+    stream: bool,
+    on_delta: &mut (dyn FnMut(&str) + Send),
+) -> Result<String, String> {
+    let mut body = match ep.kind {
         Kind::OpenAi => json!({
             "model": model, "temperature": 0,
             "messages": [{ "role": "system", "content": system }, { "role": "user", "content": user }],
@@ -208,17 +249,30 @@ pub async fn chat(
             "messages": [{ "role": "user", "content": user }],
         }),
     };
+    if stream {
+        body["stream"] = json!(true);
+    }
     let path = if ep.kind == Kind::Anthropic {
         "/v1/messages"
     } else {
         "/chat/completions"
     };
-    let text = send_with_retries(
+    let res = send_ok(
         || request(client, ep, reqwest::Method::POST, path).json(&body),
         ep.label,
         backoff,
     )
     .await?;
+    let sse = res
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|t| t.contains("text/event-stream"));
+    if sse {
+        return read_stream(res, ep, on_delta).await;
+    }
+    // Not streamed (the server ignored the request, or it wasn't asked): one JSON reply.
+    let text = res.text().await.map_err(|e| format!("{}: {e}", ep.label))?;
     let v: Value =
         serde_json::from_str(&text).map_err(|_| format!("{}: unexpected reply", ep.label))?;
     let out = match ep.kind {
@@ -233,7 +287,62 @@ pub async fn chat(
                 .collect::<String>()
         }),
     };
-    out.ok_or_else(|| format!("{}: unexpected reply", ep.label))
+    let out = out.ok_or_else(|| format!("{}: unexpected reply", ep.label))?;
+    on_delta(&out);
+    Ok(out)
+}
+
+/// Reads a server-sent-events reply: OpenAI `choices[0].delta.content`, Anthropic
+/// `content_block_delta` text; an `error` event ends it with the provider's message.
+async fn read_stream(
+    res: reqwest::Response,
+    ep: &Endpoint,
+    on_delta: &mut (dyn FnMut(&str) + Send),
+) -> Result<String, String> {
+    use futures_util::StreamExt;
+    let mut bytes = res.bytes_stream();
+    let mut buf: Vec<u8> = Vec::new();
+    let mut out = String::new();
+    loop {
+        let next = tokio::time::timeout(IDLE, bytes.next())
+            .await
+            .map_err(|_| format!("{}: the reply stopped coming", ep.label))?;
+        let Some(chunk) = next else { break };
+        buf.extend_from_slice(&chunk.map_err(|e| format!("{}: {e}", ep.label))?);
+        while let Some(nl) = buf.iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = buf.drain(..=nl).collect();
+            let line = String::from_utf8_lossy(&line);
+            let Some(data) = line.trim_end().strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<Value>(data) else {
+                continue;
+            };
+            if v.get("type").and_then(Value::as_str) == Some("error")
+                || (v.get("error").is_some() && v.get("choices").is_none())
+            {
+                return Err(format!("{}: {}", ep.label, error_message(data)));
+            }
+            let piece = match ep.kind {
+                Kind::OpenAi => v
+                    .pointer("/choices/0/delta/content")
+                    .and_then(Value::as_str),
+                Kind::Anthropic => (v["type"] == "content_block_delta"
+                    && v["delta"]["type"] == "text_delta")
+                    .then(|| v["delta"]["text"].as_str())
+                    .flatten(),
+            };
+            if let Some(p) = piece.filter(|p| !p.is_empty()) {
+                out.push_str(p);
+                on_delta(p);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// The provider's model ids, sorted.
@@ -266,13 +375,15 @@ pub async fn models(client: &reqwest::Client, ep: &Endpoint) -> Result<Vec<Strin
 
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(180))
+        .connect_timeout(Duration::from_secs(30))
+        .read_timeout(IDLE)
         .build()
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn mt_cloud_chat(
+    app: tauri::AppHandle,
     secrets: State<'_, Secrets>,
     calls: State<'_, CloudCalls>,
     req: CloudRequest,
@@ -285,8 +396,13 @@ pub async fn mt_cloud_chat(
         .map_err(|e| e.to_string())?
         .insert(req.req_id, stop.clone());
     let c = client()?;
+    // Each piece of the reply as it arrives, so finished translations can be written right away.
+    let req_id = req.req_id;
+    let mut on_delta = |d: &str| {
+        let _ = app.emit("mt-cloud-delta", json!({ "reqId": req_id, "delta": d }));
+    };
     let out = tokio::select! {
-        r = chat(&c, &ep, &req.model, &req.system, &req.user, default_backoff) => r,
+        r = chat(&c, &ep, &req.model, &req.system, &req.user, default_backoff, &mut on_delta) => r,
         _ = stop.notified() => Err("cancelled".to_string()),
     };
     if let Ok(mut m) = calls.0.lock() {
@@ -362,8 +478,13 @@ mod tests {
                     .push(String::from_utf8_lossy(&buf).to_string());
                 std::thread::sleep(Duration::from_millis(reply.3));
                 let head = format!(
-                    "HTTP/1.1 {} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\n{}connection: close\r\n\r\n",
+                    "HTTP/1.1 {} X\r\n{}content-length: {}\r\n{}connection: close\r\n\r\n",
                     reply.0,
+                    if reply.1.to_ascii_lowercase().contains("content-type") {
+                        ""
+                    } else {
+                        "content-type: application/json\r\n"
+                    },
                     reply.2.len(),
                     reply.1
                 );
@@ -406,6 +527,7 @@ mod tests {
             "sys",
             "hello",
             NO_WAIT,
+            &mut |_| {},
         )
         .await;
         assert_eq!(out, Ok("สวัสดี".into()));
@@ -449,6 +571,7 @@ mod tests {
             "sys",
             "hello",
             NO_WAIT,
+            &mut |_| {},
         )
         .await;
         assert_eq!(out, Ok("ab".into()));
@@ -477,7 +600,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            chat(&reqwest::Client::new(), &ep, "llama", "s", "u", NO_WAIT).await,
+            chat(
+                &reqwest::Client::new(),
+                &ep,
+                "llama",
+                "s",
+                "u",
+                NO_WAIT,
+                &mut |_| {}
+            )
+            .await,
             Ok("ok".into())
         );
         assert!(
@@ -507,7 +639,16 @@ mod tests {
         let ep =
             endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
         assert_eq!(
-            chat(&reqwest::Client::new(), &ep, "m", "s", "u", NO_WAIT).await,
+            chat(
+                &reqwest::Client::new(),
+                &ep,
+                "m",
+                "s",
+                "u",
+                NO_WAIT,
+                &mut |_| {}
+            )
+            .await,
             Ok("done".into())
         );
         assert_eq!(seen.lock().unwrap().len(), 3);
@@ -520,7 +661,16 @@ mod tests {
         let ep =
             endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
         assert_eq!(
-            chat(&reqwest::Client::new(), &ep, "m", "s", "u", NO_WAIT).await,
+            chat(
+                &reqwest::Client::new(),
+                &ep,
+                "m",
+                "s",
+                "u",
+                NO_WAIT,
+                &mut |_| {}
+            )
+            .await,
             Err("Rate limited — try again in a minute.".into())
         );
     }
@@ -545,11 +695,11 @@ mod tests {
         .unwrap();
         let c = reqwest::Client::new();
         assert_eq!(
-            chat(&c, &ep, "m", "s", "u", NO_WAIT).await,
+            chat(&c, &ep, "m", "s", "u", NO_WAIT, &mut |_| {}).await,
             Err("The API key was rejected.".into())
         );
         assert_eq!(
-            chat(&c, &ep, "m", "s", "u", NO_WAIT).await,
+            chat(&c, &ep, "m", "s", "u", NO_WAIT, &mut |_| {}).await,
             Err("Claude: model not found".into())
         );
     }
@@ -584,8 +734,9 @@ mod tests {
         });
         let c = reqwest::Client::new();
         let started = std::time::Instant::now();
+        let mut ignore = |_: &str| {};
         let out = tokio::select! {
-            r = chat(&c, &ep, "m", "s", "u", NO_WAIT) => r,
+            r = chat(&c, &ep, "m", "s", "u", NO_WAIT, &mut ignore) => r,
             _ = stop.notified() => Err("cancelled".to_string()),
         };
         assert_eq!(out, Err("cancelled".into()));
@@ -641,9 +792,17 @@ mod tests {
         let (base, _) = serve(replies);
         let ep =
             endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
-        let err = chat(&reqwest::Client::new(), &ep, "m", "s", "u", NO_WAIT)
-            .await
-            .unwrap_err();
+        let err = chat(
+            &reqwest::Client::new(),
+            &ep,
+            "m",
+            "s",
+            "u",
+            NO_WAIT,
+            &mut |_| {},
+        )
+        .await
+        .unwrap_err();
         assert!(err.contains("You exceeded your current quota"), "{err}");
     }
 
@@ -654,5 +813,131 @@ mod tests {
             Duration::from_secs(30)
         );
         assert_eq!(retry_wait(None, 2), Duration::from_secs(4));
+    }
+
+    const SSE: &str = "content-type: text/event-stream\r\n";
+
+    fn body_of(raw: &str) -> Value {
+        serde_json::from_str(&raw[raw.find("\r\n\r\n").unwrap() + 4..]).unwrap()
+    }
+
+    #[tokio::test]
+    async fn openai_stream_joins_the_deltas() {
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"สวั\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"สดี\"}}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let (base, seen) = serve(vec![Reply(200, SSE, sse.into(), 0)]);
+        let ep =
+            endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
+        let mut parts = Vec::new();
+        let out = chat(
+            &reqwest::Client::new(),
+            &ep,
+            "m",
+            "s",
+            "u",
+            NO_WAIT,
+            &mut |d| parts.push(d.to_string()),
+        )
+        .await;
+        assert_eq!(out, Ok("สวัสดี".into()));
+        assert_eq!(parts, ["สวั", "สดี"]);
+        let raw = seen.lock().unwrap()[0].clone();
+        assert_eq!(body_of(&raw)["stream"], true);
+    }
+
+    #[tokio::test]
+    async fn anthropic_stream_joins_the_text_deltas() {
+        let sse = concat!(
+            "event: message_start\ndata: {\"type\":\"message_start\"}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"a\"}}\n\n",
+            "event: ping\ndata: {\"type\":\"ping\"}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"b\"}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        );
+        let (base, seen) = serve(vec![Reply(200, SSE, sse.into(), 0)]);
+        let ep = endpoint_with(
+            &store_with(&[("anthropic", "k")]),
+            "anthropic",
+            None,
+            Some(&base),
+        )
+        .unwrap();
+        let mut parts = Vec::new();
+        let out = chat(
+            &reqwest::Client::new(),
+            &ep,
+            "m",
+            "s",
+            "u",
+            NO_WAIT,
+            &mut |d| parts.push(d.to_string()),
+        )
+        .await;
+        assert_eq!(out, Ok("ab".into()));
+        assert_eq!(parts, ["a", "b"]);
+        let raw = seen.lock().unwrap()[0].clone();
+        assert_eq!(body_of(&raw)["stream"], true);
+    }
+
+    #[tokio::test]
+    async fn a_stream_error_event_is_reported() {
+        let sse = "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n";
+        let (base, _) = serve(vec![Reply(200, SSE, sse.into(), 0)]);
+        let ep = endpoint_with(
+            &store_with(&[("anthropic", "k")]),
+            "anthropic",
+            None,
+            Some(&base),
+        )
+        .unwrap();
+        let err = chat(
+            &reqwest::Client::new(),
+            &ep,
+            "m",
+            "s",
+            "u",
+            NO_WAIT,
+            &mut |_| {},
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("Overloaded"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_server_that_rejects_streaming_is_asked_again_without_it() {
+        let (base, seen) = serve(vec![
+            Reply(
+                400,
+                "",
+                r#"{"error":{"message":"Streaming is not supported for this model"}}"#.into(),
+                0,
+            ),
+            Reply(
+                200,
+                "",
+                r#"{"choices":[{"message":{"content":"ok"}}]}"#.into(),
+                0,
+            ),
+        ]);
+        let ep = endpoint(&MemStore::default(), "compatible", Some(&base)).unwrap();
+        let out = chat(
+            &reqwest::Client::new(),
+            &ep,
+            "m",
+            "s",
+            "u",
+            NO_WAIT,
+            &mut |_| {},
+        )
+        .await;
+        assert_eq!(out, Ok("ok".into()));
+        let seen = seen.lock().unwrap();
+        assert_eq!(body_of(&seen[0])["stream"], true);
+        assert!(body_of(&seen[1]).get("stream").is_none());
     }
 }

@@ -2,6 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+const events = vi.hoisted(() => ({ handlers: new Map<string, (e: { payload: unknown }) => void>() }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (name: string, h: (e: { payload: unknown }) => void) => {
+    events.handlers.set(name, h);
+    return () => events.handlers.delete(name);
+  }),
+}));
 
 import { ProjectSession } from "../core/session";
 import { detectProject } from "../formats/detect";
@@ -155,5 +162,24 @@ describe("review fixes", () => {
     }
     expect(calls.length).toBe(2);
     expect(Object.values(r).every((x) => x.translated === 20)).toBe(true);
+  });
+
+  it("a streamed reply writes each translation as soon as its entry is complete", async () => {
+    const s = await project(2);
+    let release!: (v: string) => void;
+    invoke.mockImplementation(async (cmd: string, a: { req: { reqId: number } }) => {
+      if (cmd !== "mt_cloud_chat") return;
+      const emit = (delta: string) => events.handlers.get("mt-cloud-delta")?.({ payload: { reqId: a.req.reqId, delta } });
+      emit('{"common::k0": {"th": "ศูนย์"}, ');
+      emit('"common::k1": {"th": "หนึ');
+      return new Promise((res) => (release = res));
+    });
+    const run = translateMissingMulti(s, ["th"], "all", cloudTranslator({ provider: "openai", model: "m" }, "next-i18next"), () => {}, new AbortController().signal);
+    await vi.waitFor(() => expect(s.value("common::k0", "th")).toEqual({ kind: "text", text: "ศูนย์" }));
+    expect(s.value("common::k1", "th")).toBeUndefined(); // still arriving
+    release('{"common::k0": {"th": "ศูนย์"}, "common::k1": {"th": "หนึ่ง"}}');
+    const r = await run;
+    expect(r.th.translated).toBe(2);
+    expect(s.value("common::k1", "th")).toEqual({ kind: "text", text: "หนึ่ง" });
   });
 });

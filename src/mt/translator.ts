@@ -5,6 +5,7 @@
  * model, and results are always written as machine translations needing review.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { isTranslated, type Format, type KeyId, parseKeyId } from "../core/model";
 import type { ProjectSession } from "../core/session";
 import { type BatchResult, missingItems } from "./batch";
@@ -102,7 +103,8 @@ const textOf = (session: ProjectSession, id: KeyId, locale: string) => {
 function remoteTranslator(
   label: string,
   format: Format,
-  send: (system: string, user: string, reqId: number) => Promise<string>,
+  /** Sends one request; `onPartial` gets the reply so far while it streams (when the provider streams). */
+  send: (system: string, user: string, reqId: number, onPartial: (soFar: string) => void) => Promise<string>,
   cancel: (reqId: number) => Promise<void>,
 ): Translator {
   return {
@@ -145,33 +147,41 @@ function remoteTranslator(
         const reqId = nextReqId();
         const stop = () => void cancel(reqId).catch(() => {});
         signal.addEventListener("abort", stop, { once: true });
+        // Each translation is written as soon as its entry in the (streamed) reply is complete.
+        const reported = new Set<string>();
+        const report = (text: string, final: boolean) => {
+          const parsed = parseBatchReply(text, chunk, targets);
+          for (const id of chunk) {
+            for (const job of byId.get(id)!) {
+              const k = `${id}\0${job.locale}`;
+              if (reported.has(k)) continue;
+              if (signal.aborted) {
+                if (final) onResult(job, { ok: false, reason: "cancelled" });
+                continue;
+              }
+              const raw = parsed.values.get(id)?.get(job.locale);
+              if (raw === undefined) {
+                if (final) onResult(job, { ok: false, reason: "error", message: INCOMPLETE });
+                continue;
+              }
+              reported.add(k);
+              const back = restore(raw, guarded.get(id)!);
+              onResult(job, back.ok ? { ok: true, text: back.text } : { ok: false, reason: "unsafe" });
+            }
+          }
+        };
         let reply: string;
         try {
-          reply = await send(system, user, reqId);
+          reply = await send(system, user, reqId, (soFar) => report(soFar, false));
         } catch (e) {
           const m = message(e);
           const r: TranslateResult = m === "cancelled" || signal.aborted ? { ok: false, reason: "cancelled" } : { ok: false, reason: "error", message: m };
-          for (const id of chunk) for (const job of byId.get(id)!) onResult(job, r);
+          for (const id of chunk) for (const job of byId.get(id)!) if (!reported.has(`${id}\0${job.locale}`)) onResult(job, r);
           return; // a provider error stops the run
         } finally {
           signal.removeEventListener("abort", stop);
         }
-        const parsed = parseBatchReply(reply, chunk, targets);
-        for (const id of chunk) {
-          for (const job of byId.get(id)!) {
-            if (signal.aborted) {
-              onResult(job, { ok: false, reason: "cancelled" });
-              continue;
-            }
-            const raw = parsed.values.get(id)?.get(job.locale);
-            if (raw === undefined) {
-              onResult(job, { ok: false, reason: "error", message: INCOMPLETE });
-              continue;
-            }
-            const back = restore(raw, guarded.get(id)!);
-            onResult(job, back.ok ? { ok: true, text: back.text } : { ok: false, reason: "unsafe" });
-          }
-        }
+        report(reply, true);
       }
     },
   };
@@ -181,8 +191,25 @@ export function cloudTranslator(cfg: CloudConfig, format: Format): Translator {
   return remoteTranslator(
     PROVIDER_LABELS[cfg.provider],
     format,
-    (system, user, reqId) =>
-      invoke<string>("mt_cloud_chat", { req: { provider: cfg.provider, baseUrl: cfg.baseUrl ?? null, model: cfg.model, system, user, reqId } }),
+    async (system, user, reqId, onPartial) => {
+      // The reply streams in as "mt-cloud-delta" events while the command runs.
+      let soFar = "";
+      let stop: (() => void) | undefined;
+      try {
+        stop = await listen<{ reqId: number; delta: string }>("mt-cloud-delta", (e) => {
+          if (e.payload.reqId !== reqId) return;
+          soFar += e.payload.delta;
+          onPartial(soFar);
+        });
+      } catch {
+        /* no events (tests, browser): the whole reply still arrives at the end */
+      }
+      try {
+        return await invoke<string>("mt_cloud_chat", { req: { provider: cfg.provider, baseUrl: cfg.baseUrl ?? null, model: cfg.model, system, user, reqId } });
+      } finally {
+        stop?.();
+      }
+    },
     (reqId) => invoke<void>("mt_cloud_cancel", { reqId }),
   );
 }
