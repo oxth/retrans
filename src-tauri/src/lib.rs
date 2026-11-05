@@ -46,6 +46,7 @@ pub fn run() {
         )
         .manage(watch::WatchState::default())
         .manage(secrets::Secrets::default())
+        .manage(mt::cloud::CloudCalls::default())
         .manage(mt::download::Downloads::default())
         .manage(Arc::new(mt::engine::Engine::default()))
         .setup(|app| {
@@ -75,6 +76,9 @@ pub fn run() {
             mt::engine::mt_generate,
             mt::engine::mt_cancel,
             mt::engine::mt_unload,
+            mt::cloud::mt_cloud_chat,
+            mt::cloud::mt_cloud_cancel,
+            mt::cloud::mt_cloud_models,
             secrets::secret_set,
             secrets::secret_has,
             secrets::secret_delete,

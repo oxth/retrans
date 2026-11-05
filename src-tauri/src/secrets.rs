@@ -1,7 +1,9 @@
 //! API keys in the OS credential store (macOS Keychain, Windows Credential Manager). The frontend
 //! can set, check and delete a key, but never read one: only Rust code reads keys, to call a provider.
 
+#[cfg(test)]
 use std::collections::HashMap;
+#[cfg(test)]
 use std::sync::Mutex;
 use tauri::State;
 
@@ -46,9 +48,11 @@ impl SecretStore for OsStore {
 }
 
 /// In memory, for tests.
+#[cfg(test)]
 #[derive(Default)]
 pub struct MemStore(Mutex<HashMap<String, String>>);
 
+#[cfg(test)]
 impl SecretStore for MemStore {
     fn set(&self, account: &str, value: &str) -> Result<(), String> {
         self.0.lock().unwrap().insert(account.into(), value.into());
