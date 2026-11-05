@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ProjectSession } from "../core/session";
-import { btnGhost, btnPrimary, inputCls } from "./Dialog";
+import { btnGhost, btnPrimary, inputCls, btnSecondary } from "./Dialog";
 import { useApp } from "./store";
 import { FigmaSettings } from "./FigmaSettings";
 import { ProjectMtSettings } from "./ProjectMtSettings";
@@ -15,8 +15,8 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
   return (
     <div className="mx-auto w-full max-w-xl space-y-6 p-6 text-sm">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold">Settings</h1>
-        <button className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50" onClick={openPrefs}>Preferences…</button>
+        <p className="text-muted">Where this project's files live and how it is translated.</p>
+        <button className={btnSecondary} onClick={openPrefs}>Preferences…</button>
       </div>
       {!session.workspace && <div>
         <label className="block">
@@ -49,7 +49,7 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
               Reset to detected
             </button>
           )}
-          <span className="text-xs text-gray-500">Takes effect when you reopen the project.</span>
+          <span className="text-xs text-muted">Takes effect when you reopen the project.</span>
         </div>
       </div>}
       <section className="space-y-3">
@@ -62,7 +62,7 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
           <FigmaSettings session={session} />
         </section>
       )}
-      {note && <div role="status" className="text-xs text-gray-600">{note}</div>}
+      {note && <div role="status" className="text-xs text-muted">{note}</div>}
     </div>
   );
 }

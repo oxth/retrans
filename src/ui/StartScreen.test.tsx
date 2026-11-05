@@ -128,6 +128,46 @@ describe("StartScreen", () => {
     expect(useApp.getState().session).not.toBeNull();
   });
 
+  it("a recent project can be removed from the list without touching its files", async () => {
+    const fs = loadFixtureDir(FIX + "next-nested");
+    const before = JSON.stringify(fs.snapshot());
+    await addRecent({ root: "/other", name: "other", format: "next-i18next" });
+    await addRecent({ root: "/project", name: "project", format: "next-i18next" });
+    await setup(fs);
+    await userEvent.click(await screen.findByRole("button", { name: "Remove project from recent projects" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^project\// })).toBeNull());
+    expect(screen.getByRole("button", { name: /^other\// })).toBeInTheDocument();
+    expect((await getRecent()).map((r) => r.root)).toEqual(["/other"]);
+    expect(JSON.stringify(fs.snapshot())).toBe(before);
+  });
+
+  it("a recent project whose folder is gone is marked and asks to be removed when clicked", async () => {
+    await addRecent({ root: "/gone", name: "gone", format: "next-i18next" });
+    await addRecent({ root: "/project", name: "project", format: "next-i18next" });
+    await setup(loadFixtureDir(FIX + "next-nested"));
+    const gone = await screen.findByRole("button", { name: /^gone\// });
+    await waitFor(() => expect(gone).toHaveTextContent("Folder not found"));
+    expect(screen.getByRole("button", { name: /^project\// })).not.toHaveTextContent("Folder not found");
+    await userEvent.click(gone);
+    const dlg = await screen.findByRole("dialog", { name: "Folder not found" });
+    expect(dlg).toHaveTextContent("/gone");
+    await userEvent.click(within(dlg).getByRole("button", { name: "Remove from recent" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^gone\// })).toBeNull());
+    expect((await getRecent()).map((r) => r.root)).toEqual(["/project"]);
+    expect(useApp.getState().session).toBeNull();
+  });
+
+  it("keeping a missing recent project leaves it in the list", async () => {
+    await addRecent({ root: "/gone", name: "gone", format: "next-i18next" });
+    await setup(loadFixtureDir(FIX + "next-nested"));
+    await userEvent.click(await screen.findByRole("button", { name: /^gone\// }));
+    const dlg = await screen.findByRole("dialog", { name: "Folder not found" });
+    await userEvent.click(within(dlg).getByRole("button", { name: "Keep" }));
+    expect(screen.queryByRole("dialog", { name: "Folder not found" })).toBeNull();
+    expect(screen.getByRole("button", { name: /^gone\// })).toBeInTheDocument();
+    expect((await getRecent()).map((r) => r.root)).toEqual(["/gone"]);
+  });
+
   it("puts back a recovery journal on open without asking", async () => {
     const fs = loadFixtureDir(FIX + "next-nested");
     const d = (await detectProject(fs, "/project"))!;

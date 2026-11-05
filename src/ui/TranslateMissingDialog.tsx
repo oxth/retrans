@@ -77,8 +77,8 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
               </select>
             </label>
           )}
-          <p className="text-sm text-gray-600">{missing} missing</p>
-          {translator?.remote && <p className="text-xs text-gray-500">Uses {translator.label}.</p>}
+          <p className="text-sm text-muted">{missing} missing</p>
+          {translator?.remote && <p className="text-xs text-muted">Uses {translator.label}.</p>}
           <div className="flex justify-end gap-2">
             <button className={btnGhost} onClick={p.onClose}>Close</button>
             <button className={btnPrimary} disabled={!missing || !translator} onClick={start}>Start</button>
@@ -87,26 +87,26 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
       )}
       {phase.kind === "running" && (
         <div className="space-y-3">
-          <p className="text-sm text-gray-600">Translating with {phase.label}…</p>
+          <p className="text-sm text-muted">Translating with {phase.label}…</p>
           <div
             role="progressbar"
             aria-label="Translation progress"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={total ? Math.round((done / total) * 100) : 0}
-            className="h-2 overflow-hidden rounded bg-gray-200"
+            className="h-2 overflow-hidden rounded bg-sunken"
           >
-            <div className="h-full bg-indigo-600" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+            <div className="h-full bg-brand" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
           </div>
           <p className="text-sm">{`${done} of ${total}`}</p>
           {phase.locales.length > 1 && (
-            <ul className="text-xs text-gray-600">
+            <ul className="text-xs text-muted">
               {phase.locales.map((l) => (
                 <li key={l}>{`${l}: ${phase.perLocale[l]?.done ?? 0} of ${phase.perLocale[l]?.total ?? 0}`}</li>
               ))}
             </ul>
           )}
-          {phase.current && <p className="truncate font-mono text-xs text-gray-600">{parseKeyId(phase.current).key}</p>}
+          {phase.current && <p className="truncate font-mono text-xs text-muted">{parseKeyId(phase.current).key}</p>}
           <div className="flex justify-end gap-2">
             <button className={btnGhost} onClick={p.onClose}>Hide (keeps running)</button>
             <button className={btnGhost} onClick={cancel}>Cancel</button>
@@ -121,7 +121,7 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
               <Summary result={phase.results[l]} />
             </section>
           ))}
-          <p className="text-xs text-gray-500">Machine translations are marked for review.</p>
+          <p className="text-xs text-muted">Machine translations are marked for review.</p>
           <div className="flex justify-end">
             <button className={btnPrimary} onClick={close}>Close</button>
           </div>
@@ -141,7 +141,7 @@ function Summary({ result: r }: { result: BatchResult }) {
       {r.failed.length > 0 && (
         <>
           <p>{r.failed.length} failed.</p>
-          <ul className="text-xs text-red-600">
+          <ul className="text-xs text-danger">
             {[...new Set(r.failed.map((f) => f.message))].map((m) => (
               <li key={m}>{m}</li>
             ))}
@@ -150,7 +150,7 @@ function Summary({ result: r }: { result: BatchResult }) {
       )}
       {r.skipped > 0 && <p>{r.skipped} skipped (changed while running).</p>}
       {keys.length > 0 && (
-        <ul className="max-h-40 overflow-auto font-mono text-xs text-gray-600">
+        <ul className="max-h-40 overflow-auto font-mono text-xs text-muted">
           {keys.map((id) => (
             <li key={id}>{parseKeyId(id).key}</li>
           ))}

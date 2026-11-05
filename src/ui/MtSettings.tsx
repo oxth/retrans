@@ -5,7 +5,7 @@ import type { ProjectSession } from "../core/session";
 import { CATALOG, type CatalogModel, formatBytes, type PromptTemplate } from "../mt/catalog";
 import { nextReqId, translateText } from "../mt/translate";
 import { pickGgufFile } from "../platform/mt";
-import { btnGhost, btnPrimary, Dialog, inputCls } from "./Dialog";
+import { btnGhost, btnPrimary, Dialog, inputCls, btnDanger } from "./Dialog";
 import { activeModel, spaceUsed, useMt } from "./mt-store";
 import { ProviderSettings } from "./ProviderSettings";
 
@@ -16,7 +16,7 @@ function ExtLink({ href, children }: { href: string; children: string }) {
   return (
     <a
       href={href}
-      className="text-indigo-600 underline"
+      className="text-brand-ink underline"
       onClick={(e) => {
         e.preventDefault();
         void Promise.resolve(openUrl(href)).catch(() => {});
@@ -27,7 +27,7 @@ function ExtLink({ href, children }: { href: string; children: string }) {
   );
 }
 
-const cardCls = "space-y-2 rounded-lg border border-gray-200 p-3";
+const cardCls = "space-y-2 rounded-lg border border-line p-3";
 
 function ModelCard({ model, onDownload }: { model: CatalogModel; onDownload: (m: CatalogModel) => void }) {
   const s = useMt();
@@ -42,9 +42,9 @@ function ModelCard({ model, onDownload }: { model: CatalogModel; onDownload: (m:
     <div role="group" aria-label={model.name} className={cardCls}>
       <div className="flex items-center gap-2">
         <span className="font-medium">{model.name}</span>
-        {model.recommended && <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs text-indigo-700">Recommended</span>}
+        {model.recommended && <span className="rounded bg-brand-soft px-1.5 py-0.5 text-xs text-brand-ink">Recommended</span>}
       </div>
-      <div className="space-y-0.5 text-xs text-gray-600">
+      <div className="space-y-0.5 text-xs text-muted">
         <div>Download: {formatBytes(model.sizeBytes)}</div>
         <div>RAM: {model.ramGb}</div>
         <div>Languages: {model.languages}</div>
@@ -53,15 +53,15 @@ function ModelCard({ model, onDownload }: { model: CatalogModel; onDownload: (m:
         </div>
       </div>
       {dl?.state === "error" && (
-        <div className="flex items-center gap-2 text-xs text-red-600">
+        <div className="flex items-center gap-2 text-xs text-danger">
           <span>{dl.message}</span>
           <button className={btnGhost} onClick={() => onDownload(model)}>Retry</button>
         </div>
       )}
       {running && (
         <div className="flex items-center gap-2">
-          <div role="progressbar" aria-label={`${model.name} download`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="h-2 flex-1 overflow-hidden rounded bg-gray-200">
-            <div className="h-full bg-indigo-600" style={{ width: `${percent}%` }} />
+          <div role="progressbar" aria-label={`${model.name} download`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="h-2 flex-1 overflow-hidden rounded bg-sunken">
+            <div className="h-full bg-brand" style={{ width: `${percent}%` }} />
           </div>
           <button className={btnGhost} onClick={() => void s.pause(model.id)}>Pause</button>
           <button className={btnGhost} onClick={() => void s.cancel(model.id)}>Cancel</button>
@@ -93,7 +93,7 @@ function ModelCard({ model, onDownload }: { model: CatalogModel; onDownload: (m:
           <div className="mt-5 flex justify-end gap-2">
             <button className={btnGhost} onClick={() => setConfirmDelete(false)}>Cancel</button>
             <button
-              className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white"
+              className={btnDanger}
               onClick={() => {
                 setConfirmDelete(false);
                 void s.deleteModel(model.id);
@@ -140,7 +140,7 @@ function CustomCard() {
         >
           Choose file…
         </button>
-        {custom && (s.customMissing ? <span className="text-xs text-red-600">File not found</span> : <span className="break-all font-mono text-xs">{custom.path}</span>)}
+        {custom && (s.customMissing ? <span className="text-xs text-danger">File not found</span> : <span className="break-all font-mono text-xs">{custom.path}</span>)}
       </div>
       {custom && (
         <label className="flex items-center gap-1.5">
@@ -166,7 +166,7 @@ function TestPanel({ session }: { session: ProjectSession }) {
   useEffect(() => setOut(null), [model?.path]);
   if (!model) return null;
   return (
-    <div className="space-y-2 rounded-lg border border-gray-200 p-3">
+    <div className="space-y-2 rounded-lg border border-line p-3">
       <div className="font-medium">Test this model</div>
       <textarea aria-label="Text to translate" className={inputCls} rows={2} value={text} onChange={(e) => setText(e.target.value)} />
       <div className="flex items-center gap-2">
@@ -213,7 +213,7 @@ export function MtSettings({ session }: { session: ProjectSession | null }) {
         Enable machine translation
       </label>
       {!s.settings.enabled ? (
-        <p className="text-xs text-gray-500">Runs on your computer. Nothing is downloaded until you turn this on and pick a model.</p>
+        <p className="text-xs text-muted">Runs on your computer. Nothing is downloaded until you turn this on and pick a model.</p>
       ) : (s.settings.provider ?? "local") !== "local" ? (
         <ProviderSettings />
       ) : (
@@ -223,7 +223,7 @@ export function MtSettings({ session }: { session: ProjectSession | null }) {
             <ModelCard key={m.id} model={m} onDownload={start} />
           ))}
           <CustomCard />
-          <div className="text-xs text-gray-600">Space used: {formatBytes(used)}</div>
+          <div className="text-xs text-muted">Space used: {formatBytes(used)}</div>
           {session && <TestPanel session={session} />}
         </>
       )}

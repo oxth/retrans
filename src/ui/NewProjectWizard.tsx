@@ -1,3 +1,4 @@
+import { btnPrimary, btnSecondary, btnGhost, Dialog, inputCls } from "./Dialog";
 import { useEffect, useState } from "react";
 import { documentDir } from "@tauri-apps/api/path";
 import { open as pickFolder } from "@tauri-apps/plugin-dialog";
@@ -63,10 +64,16 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
   };
 
   return (
-    <div role="dialog" aria-label="New project" className="fixed inset-0 flex items-center justify-center bg-black/30">
-      <div className="w-[32rem] rounded-xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-semibold">New project</h2>
-        <p className="text-xs text-gray-500">Step {idx + 1} of {STEPS.length}</p>
+    <Dialog title="New project" onClose={onCancel}>
+      <div>
+        <div className="-mt-2 flex items-center gap-3">
+          <div className="flex flex-1 gap-1" aria-hidden="true">
+            {STEPS.map((s, i) => (
+              <span key={s} className={`h-1 flex-1 rounded-full ${i <= idx ? "bg-brand" : "bg-sunken"}`} />
+            ))}
+          </div>
+          <p className="text-xs text-muted">Step {idx + 1} of {STEPS.length}</p>
+        </div>
         <div className="mt-4">
           {step === "name" && (
             <label className="block text-sm">
@@ -74,7 +81,7 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5"
+                className={`${inputCls} mt-1`}
               />
             </label>
           )}
@@ -94,24 +101,24 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
             <div className="text-sm">
               <p className="mb-1 font-medium">Location</p>
               {folder ? (
-                <p className="break-all font-mono text-xs text-gray-600">{folder}</p>
+                <p className="break-all font-mono text-xs text-muted">{folder}</p>
               ) : (
-                <p className="text-xs text-gray-500">Choose a folder for the project.</p>
+                <p className="text-xs text-muted">Choose a folder for the project.</p>
               )}
-              <button onClick={choose} className="mt-2 rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-50">
+              <button onClick={choose} className={`${btnSecondary} mt-2`}>
                 Choose…
               </button>
             </div>
           )}
         </div>
-        {error && <p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
         <div className="mt-6 flex justify-between">
-          <button onClick={onCancel} className="rounded-md px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+          <button onClick={onCancel} className={btnGhost}>
             Cancel
           </button>
           <div className="flex gap-2">
             {idx > 0 && (
-              <button onClick={() => setStep(STEPS[idx - 1])} className="rounded-md px-3 py-1.5 text-sm hover:bg-gray-100">
+              <button onClick={() => setStep(STEPS[idx - 1])} className={btnGhost}>
                 Back
               </button>
             )}
@@ -119,7 +126,7 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
               <button
                 onClick={() => setStep(STEPS[idx + 1])}
                 disabled={!canNext}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                className={btnPrimary}
               >
                 Next
               </button>
@@ -127,7 +134,7 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
               <button
                 onClick={create}
                 disabled={!folder || busy}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                className={btnPrimary}
               >
                 Create
               </button>
@@ -135,6 +142,6 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
           </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

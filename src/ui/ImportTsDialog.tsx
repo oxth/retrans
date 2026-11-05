@@ -4,7 +4,7 @@ import type { DetectResult } from "../formats/adapter";
 import { joinPath } from "../platform/fs";
 import { importTsLocales, type TsImport } from "../tssource/import";
 import { WORKSPACE_DIR } from "../workspace/meta";
-import { btnGhost, btnPrimary, Dialog } from "./Dialog";
+import { btnGhost, btnPrimary, Dialog, inputCls } from "./Dialog";
 import { useApp } from "./store";
 
 interface Props {
@@ -74,7 +74,7 @@ export function ImportTsDialog({ root, localesDir, onCancel }: Props) {
   const markers = preview ? Object.values(preview.markers).reduce((n, cells) => n + Object.keys(cells).length, 0) : 0;
   return (
     <Dialog title="Import TypeScript translations" onClose={onCancel}>
-      <p className="break-all font-mono text-xs text-gray-500">{joinPath(root, localesDir)}</p>
+      <p className="break-all font-mono text-xs text-muted">{joinPath(root, localesDir)}</p>
       {preview ? (
         <ul className="mt-4 space-y-0.5 text-sm">
           <li>{preview.modules.size} files</li>
@@ -83,20 +83,20 @@ export function ImportTsDialog({ root, localesDir, onCancel }: Props) {
           <li>{markers} marked "(EN)" (shown as missing)</li>
           <li>{preview.duplicates.length} duplicate keys</li>
           {preview.errors.length > 0 && (
-            <li className="text-amber-700">{preview.errors.length} files couldn't be read and are skipped</li>
+            <li className="text-warn">{preview.errors.length} files couldn't be read and are skipped</li>
           )}
         </ul>
       ) : (
-        !error && <p className="mt-4 text-sm text-gray-500">Reading…</p>
+        !error && <p className="mt-4 text-sm text-muted">Reading…</p>
       )}
       {preview && (
         <label className="mt-4 block text-sm">
-          <span className="text-gray-700">Base language</span>
+          <span className="text-fg-2">Base language</span>
           <select
             aria-label="Base language"
             value={base}
             onChange={(e) => setBase(e.target.value)}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5"
+            className={`${inputCls} mt-1`}
           >
             {locales.map((l) => (
               <option key={l} value={l}>{l}</option>
@@ -104,8 +104,8 @@ export function ImportTsDialog({ root, localesDir, onCancel }: Props) {
           </select>
         </label>
       )}
-      <p className="mt-3 text-xs text-gray-500">The workspace is saved in .retrans/ on the first Save. Your source files aren't changed.</p>
-      {error && <p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
+      <p className="mt-3 text-xs text-muted">The workspace is saved in .retrans/ on the first Save. Your source files aren't changed.</p>
+      {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <button className={btnGhost} onClick={onCancel}>Cancel</button>
         <button className={btnPrimary} disabled={!preview || !base || busy} onClick={() => void doImport()}>Import</button>

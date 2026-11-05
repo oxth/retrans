@@ -5,7 +5,8 @@ import { acceptDraft } from "../workspace/actions";
 import { isTranslated, type KeyId } from "../core/model";
 import { CellEditor } from "./CellEditor";
 import { useSuggestion } from "./Suggestion";
-import { StatusDot } from "./StatusDot";
+import { Icon } from "./Icon";
+import { NEEDS_REVIEW_TEXT, STATUS_TEXT, StatusDot } from "./StatusDot";
 import { Warnings } from "./Warnings";
 
 /** Stable callbacks owned by AppShell; every cell shares the same object. */
@@ -47,11 +48,11 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
   });
   const isBase = locale === session.data.baseLocale;
   const suggestion = useSuggestion(session, id, locale, editing && !isBase);
-  const code = showCode ? <span className="w-8 shrink-0 font-bold uppercase text-gray-500">{locale}</span> : null;
+  const code = showCode ? <span className="w-8 shrink-0 pt-px text-xs font-semibold uppercase leading-5 text-muted">{locale}</span> : null;
 
   if (!isApplicable(session.data, id, locale)) {
     return (
-      <div className="flex items-center gap-2 rounded bg-gray-50 px-1.5 py-1 text-gray-400" data-cell="not-applicable" data-locale={locale}>
+      <div className="flex items-center gap-2 rounded-md bg-panel px-1.5 py-1 text-muted" data-cell="not-applicable" data-locale={locale}>
         {code}
         <span className="italic">not used in {locale}</span>
       </div>
@@ -63,7 +64,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
   if (readOnly !== null) {
     // Computed in code (TypeScript source): shown, never edited here.
     return (
-      <div className="flex items-start gap-2 rounded bg-gray-50 px-1.5 py-1 text-gray-500" data-cell="read-only" data-locale={locale} title={readOnly}>
+      <div className="flex items-start gap-2 rounded-md bg-panel px-1.5 py-1 text-muted" data-cell="read-only" data-locale={locale} title={readOnly}>
         {code}
         {v?.kind === "text" && <span className="min-w-0 whitespace-pre-wrap break-words">{v.text}</span>}
         <span className="italic">{READ_ONLY_MESSAGE}</span>
@@ -75,7 +76,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     const complex = v?.kind === "complex";
     const initial = v ? (v.kind === "text" ? v.text : JSON.stringify(v.raw, null, 2)) : "";
     return (
-      <div className="flex items-start gap-2 rounded px-1.5 py-1" data-cell="editing" data-locale={locale}>
+      <div className="flex items-start gap-2 rounded-md px-1.5 py-1" data-cell="editing" data-locale={locale}>
         {code}
         <CellEditor
           id={id}
@@ -114,7 +115,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     const draft = session.workspace?.drafts[id]?.[locale];
     return (
       <div
-        className="flex cursor-text flex-wrap items-center gap-2 rounded bg-red-50 px-1.5 py-1 italic text-red-600"
+        className="flex cursor-text flex-wrap items-center gap-2 rounded-md border border-dashed border-danger-line px-1.5 py-1 text-danger hover:bg-danger-soft"
         data-cell="missing"
         ref={el}
         data-locale={locale}
@@ -126,10 +127,10 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
         <StatusDot status="untranslated" needsReview={false} machine={false} />
         <span>{v ? "Missing (empty string in file) — click to translate" : "Missing — click to translate"}</span>
         {draft !== undefined && (
-          <span className="flex basis-full items-center gap-2 not-italic text-gray-700" data-draft>
+          <span className="flex basis-full items-center gap-2 text-fg-2" data-draft>
             <span className="min-w-0 whitespace-pre-wrap break-words">Draft: {draft}</span>
             <button
-              className="shrink-0 rounded border border-gray-300 bg-white px-1.5 text-xs hover:bg-gray-50"
+              className="shrink-0 rounded-md border border-line-strong bg-surface px-2 py-0.5 text-xs font-medium text-fg hover:bg-hover"
               onClick={(e) => {
                 e.stopPropagation();
                 try {
@@ -147,10 +148,11 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     );
   }
   const meta = session.meta(id, locale);
-  const clickable = !isBase && (meta.status !== "reviewed" || meta.needsReview);
+  const reviewable = !isBase && (meta.status !== "reviewed" || meta.needsReview);
+  const statusLabel = `${STATUS_TEXT[meta.status]}${meta.needsReview ? `; ${NEEDS_REVIEW_TEXT}` : ""}`;
   return (
     <div
-      className="flex cursor-text items-start gap-2 rounded px-1.5 py-1"
+      className="group/cell flex cursor-text items-start gap-2 rounded-md border border-transparent px-1.5 py-1 hover:border-line hover:bg-hover"
       data-cell="value"
       ref={el}
       data-locale={locale}
@@ -160,21 +162,45 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     >
       {code}
       {!isBase && (
-        <span className="mt-1">
-          <StatusDot
-            status={meta.status}
-            needsReview={meta.needsReview}
-            machine={meta.machine}
-            onClick={clickable ? () => session.markReviewed(id, locale) : undefined}
-          />
+        <span className="flex h-5 items-center">
+          <StatusDot status={meta.status} needsReview={meta.needsReview} machine={meta.machine} />
         </span>
       )}
       {v.kind === "text" ? (
-        <span className="min-w-0 whitespace-pre-wrap break-words">{v.text}</span>
+        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{v.text}</span>
       ) : (
-        <span className="italic text-gray-500">complex message</span>
+        <span className="flex-1 italic text-muted">complex message</span>
       )}
       <Warnings warnings={session.warnings(id, locale)} />
+      {reviewable && (
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {meta.needsReview && (
+            <span
+              className="rounded bg-warn-soft px-1.5 text-[11px] font-medium leading-5 text-warn"
+              title="The base text changed after this was translated. Check the translation still fits, then mark it reviewed."
+            >
+              Needs review
+            </span>
+          )}
+          <button
+            type="button"
+            aria-label={`Mark reviewed (${statusLabel})`}
+            title="Mark reviewed (⌘⇧R / Ctrl+Shift+R)"
+            className={`inline-flex items-center gap-1 rounded-md px-1.5 text-xs font-medium leading-5 ${
+              meta.needsReview
+                ? "border border-warn-line bg-surface text-fg hover:bg-ok-soft hover:text-ok"
+                : "text-muted hover:bg-ok-soft hover:text-ok group-hover/cell:text-fg-2"
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              actions.review(id, locale);
+            }}
+          >
+            <Icon name="check" size={13} />
+            Review
+          </button>
+        </span>
+      )}
     </div>
   );
 });

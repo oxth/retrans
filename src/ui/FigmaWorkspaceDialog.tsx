@@ -77,7 +77,7 @@ export function FigmaWorkspaceDialog({ root, modes, onClose }: { root: string; m
             ))}
           </select>
         </label>
-        {error && <p role="alert" className="text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-danger">{error}</p>}
         <div className="flex justify-end gap-2">
           <button className={btnGhost} disabled={busy} onClick={onClose}>Cancel</button>
           <button className={btnPrimary} disabled={!ready || busy} onClick={() => void create()}>Create workspace</button>

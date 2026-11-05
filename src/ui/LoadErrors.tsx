@@ -6,7 +6,7 @@ export function LoadErrors({ session }: { session: ProjectSession }) {
   const n = session.errors.length;
   if (!n) return null;
   return (
-    <div data-testid="load-errors" className="bg-amber-50 px-4 py-2 text-sm text-amber-900">
+    <div data-testid="load-errors" className="bg-warn-soft px-4 py-2 text-sm text-warn">
       <div className="flex items-center justify-between gap-3">
         <span>
           {n} {n === 1 ? "file couldn't be read and is" : "files couldn't be read and are"} read-only

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Icon } from "./Icon";
 
 /**
  * Per-row actions. `onKeep` is set for a workspace key removed in source: Delete is then
@@ -16,7 +17,7 @@ export function RowMenu({ name, onRename, onDelete, onKeep, onCodeKey, onLink }:
   const menu = useRef<HTMLDivElement>(null);
   const open = pos !== null;
   const close = () => setPos(null);
-  const item = "block w-full px-3 py-1 text-left text-sm hover:bg-gray-100";
+  const item = "block w-full rounded px-2.5 py-1.5 text-left text-sm hover:bg-hover";
 
   // Close on a press anywhere else, Escape, scroll or resize. (Focus can't be relied on: in the
   // macOS webview clicking a button doesn't focus it, so blur never fires.)
@@ -56,10 +57,10 @@ export function RowMenu({ name, onRename, onDelete, onKeep, onCodeKey, onLink }:
         aria-label={`Actions for ${name}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="rounded px-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        className={`rounded p-0.5 text-muted hover:bg-sunken hover:text-fg ${open ? "bg-sunken text-fg" : ""}`}
         onClick={toggle}
       >
-        ⋯
+        <Icon name="more" size={16} />
       </button>
       {/* In <body>, not in the row: each virtual row is transformed, which puts the next row on top of anything inside this one. */}
       {pos &&
@@ -67,14 +68,14 @@ export function RowMenu({ name, onRename, onDelete, onKeep, onCodeKey, onLink }:
           <div
             ref={menu}
             role="menu"
-            className="z-50 w-max min-w-28 rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+            className="z-50 w-max min-w-36 rounded-lg border border-line bg-surface p-1 text-fg shadow-pop"
             style={{ position: "fixed", top: pos.top, left: pos.left }}
           >
             <button role="menuitem" className={item} onClick={run(onRename)}>Rename</button>
             {onCodeKey && <button role="menuitem" className={item} onClick={run(onCodeKey)}>Set code key…</button>}
             {onLink && <button role="menuitem" className={item} onClick={run(onLink)}>Link to code key…</button>}
             {onKeep && <button role="menuitem" className={item} onClick={run(onKeep)}>Keep (will be written back to your code)</button>}
-            <button role="menuitem" className={`${item} text-red-600`} onClick={run(onDelete)}>
+            <button role="menuitem" className={`${item} text-danger hover:bg-danger-soft`} onClick={run(onDelete)}>
               {onKeep ? "Delete key" : "Delete"}
             </button>
           </div>,

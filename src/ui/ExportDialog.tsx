@@ -6,7 +6,7 @@ import {
   type ExportPlan, PartialExportError, planExport, recordWriteBack, SOURCE_CHANGED_MESSAGE, writeExportPlan,
 } from "../workspace/export";
 import { type ExportTarget, jsonEqual } from "../workspace/meta";
-import { btnGhost, btnPrimary, Dialog } from "./Dialog";
+import { btnGhost, btnPrimary, Dialog, btnSecondary } from "./Dialog";
 import { SOURCE_MISSING_MESSAGE, useApp } from "./store";
 import { isFigmaRow } from "./ListView";
 import { mergeBaseline } from "../figma/export";
@@ -224,20 +224,20 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
       </fieldset>
       {kind !== "ts-writeback" && (
         <div className="mt-3 flex items-center gap-2 text-sm">
-          <button className={`${btnGhost} border border-gray-300`} disabled={busy || !!confirm} onClick={() => void chooseFolder()}>
+          <button className={`${btnSecondary}`} disabled={busy || !!confirm} onClick={() => void chooseFolder()}>
             Choose folder…
           </button>
-          <span className="truncate font-mono text-xs text-gray-600">{shownDir ?? "No folder chosen"}</span>
+          <span className="truncate font-mono text-xs text-muted">{shownDir ?? "No folder chosen"}</span>
         </div>
       )}
       {unmapped > 0 && kind !== "figma" && (
-        <p className="mt-3 text-sm text-gray-600">
+        <p className="mt-3 text-sm text-muted">
           {unmapped} Figma {unmapped === 1 ? "string has" : "strings have"} no code key yet —{" "}
           {fromSource(kind) ? "write-back skips them." : "they use their Figma names as keys."}
         </p>
       )}
 
-      {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
+      {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
       {confirm && (
         <section aria-label="Files to replace" className="mt-3 space-y-2 text-sm">
           <p>These files already exist and will be replaced:</p>
@@ -252,7 +252,7 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
       )}
       {result && (
         <div className="mt-3 space-y-3 text-sm">
-          <p role="status" className="text-green-700">
+          <p role="status" className="text-ok">
             {n === 0 ? "Already up to date." : `Exported ${n} ${n === 1 ? "file" : "files"}.`}
           </p>
           {result.leftOutLocales.length > 0 && (
@@ -269,7 +269,7 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
             </section>
           )}
           {result.warnings.length > 0 && (
-            <ul aria-label="Warnings" className="list-disc pl-5 text-amber-800">
+            <ul aria-label="Warnings" className="list-disc pl-5 text-warn">
               {result.warnings.map((w, i) => <li key={i}>{w}</li>)}
             </ul>
           )}
@@ -288,9 +288,9 @@ function Snippet({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="relative">
-      <pre className="overflow-auto rounded-md bg-gray-50 p-3 pr-16 text-xs">{text}</pre>
+      <pre className="overflow-auto rounded-md bg-panel p-3 pr-16 text-xs">{text}</pre>
       <button
-        className={`${btnGhost} absolute right-1 top-1 border border-gray-300 bg-white text-xs`}
+        className={`${btnSecondary} absolute right-1 top-1 bg-surface text-xs`}
         aria-label="Copy"
         onClick={() => {
           void navigator.clipboard.writeText(text).then(() => setCopied(true), () => setCopied(false));

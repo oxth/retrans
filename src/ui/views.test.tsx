@@ -76,7 +76,7 @@ describe("views", () => {
     await open(nested());
     // th missing: nav.about, items_other, lit.a.b, only_en, checkout pay + total (items_one is not used in th)
     const chip = screen.getByRole("button", { name: /^Missing \(\d+\)$/ });
-    expect(chip).toHaveTextContent("Missing (6)");
+    expect(chip).toHaveTextContent(/Missing\s*6/);
     expect(document.querySelectorAll("[data-row]").length).toBe(10);
     await userEvent.click(chip);
     expect(document.querySelectorAll("[data-row]").length).toBe(6);
@@ -102,6 +102,42 @@ describe("views", () => {
     expect(s.meta("common::title", "th").status).toBe("reviewed");
     await waitFor(() => expect(row.querySelector("[data-status]")!.getAttribute("data-status")).toBe("reviewed"));
     expect(within(row).queryByRole("button", { name: /Mark reviewed/ })).toBeNull();
+  });
+
+  it("a translated cell has a labelled Review button and an explained status", async () => {
+    await open(nested());
+    const row = document.querySelector('[data-row="common::title"]') as HTMLElement;
+    const btn = within(row).getByRole("button", { name: /Mark reviewed/ });
+    expect(btn).toHaveTextContent("Review");
+    expect(within(row).getByLabelText(/Status: Translated, not reviewed yet/)).toBeInTheDocument();
+  });
+
+  it("a cell whose base text changed says Needs review and is cleared by Review", async () => {
+    const s = await open(nested());
+    act(() => {
+      s.markReviewed("common::title", "th");
+      s.setText("common::title", "en", "A brand new title");
+    });
+    const row = document.querySelector('[data-row="common::title"]') as HTMLElement;
+    await waitFor(() => expect(within(row).getByText("Needs review")).toBeInTheDocument());
+    expect(s.meta("common::title", "th").needsReview).toBe(true);
+    await userEvent.click(within(row).getByRole("button", { name: /Mark reviewed/ }));
+    expect(s.meta("common::title", "th")).toMatchObject({ status: "reviewed", needsReview: false });
+    await waitFor(() => expect(within(row).queryByText("Needs review")).toBeNull());
+  });
+
+  it("the sidebar explains the status dots and how to review", async () => {
+    await open(nested());
+    const legend = screen.getByRole("region", { name: "Status key" });
+    for (const t of ["Missing", "Not reviewed", "Reviewed", "Needs review"]) expect(within(legend).getByText(t)).toBeInTheDocument();
+    expect(legend).toHaveTextContent(/⌘⇧R/);
+  });
+
+  it("the cell editor shows its keys, including mark reviewed", async () => {
+    await open(nested());
+    const row = document.querySelector('[data-row="common::title"]') as HTMLElement;
+    await userEvent.click(row.querySelector('[data-cell="value"][data-locale="th"]') as HTMLElement);
+    expect(within(row).getByTestId("editor-keys")).toHaveTextContent(/Save & mark reviewed/);
   });
 
   it("placeholder warning shows names", async () => {

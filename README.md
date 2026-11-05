@@ -146,3 +146,9 @@ Updates are signed with the Tauri updater key. The public key is in `src-tauri/t
 
 - **Never commit the private key** or its password, and never paste them into issues or logs.
 - **Back it up.** If the private key is lost, existing installs can no longer auto-update: every user would have to download and install a new version by hand.
+
+## License
+
+Retrans is free and open source under the [MIT License](LICENSE).
+
+The optional TranslateGemma models are covered by their own Gemma terms of use, which the app shows before you download one.

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { keyId, type KeyId, parseKeyId } from "../core/model";
 import type { Row } from "../core/rows";
 import { KeyError, type ProjectSession } from "../core/session";
-import { btnGhost, btnPrimary, Dialog, inputCls } from "./Dialog";
+import { btnGhost, btnPrimary, Dialog, inputCls, btnDanger } from "./Dialog";
 
 function keyMessage(e: unknown): string {
   if (e instanceof KeyError) {
@@ -37,7 +37,7 @@ export function AddKeyDialog({ session, onClose }: { session: ProjectSession; on
       <form onSubmit={submit} className="space-y-3 text-sm">
         {format === "next-i18next" && (
           <label className="block">
-            <span className="mb-1 block text-xs text-gray-500">{nsLabel}</span>
+            <span className="mb-1 block text-xs text-muted">{nsLabel}</span>
             <select aria-label={nsLabel} className={inputCls} value={ns} onChange={(e) => setNs(e.target.value)}>
               {namespaces.map((n) => (
                 <option key={n} value={n}>{n}</option>
@@ -46,11 +46,11 @@ export function AddKeyDialog({ session, onClose }: { session: ProjectSession; on
           </label>
         )}
         <label className="block">
-          <span className="mb-1 block text-xs text-gray-500">Key</span>
+          <span className="mb-1 block text-xs text-muted">Key</span>
           <input aria-label="Key" autoFocus className={`${inputCls} font-mono`} value={key} onChange={(e) => { setKey(e.target.value); setError(null); }} />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs text-gray-500">Base text ({baseLocale})</span>
+          <span className="mb-1 block text-xs text-muted">Base text ({baseLocale})</span>
           <textarea aria-label="Base text" rows={2} className={inputCls} value={text} onChange={(e) => setText(e.target.value)} />
         </label>
         {format === "next-i18next" && (
@@ -59,7 +59,7 @@ export function AddKeyDialog({ session, onClose }: { session: ProjectSession; on
             Plural
           </label>
         )}
-        {error && <div role="alert" className="text-xs text-red-600">{error}</div>}
+        {error && <div role="alert" className="text-xs text-danger">{error}</div>}
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className={btnGhost}>Cancel</button>
           <button type="submit" className={btnPrimary}>Add</button>
@@ -98,12 +98,12 @@ export function RenameKeyDialog({ session, row, onClose }: { session: ProjectSes
     <Dialog title="Rename key" onClose={onClose}>
       <form onSubmit={submit} className="space-y-3 text-sm">
         <label className="block">
-          <span className="mb-1 block text-xs text-gray-500">
+          <span className="mb-1 block text-xs text-muted">
             New key{row.pluralGroup ? " (renames all plural forms)" : ""}
           </span>
           <input aria-label="New key" autoFocus className={`${inputCls} font-mono`} value={name} onChange={(e) => { setName(e.target.value); setError(null); }} />
         </label>
-        {error && <div role="alert" className="text-xs text-red-600">{error}</div>}
+        {error && <div role="alert" className="text-xs text-danger">{error}</div>}
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className={btnGhost}>Cancel</button>
           <button type="submit" className={btnPrimary}>Rename</button>
@@ -124,11 +124,11 @@ export function DeleteKeyDialog({ session, row, onClose }: { session: ProjectSes
       <p className="text-sm">
         Delete <span className="font-mono font-semibold">{name}</span>? It has a value in {count} {count === 1 ? "language" : "languages"}, which will be removed.
       </p>
-      {error && <div role="alert" className="mt-2 text-xs text-red-600">{error}</div>}
+      {error && <div role="alert" className="mt-2 text-xs text-danger">{error}</div>}
       <div className="mt-5 flex justify-end gap-2">
         <button onClick={onClose} className={btnGhost}>Cancel</button>
         <button
-          className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white"
+          className={btnDanger}
           onClick={() => {
             try {
               session.deleteKey(id);

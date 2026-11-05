@@ -6,9 +6,10 @@ import { destHasFiles, extractPackage, safeEntryPath } from "../package/extract"
 import { MANIFEST_PATH, parseManifest } from "../package/manifest";
 import { joinPath } from "../platform/fs";
 import { zipRead } from "../platform/zip";
-import { getRecent, type RecentProject } from "../platform/prefs";
+import { getRecent, removeRecent, type RecentProject } from "../platform/prefs";
 import { resolveTsSource } from "../tssource/import";
-import { btnGhost, btnPrimary, Dialog } from "./Dialog";
+import { btnGhost, btnPrimary, Dialog, sectionLabel } from "./Dialog";
+import { Icon } from "./Icon";
 import { ImportTsDialog } from "./ImportTsDialog";
 import { NewProjectWizard } from "./NewProjectWizard";
 import { OpenProjectDialog } from "./OpenProjectDialog";
@@ -28,9 +29,34 @@ export function StartScreen() {
   /** A package's folder that already holds that package (re-opened zip): offered instead of extracting. */
   const [existing, setExisting] = useState<string | null>(null);
 
+  /** Recent projects whose folder no longer exists (moved, renamed or deleted). */
+  const [gone, setGone] = useState<Set<string>>(new Set());
+  /** A missing recent project the user clicked: asked whether to take it off the list. */
+  const [missing, setMissing] = useState<RecentProject | null>(null);
+
   useEffect(() => {
-    void getRecent().then(setRecent).catch(() => {});
-  }, []);
+    let live = true;
+    void getRecent()
+      .then(async (list) => {
+        if (!live) return;
+        setRecent(list);
+        const flags = await Promise.all(list.map((r) => fs.exists(r.root).catch(() => true)));
+        if (live) setGone(new Set(list.filter((_, i) => !flags[i]).map((r) => r.root)));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [fs]);
+
+  const forget = async (r: RecentProject) => {
+    try {
+      await removeRecent(r.root);
+      setRecent((list) => list.filter((x) => x.root !== r.root));
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   // Menu requests: File → New Project… / Open Project….
   const uiRequest = useApp((s) => s.uiRequest);
@@ -146,6 +172,12 @@ export function StartScreen() {
   };
 
   const openRecent = async (r: RecentProject) => {
+    setMessage(null);
+    // Checked again on click: the folder may have gone since the list was drawn.
+    if (!(await fs.exists(r.root).catch(() => true))) {
+      setGone((g) => new Set(g).add(r.root));
+      return setMissing(r);
+    }
     let found: Awaited<ReturnType<typeof findProject>>;
     try {
       found = await findProject(r.root); // an import never saved is offered again
@@ -164,43 +196,113 @@ export function StartScreen() {
   };
 
   return (
-    <main className="flex min-h-0 flex-1 justify-center overflow-auto bg-gray-50 p-8 text-gray-900">
-      <div className="my-auto w-full max-w-xl">
+    <main className="flex min-h-0 flex-1 justify-center overflow-auto bg-panel p-8 text-fg">
+      <div className="my-auto w-full max-w-2xl">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-indigo-600">Retrans</h1>
-            <p className="mt-1 text-gray-500">Edit next-i18next and Paraglide translations side by side.</p>
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#4f46e5] to-[#0d9488] text-white"
+            >
+              <Icon name="languages" size={22} />
+            </span>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Retrans</h1>
+              <p className="text-sm text-muted">Edit next-i18next and Paraglide translations side by side.</p>
+            </div>
           </div>
-          <button className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-100" onClick={openPrefs}>Preferences</button>
-        </div>
-        <div className="mt-6 flex gap-3">
-          <button onClick={chooseFolder} className="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700">
-            Open project
-          </button>
-          <button onClick={() => setWizard(true)} className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium hover:bg-gray-100">
-            New project
-          </button>
-          <button onClick={openPackage} className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium hover:bg-gray-100">
-            Open translator package…
+          <button className={btnGhost} onClick={openPrefs}>
+            <Icon name="settings" size={15} />
+            Preferences
           </button>
         </div>
-        {message && <p role="alert" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{message}</p>}
+        <div className="mt-8 grid gap-3 sm:grid-cols-3">
+          {(
+            [
+              { label: "Open project", hint: "A folder with next-i18next, Paraglide or TypeScript translations.", icon: "folder", run: chooseFolder, main: true },
+              { label: "New project", hint: "Start an empty project and pick its languages.", icon: "folderPlus", run: () => setWizard(true) },
+              { label: "Open translator package…", hint: "A .zip a developer sent you to translate.", icon: "package", run: openPackage },
+            ] as const
+          ).map((a, i) => (
+            <button
+              key={a.label}
+              aria-label={a.label}
+              aria-describedby={`start-hint-${i}`}
+              onClick={() => void a.run()}
+              className={`flex flex-col items-start gap-2 rounded-xl border p-4 text-left ${
+                "main" in a ? "border-brand bg-brand text-on-brand hover:bg-brand-hover" : "border-line bg-surface hover:border-line-strong hover:bg-hover"
+              }`}
+            >
+              <Icon name={a.icon} size={20} className={"main" in a ? "" : "text-brand"} />
+              <span className="font-semibold">{a.label}</span>
+              <span id={`start-hint-${i}`} className={`text-xs ${"main" in a ? "opacity-90" : "text-muted"}`}>{a.hint}</span>
+            </button>
+          ))}
+        </div>
+        {message && (
+          <p role="alert" className="mt-4 flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger">
+            <Icon name="alert" size={15} />
+            {message}
+          </p>
+        )}
         {recent.length > 0 && (
-          <section className="mt-8">
-            <h2 className="text-sm font-semibold text-gray-500">Recent projects</h2>
-            <ul className="mt-2 divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
-              {recent.map((r) => (
-                <li key={r.root}>
-                  <button onClick={() => openRecent(r)} className="block w-full px-4 py-3 text-left hover:bg-gray-50">
-                    <span className="font-medium">{r.name}</span>
-                    <span className="block truncate font-mono text-xs text-gray-500">{r.root}</span>
-                  </button>
-                </li>
-              ))}
+          <section className="mt-10">
+            <h2 className={`${sectionLabel} flex items-center gap-1.5`}>
+              <Icon name="clock" size={13} />
+              Recent projects
+            </h2>
+            <ul className="mt-2 divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
+              {recent.map((r) => {
+                const isGone = gone.has(r.root);
+                return (
+                  <li key={r.root} className="group/item relative">
+                    <button onClick={() => openRecent(r)} className="group flex w-full items-center gap-3 py-3 pl-4 pr-12 text-left hover:bg-hover">
+                      <Icon name={isGone ? "alert" : "folder"} size={18} className={isGone ? "text-warn" : "text-muted group-hover:text-brand"} />
+                      <span className="min-w-0 flex-1">
+                        <span className={`block font-medium ${isGone ? "text-muted" : ""}`}>{r.name}</span>
+                        <span className={`block truncate font-mono text-xs text-muted ${isGone ? "line-through" : ""}`}>{r.root}</span>
+                      </span>
+                      {isGone && <span className="shrink-0 rounded bg-warn-soft px-1.5 py-0.5 text-[11px] font-medium text-warn">Folder not found</span>}
+                    </button>
+                    <button
+                      aria-label={`Remove ${r.name} from recent projects`}
+                      title="Remove from recent projects (the folder is not touched)"
+                      onClick={() => void forget(r)}
+                      className={`absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted hover:bg-sunken hover:text-fg focus-visible:opacity-100 ${
+                        isGone ? "" : "opacity-0 group-hover/item:opacity-100"
+                      }`}
+                    >
+                      <Icon name="x" size={15} />
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}
       </div>
+      {missing && (
+        <Dialog title="Folder not found" onClose={() => setMissing(null)}>
+          <p className="text-sm">
+            <span className="font-medium">{missing.name}</span> is no longer at this location. It may have been moved, renamed or deleted.
+          </p>
+          <p className="mt-2 break-all rounded-md bg-panel px-2 py-1.5 font-mono text-xs text-muted">{missing.root}</p>
+          <p className="mt-3 text-sm text-muted">Remove it from recent projects? Nothing on disk is changed.</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button className={btnGhost} onClick={() => setMissing(null)}>Keep</button>
+            <button
+              className={btnPrimary}
+              onClick={() => {
+                const r = missing;
+                setMissing(null);
+                void forget(r);
+              }}
+            >
+              Remove from recent
+            </button>
+          </div>
+        </Dialog>
+      )}
       {pending && <OpenProjectDialog {...pending} onCancel={() => setPending(null)} />}
       {wizard && <NewProjectWizard onCancel={() => setWizard(false)} />}
       {importing && <ImportTsDialog {...importing} onCancel={() => setImporting(null)} />}

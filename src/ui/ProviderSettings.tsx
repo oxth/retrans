@@ -143,7 +143,7 @@ function RemoteTest() {
     }
   };
   return (
-    <div className="space-y-2 rounded-md border border-gray-200 p-3">
+    <div className="space-y-2 rounded-md border border-line p-3">
       <div className="flex gap-2">
         <input aria-label="Test text" className={inputCls} placeholder="Text to translate" value={text} onChange={(e) => setText(e.target.value)} />
         <input aria-label="Translate to" className={`${inputCls} w-20`} value={target} onChange={(e) => setTarget(e.target.value.trim())} />
@@ -152,8 +152,8 @@ function RemoteTest() {
       {out !== null && <div role="status" className="text-sm">{out}</div>}
       {sent !== null && (
         <details>
-          <summary className="cursor-pointer text-xs text-gray-500">What was sent</summary>
-          <pre aria-label="Sent to the provider" className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap text-xs text-gray-600">{sent}</pre>
+          <summary className="cursor-pointer text-xs text-muted">What was sent</summary>
+          <pre aria-label="Sent to the provider" className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap text-xs text-muted">{sent}</pre>
         </details>
       )}
     </div>
@@ -293,7 +293,7 @@ function CloudFields({ provider, ask }: { provider: Cloud; ask: (a: Ask) => void
           />
         </label>
       )}
-      {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
     </div>
   );
 }
@@ -337,7 +337,7 @@ function AcpFields() {
           />
         </label>
       )}
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-muted">
         The agent uses its own login (your Claude, ChatGPT or Gemini subscription) and runs on this computer. Retrans gives it no file or
         terminal access of its own and refuses every permission it asks for, but its own built-in tools can still read files on this
         computer. Use agents you trust, and prefer an API provider for text from people you don't know.

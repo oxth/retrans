@@ -4,6 +4,7 @@ import type { Row } from "../core/rows";
 import type { ProjectSession } from "../core/session";
 import { Cell, type EditActions } from "./Cell";
 import { RowMenu } from "./RowMenu";
+import { Icon } from "./Icon";
 import { isUnmappedFigmaRow } from "../figma/meta";
 import { RowWarnings } from "./Warnings";
 import { duplicateGroups } from "../workspace/actions";
@@ -25,7 +26,16 @@ export const isFigmaRow = (session: ProjectSession, id: string) =>
   !!session.workspace?.figma && isUnmappedFigmaRow(session.workspace, id);
 
 /** The row badge for a Figma string with no code key yet. */
-export const NoCodeKeyBadge = () => <span className="rounded bg-violet-50 px-1 text-violet-700">No code key yet</span>;
+/** Shown when the search and filters leave no rows. */
+export const NoMatches = () => (
+  <div className="flex flex-col items-center gap-2 px-8 py-16 text-center">
+    <span className="rounded-full bg-sunken p-3 text-muted"><Icon name="filterX" size={20} /></span>
+    <p className="text-sm font-medium text-fg">No keys match.</p>
+    <p className="text-xs text-muted">Try a different search, or turn off some filters.</p>
+  </div>
+);
+
+export const NoCodeKeyBadge = () => <span className="rounded bg-info-soft px-1.5 text-info">No code key yet</span>;
 
 /** True when this workspace row's key was removed from the TypeScript source. */
 export const isRemovedInSource = (session: ProjectSession, id: string) => !!session.workspace?.removedInSource.includes(id);
@@ -48,7 +58,7 @@ export function ListView({ session, rows, locales, version, editing, actions, on
     if (i >= 0) virt.scrollToIndex(i);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId, editLocale]);
-  if (!rows.length) return <div className="p-8 text-center text-sm text-gray-500">No keys match.</div>;
+  if (!rows.length) return <NoMatches />;
   return (
     <div ref={parent} className="h-full overflow-auto" data-testid="list-scroll">
       <div style={{ height: virt.getTotalSize(), position: "relative" }}>
@@ -62,13 +72,13 @@ export function ListView({ session, rows, locales, version, editing, actions, on
               key={vi.key}
               data-index={vi.index}
               ref={virt.measureElement}
-              className="absolute left-0 top-0 flex w-full border-b border-gray-100 py-2 text-sm"
+              className="group/row absolute left-0 top-0 flex w-full border-b border-line py-2.5 text-sm hover:bg-panel/60"
               style={{ transform: `translateY(${vi.start}px)` }}
               data-row={row.id}
             >
-              <div className="w-1/3 shrink-0 px-3">
+              <div className="w-1/3 min-w-48 max-w-sm shrink-0 pl-4 pr-3">
                 <div className="flex items-start gap-1">
-                  <div className="min-w-0 flex-1 break-all font-mono font-semibold text-gray-700">{row.key}</div>
+                  <div className="min-w-0 flex-1 break-all pt-1 font-mono text-[13px] font-medium text-fg">{row.key}</div>
                   {onRowAction && (
                     <RowMenu
                       name={row.key}
@@ -80,17 +90,17 @@ export function ListView({ session, rows, locales, version, editing, actions, on
                     />
                   )}
                 </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-gray-400">
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted">
                   {row.ns && <span>{row.ns}</span>}
                   {row.pluralGroup && (
-                    <span className="rounded bg-indigo-50 px-1 text-indigo-700">plural · {row.pluralCategory}</span>
+                    <span className="rounded bg-brand-soft px-1.5 text-brand-ink">plural · {row.pluralCategory}</span>
                   )}
-                  {base?.kind === "complex" && <span className="rounded bg-gray-100 px-1 text-gray-600">complex</span>}
+                  {base?.kind === "complex" && <span className="rounded bg-sunken px-1.5 text-muted">complex</span>}
                   {figmaRow && <NoCodeKeyBadge />}
                   <RowWarnings duplicateOf={duplicateGroups(session, row.id)} removedInSource={removed} />
                 </div>
               </div>
-              <div className="min-w-0 flex-1 space-y-0.5 pr-3">
+              <div className="min-w-0 flex-1 space-y-0.5 pr-4">
                 {cols.map((l) => (
                   <Cell
                     key={l}

@@ -67,14 +67,19 @@ export function useSuggestion(session: ProjectSession, id: KeyId, locale: string
 
 export function SuggestionBox({ state, onAccept }: { state: SuggestionState; onAccept: () => void }) {
   return (
-    <div data-testid="suggestion" className="mt-1 flex items-center gap-2 text-xs text-gray-600">
-      {state.status === "loading" && <span>Translating…</span>}
+    <div data-testid="suggestion" className="mt-1.5 flex items-center gap-2 rounded-md bg-brand-soft px-2 py-1 text-xs text-fg-2">
+      {state.status === "loading" && (
+        <span className="flex items-center gap-1.5 text-muted">
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-brand-line border-t-brand" aria-hidden="true" />
+          Translating…
+        </span>
+      )}
       {state.status === "ready" && (
         <>
           <span className="min-w-0 whitespace-pre-wrap break-words">Suggestion: {state.text}</span>
           <button
             type="button"
-            className="shrink-0 rounded border border-indigo-300 px-1.5 py-0.5 text-indigo-700 hover:bg-indigo-50"
+            className="shrink-0 rounded-md bg-brand px-2 py-0.5 font-medium text-on-brand hover:bg-brand-hover"
             onMouseDown={(e) => {
               e.preventDefault();
               onAccept();
@@ -86,11 +91,11 @@ export function SuggestionBox({ state, onAccept }: { state: SuggestionState; onA
           >
             Accept
           </button>
-          <span className="shrink-0 text-gray-400">⌘/Ctrl+Enter</span>
+          <kbd className="shrink-0 rounded border border-brand-line px-1 font-sans text-[11px] text-muted">⌘/Ctrl+Enter</kbd>
         </>
       )}
       {state.status === "unsafe" && <span>Couldn't translate safely</span>}
-      {state.status === "error" && <span className="text-red-600">{state.message}</span>}
+      {state.status === "error" && <span className="text-danger">{state.message}</span>}
     </div>
   );
 }

@@ -53,7 +53,7 @@ export function UpdateBanner() {
 
   if (!update || dismissed) return null;
   return (
-    <div role="status" className="flex shrink-0 items-center justify-between gap-3 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-sm">
+    <div role="status" className="flex shrink-0 items-center justify-between gap-3 border-b border-brand-line bg-brand-soft px-4 py-2 text-sm">
       <span>Retrans {update.version} is available.</span>
       <div className="flex items-center gap-2">
         <InstallStatus phase={phase} />

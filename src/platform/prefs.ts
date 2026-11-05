@@ -34,6 +34,13 @@ export async function addRecent(e: RecentProject): Promise<void> {
   await s.save();
 }
 
+/** Takes a project off the recent list. Its folder and files are not touched. */
+export async function removeRecent(root: string): Promise<void> {
+  const s = await getStore();
+  await s.set("recent", (await getRecent()).filter((r) => r.root !== root));
+  await s.save();
+}
+
 export async function getDefaultViewMode(): Promise<"list" | "table"> {
   const s = await getStore();
   return (await s.get<string>("defaultViewMode")) === "table" ? "table" : "list";

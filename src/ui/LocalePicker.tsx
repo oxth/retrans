@@ -1,3 +1,4 @@
+import { inputCls } from "./Dialog";
 import { useMemo, useState } from "react";
 import { COMMON_LOCALES, localeLabel } from "./locales";
 
@@ -30,19 +31,19 @@ export function LocalePicker({ label, selected, multiple, exclude = [], onChange
         placeholder="Search languages"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+        className={inputCls}
       />
-      <ul className="mt-2 max-h-56 overflow-auto rounded-md border border-gray-200">
+      <ul className="mt-2 max-h-56 overflow-auto rounded-md border border-line">
         {shown.map((i) => (
           <li key={i.code}>
-            <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50">
+            <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-hover">
               <input
                 type={multiple ? "checkbox" : "radio"}
                 name={label}
                 checked={selected.includes(i.code)}
                 onChange={() => toggle(i.code)}
               />
-              <span className="font-mono text-xs text-gray-500">{i.code}</span>
+              <span className="font-mono text-xs text-muted">{i.code}</span>
               <span>{i.name}</span>
             </label>
           </li>

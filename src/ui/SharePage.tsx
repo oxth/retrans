@@ -7,7 +7,7 @@ import { zipRead, zipWrite } from "../platform/zip";
 import { buildPackage, ExportError, packageFileName } from "../package/build";
 import { diffPackage, type ImportDiff, openIncoming, openIncomingFolder } from "../package/diff";
 import { MANIFEST_PATH, parseManifest } from "../package/manifest";
-import { btnGhost, btnPrimary } from "./Dialog";
+import { btnPrimary, btnSecondary } from "./Dialog";
 import { ExportDialog } from "./ExportDialog";
 import { ImportDialog } from "./ImportDialog";
 import { useApp, useSessionVersion } from "./store";
@@ -100,11 +100,11 @@ export function SharePage({ session }: { session: ProjectSession }) {
 
   return (
     <div className="mx-auto w-full max-w-xl space-y-8 p-6 text-sm">
-      <h1 className="text-lg font-semibold">Import / Export</h1>
+      <p className="text-muted">Send translations to a translator, then bring their work back in.</p>
       {session.workspace && (
         <section aria-label="Export translations" className="space-y-3">
           <h2 className="font-medium">Export translations</h2>
-          <p className="text-gray-600">Write the translations back to your code, or to another format.</p>
+          <p className="text-muted">Write the translations back to your code, or to another format.</p>
           <button className={btnPrimary} onClick={() => setExporting(true)}>Export…</button>
         </section>
       )}
@@ -133,22 +133,22 @@ export function SharePage({ session }: { session: ProjectSession }) {
           <button className={btnPrimary} disabled={dirty || busy || chosen.length === 0} onClick={() => void doExport()}>
             Export…
           </button>
-          {dirty && <span className="text-xs text-amber-700">Save your changes first.</span>}
+          {dirty && <span className="text-xs text-warn">Save your changes first.</span>}
         </div>
       </section>
       <section aria-label="Import" className="space-y-3">
         <h2 className="font-medium">Import translator work</h2>
         <div className="flex gap-2">
-          <button className={btnGhost + " border border-gray-300"} disabled={busy} onClick={() => void doImport("zip")}>
+          <button className={btnSecondary} disabled={busy} onClick={() => void doImport("zip")}>
             Import package (.zip)…
           </button>
-          <button className={btnGhost + " border border-gray-300"} disabled={busy} onClick={() => void doImport("folder")}>
+          <button className={btnSecondary} disabled={busy} onClick={() => void doImport("folder")}>
             Import folder…
           </button>
         </div>
       </section>
-      {done && <p role="status" className="text-green-700">{done}</p>}
-      {error && <p role="alert" className="text-red-700">{error}</p>}
+      {done && <p role="status" className="text-ok">{done}</p>}
+      {error && <p role="alert" className="text-danger">{error}</p>}
       {exporting && <ExportDialog session={session} onClose={() => setExporting(false)} />}
       {diff && (
         <ImportDialog

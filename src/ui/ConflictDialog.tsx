@@ -1,7 +1,7 @@
 import type { MessageValue } from "../core/model";
 import { parseKeyId } from "../core/model";
 import { useState } from "react";
-import { btnGhost, btnPrimary, Dialog, inputCls } from "./Dialog";
+import { btnGhost, btnPrimary, Dialog, inputCls, btnSecondary } from "./Dialog";
 import { type UiConflict, useApp } from "./store";
 
 function show(v: MessageValue | undefined): string {
@@ -24,7 +24,7 @@ export function ConflictDialog() {
   if (!conflicts.length) return null;
   return (
     <Dialog title="Resolve conflicts" wide>
-      <p className="mb-3 text-sm text-gray-600">
+      <p className="mb-3 text-sm text-muted">
         These values were changed in two places. Choose which to keep, or edit a final version.
       </p>
       <ul className="space-y-3">
@@ -49,26 +49,26 @@ function ConflictItem({ c, resolve, resolveWith }: {
   const { ns, key } = parseKeyId(c.id);
   const label = LABELS[c.origin ?? "disk"];
   return (
-    <li className="rounded-md border border-gray-200 p-3 text-sm">
-      <div className="mb-2 font-mono text-xs text-gray-500">
+    <li className="rounded-md border border-line p-3 text-sm">
+      <div className="mb-2 font-mono text-xs text-muted">
         {ns ? `${ns} · ` : ""}{key} · {c.locale}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <div className="text-xs font-semibold text-gray-500">{label.mine}</div>
+          <div className="text-xs font-semibold text-muted">{label.mine}</div>
           <div className="whitespace-pre-wrap break-words">{show(c.mine)}</div>
-          <button className={`${btnGhost} mt-1 border border-gray-300`} onClick={() => resolve(c, "mine")}>Mine</button>
+          <button className={`${btnSecondary} mt-1`} onClick={() => resolve(c, "mine")}>Mine</button>
         </div>
         <div>
-          <div className="text-xs font-semibold text-gray-500">{label.theirs}</div>
+          <div className="text-xs font-semibold text-muted">{label.theirs}</div>
           <div className="whitespace-pre-wrap break-words">{show(c.theirs)}</div>
-          <button className={`${btnGhost} mt-1 border border-gray-300`} onClick={() => resolve(c, "theirs")}>Theirs</button>
+          <button className={`${btnSecondary} mt-1`} onClick={() => resolve(c, "theirs")}>Theirs</button>
         </div>
       </div>
       {c.base && (
-        <div className="mt-2 border-t border-gray-100 pt-2">
-          <div className="text-xs font-semibold text-gray-500">Original</div>
-          <div className="whitespace-pre-wrap break-words text-gray-600">{show(c.base)}</div>
+        <div className="mt-2 border-t border-line pt-2">
+          <div className="text-xs font-semibold text-muted">Original</div>
+          <div className="whitespace-pre-wrap break-words text-muted">{show(c.base)}</div>
         </div>
       )}
       {draft === null ? (

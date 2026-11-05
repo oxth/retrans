@@ -1,3 +1,182 @@
 @import "tailwindcss";
 
-body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+/*
+ * Design tokens. Components use these names (bg-surface, text-muted, border-line, bg-brand…),
+ * never raw palette colors, so light and dark mode come from one place. They match the
+ * download site (site/index.html). Every text/background pair is at least 4.5:1;
+ * "faint" (about 3:1) is for icons and decoration only, never for text.
+ */
+:root {
+  color-scheme: light dark;
+  --c-surface: #ffffff;
+  --c-panel: #f6f7fb;
+  --c-sunken: #eceef4;
+  --c-hover: #f0f1f6;
+  --c-fg: #14161f;
+  --c-fg-2: #3d4250;
+  --c-muted: #5b6070;
+  --c-faint: #8a8f9e;
+  --c-line: #e3e5ee;
+  --c-line-strong: #cfd3df;
+  --c-brand: #4f46e5;
+  --c-brand-hover: #4338ca;
+  --c-on-brand: #ffffff;
+  --c-brand-soft: #eef0ff;
+  --c-brand-line: #c7c9f7;
+  --c-brand-ink: #4338ca;
+  --c-danger: #b91c1c;
+  --c-danger-solid: #dc2626;
+  --c-danger-soft: #fef2f2;
+  --c-danger-line: #fecaca;
+  --c-warn: #92400e;
+  --c-warn-solid: #f59e0b;
+  --c-warn-soft: #fffbeb;
+  --c-warn-line: #fcd34d;
+  --c-ok: #0f766e;
+  --c-ok-solid: #14b8a6;
+  --c-ok-soft: #f0fdfa;
+  --c-info: #6d28d9;
+  --c-info-soft: #f5f3ff;
+  --c-scrim: rgb(15 17 23 / 0.4);
+  --c-st-missing: #ef4444;
+  --c-st-translated: #f59e0b;
+  --c-st-reviewed: #14b8a6;
+  --shadow-pop: 0 1px 2px rgb(15 17 23 / 0.06), 0 8px 24px rgb(15 17 23 / 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-surface: #0f1117;
+    --c-panel: #151824;
+    --c-sunken: #1b1f2d;
+    --c-hover: #1d2130;
+    --c-fg: #e8eaf2;
+    --c-fg-2: #c4c8d4;
+    --c-muted: #a0a6b8;
+    --c-faint: #6e7487;
+    --c-line: #262a39;
+    --c-line-strong: #363c50;
+    --c-brand: #8b85ff;
+    --c-brand-hover: #a39eff;
+    --c-on-brand: #0f1117;
+    --c-brand-soft: #1d1f33;
+    --c-brand-line: #3a3d66;
+    --c-brand-ink: #c7c4ff;
+    --c-danger: #fca5a5;
+    --c-danger-solid: #dc2626;
+    --c-danger-soft: #2a1517;
+    --c-danger-line: #5c2327;
+    --c-warn: #fcd34d;
+    --c-warn-solid: #f59e0b;
+    --c-warn-soft: #2a2112;
+    --c-warn-line: #5c4415;
+    --c-ok: #5eead4;
+    --c-ok-solid: #2dd4bf;
+    --c-ok-soft: #0f2624;
+    --c-info: #c4b5fd;
+    --c-info-soft: #221a38;
+    --c-scrim: rgb(0 0 0 / 0.6);
+    --c-st-missing: #f87171;
+    --c-st-translated: #fbbf24;
+    --c-st-reviewed: #2dd4bf;
+    --shadow-pop: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
+  }
+}
+
+@theme inline {
+  --color-surface: var(--c-surface);
+  --color-panel: var(--c-panel);
+  --color-sunken: var(--c-sunken);
+  --color-hover: var(--c-hover);
+  --color-fg: var(--c-fg);
+  --color-fg-2: var(--c-fg-2);
+  --color-muted: var(--c-muted);
+  --color-faint: var(--c-faint);
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-brand: var(--c-brand);
+  --color-brand-hover: var(--c-brand-hover);
+  --color-on-brand: var(--c-on-brand);
+  --color-brand-soft: var(--c-brand-soft);
+  --color-brand-line: var(--c-brand-line);
+  --color-brand-ink: var(--c-brand-ink);
+  --color-danger: var(--c-danger);
+  --color-danger-solid: var(--c-danger-solid);
+  --color-danger-soft: var(--c-danger-soft);
+  --color-danger-line: var(--c-danger-line);
+  --color-warn: var(--c-warn);
+  --color-warn-solid: var(--c-warn-solid);
+  --color-warn-soft: var(--c-warn-soft);
+  --color-warn-line: var(--c-warn-line);
+  --color-ok: var(--c-ok);
+  --color-ok-solid: var(--c-ok-solid);
+  --color-ok-soft: var(--c-ok-soft);
+  --color-info: var(--c-info);
+  --color-info-soft: var(--c-info-soft);
+  --color-scrim: var(--c-scrim);
+  --color-st-missing: var(--c-st-missing);
+  --color-st-translated: var(--c-st-translated);
+  --color-st-reviewed: var(--c-st-reviewed);
+  --shadow-pop: var(--shadow-pop);
+}
+
+@layer base {
+  html,
+  body {
+    margin: 0;
+    background: var(--c-surface);
+    color: var(--c-fg);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    accent-color: var(--c-brand);
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  label:has(> input[type="checkbox"]),
+  label:has(> input[type="radio"]),
+  select {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  /* One visible keyboard focus ring everywhere; mouse clicks don't show it. */
+  :focus-visible {
+    outline: 2px solid var(--c-brand);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline-offset: 0;
+  }
+  ::placeholder {
+    color: var(--c-muted);
+    opacity: 1;
+  }
+  ::selection {
+    background: var(--c-brand-soft);
+  }
+  /* Colour and background changes ease in rather than snapping. */
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  [tabindex] {
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

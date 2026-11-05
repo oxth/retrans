@@ -41,7 +41,7 @@ export function SetCodeKeyDialog({ session, row, onClose }: { session: ProjectSe
   return (
     <Dialog title="Set code key" onClose={onClose}>
       <div className="space-y-3 text-sm">
-        <p className="text-gray-600">Figma name: <span className="font-mono">{parseKeyId(row).key}</span> (stays as it is in Figma)</p>
+        <p className="text-muted">Figma name: <span className="font-mono">{parseKeyId(row).key}</span> (stays as it is in Figma)</p>
         <label className="block">
           Group
           <select aria-label="Group" className={inputCls} value={group} onChange={(e) => setGroup(e.target.value)}>
@@ -54,7 +54,7 @@ export function SetCodeKeyDialog({ session, row, onClose }: { session: ProjectSe
           Code key
           <input aria-label="Code key" className={inputCls} value={key} onChange={(e) => setKey(e.target.value)} />
         </label>
-        {error && <p role="alert" className="text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-danger">{error}</p>}
         <div className="flex justify-end gap-2">
           <button className={btnGhost} onClick={onClose}>Cancel</button>
           <button className={btnPrimary} disabled={!group || !key.trim()} onClick={save}>Save</button>
@@ -95,21 +95,21 @@ export function LinkDialog({ session, row, onClose }: { session: ProjectSession;
   return (
     <Dialog title="Link to code key" onClose={onClose}>
       <div className="space-y-3 text-sm">
-        <p className="text-gray-600">{textOf(session.value(row, base))}</p>
+        <p className="text-muted">{textOf(session.value(row, base))}</p>
         <input aria-label="Search keys" className={inputCls} placeholder="Search keys or text…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        {!q && suggestions.length === 0 && <p className="text-gray-500">No similar keys found. Search for one.</p>}
+        {!q && suggestions.length === 0 && <p className="text-muted">No similar keys found. Search for one.</p>}
         <div role="radiogroup" aria-label="Code keys" className="max-h-60 space-y-1 overflow-auto">
           {matches.map((id) => (
             <label key={id} className="flex items-start gap-2">
               <input type="radio" name="link-target" checked={pick === id} onChange={() => setPick(id)} />
               <span>
                 <span className="font-mono">{id}</span>
-                <span className="block text-gray-500">{textOf(session.value(id, base))}</span>
+                <span className="block text-muted">{textOf(session.value(id, base))}</span>
               </span>
             </label>
           ))}
         </div>
-        {error && <p role="alert" className="text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-danger">{error}</p>}
         <div className="flex justify-end gap-2">
           <button className={btnGhost} onClick={onClose}>Cancel</button>
           <button className={btnPrimary} disabled={!pick} onClick={link}>Link</button>

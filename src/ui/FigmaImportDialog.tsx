@@ -111,7 +111,7 @@ export function FigmaImportDialog({ session, onClose }: { session: ProjectSessio
             <option key={l} value={l} />
           ))}
         </datalist>
-        {problem && <p role="alert" className="text-red-600">{problem}</p>}
+        {problem && <p role="alert" className="text-danger">{problem}</p>}
         <div className="flex justify-end gap-2">
           <button className={btnGhost} onClick={onClose}>Cancel</button>
           <button className={btnPrimary} disabled={!ready || busy} onClick={() => void doImport()}>Import</button>

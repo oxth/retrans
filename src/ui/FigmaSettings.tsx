@@ -67,7 +67,7 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
           </button>
         </div>
       </label>
-      {dirNote && <p role="alert" className="text-red-600">{dirNote}</p>}
+      {dirNote && <p role="alert" className="text-danger">{dirNote}</p>}
       {modes.length > 0 && (
         <div className="space-y-2">
           {modes.map((m) => (

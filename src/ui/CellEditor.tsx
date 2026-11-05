@@ -116,7 +116,7 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
         aria-label={`Edit ${locale} translation for ${id}`}
         aria-invalid={error ? true : undefined}
         spellCheck={false}
-        className={`block w-full resize-none rounded border border-indigo-400 bg-white px-1.5 py-1 text-sm outline-none focus:ring-2 focus:ring-indigo-300 ${complex ? "font-mono text-xs" : ""}`}
+        className={`block w-full resize-none rounded-md border border-brand bg-surface px-1.5 py-1 text-sm text-fg outline-none ring-2 ring-brand-line focus-visible:outline-none ${complex ? "font-mono text-xs" : ""}`}
         onCompositionStart={() => {
           composing.current = true;
         }}
@@ -167,10 +167,20 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
       />
       {suggestion && !edited && <SuggestionBox state={suggestion} onAccept={accept} />}
       {error && (
-        <div role="alert" className="mt-0.5 text-xs text-red-600">
+        <div role="alert" className="mt-0.5 text-xs text-danger">
           {error}
         </div>
       )}
+      <div data-testid="editor-keys" className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
+        <span><Kbd>Enter</Kbd> Save</span>
+        {onMarkReviewed && <span><Kbd>⌘⇧R</Kbd> Save & mark reviewed</span>}
+        <span><Kbd>Tab</Kbd> Next missing</span>
+        <span><Kbd>Esc</Kbd> Cancel</span>
+      </div>
     </div>
   );
 }
+
+const Kbd = ({ children }: { children: string }) => (
+  <kbd className="rounded border border-line-strong bg-panel px-1 font-sans text-[10px] text-fg-2">{children}</kbd>
+);

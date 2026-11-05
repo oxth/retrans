@@ -12,7 +12,9 @@ import { LanguagesPage } from "./LanguagesPage";
 import { LoadErrors } from "./LoadErrors";
 import { SharePage } from "./SharePage";
 import { SettingsPage } from "./SettingsPage";
-import { type Page, Sidebar } from "./Sidebar";
+import { type Page, PAGE_LABEL, Sidebar } from "./Sidebar";
+import { btnPrimary, btnSecondary } from "./Dialog";
+import { Icon } from "./Icon";
 import { SOURCE_INVALID_MESSAGE, SOURCE_MISSING_MESSAGE, useApp, useSessionVersion } from "./store";
 import { keepKey } from "../workspace/actions";
 import { TableView } from "./TableView";
@@ -170,37 +172,56 @@ export function AppShell() {
     setUi({ hidden: hiddenList.includes(l) ? hiddenList.filter((x) => x !== l) : [...hiddenList, l] });
 
   return (
-    <div className="flex min-h-0 flex-1 bg-white text-gray-900">
+    <div className="flex min-h-0 flex-1 bg-surface text-fg">
       <Sidebar session={session} stats={stats} page={page} onPage={setPage} onClose={() => void requestClose("project")} />
       <main className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-8 shrink-0 items-center justify-end gap-3 border-b border-gray-100 px-4 text-xs">
-          {dirty && <span className="font-medium text-amber-700">• Unsaved</span>}
-          {session.workspace && (
-            <button
-              className="rounded border border-gray-300 px-2 py-0.5 hover:bg-gray-50"
-              onClick={() => setDialog({ kind: "export" })}
-            >
-              Export…
-            </button>
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
+          <h1 className="text-sm font-semibold">{PAGE_LABEL[page]}</h1>
+          <span aria-live="polite" className="contents">
+          {dirty ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">
+              <span className="h-1.5 w-1.5 rounded-full bg-warn-solid" aria-hidden="true" />
+              Unsaved
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs text-muted">
+              <Icon name="check" size={13} />
+              All changes saved
+            </span>
           )}
-          <button
-            className="rounded border border-gray-300 px-2 py-0.5 hover:bg-gray-50 disabled:opacity-40"
-            disabled={!dirty}
-            onClick={() => void useApp.getState().save()}
-          >
-            Save
-          </button>
-        </div>
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            {session.workspace && (
+              <button className={btnSecondary} onClick={() => setDialog({ kind: "export" })}>
+                <Icon name="upload" size={15} />
+                Export…
+              </button>
+            )}
+            <button
+              className={dirty ? btnPrimary : btnSecondary}
+              disabled={!dirty}
+              title="Save (⌘S / Ctrl+S)"
+              onClick={() => void useApp.getState().save()}
+            >
+              <Icon name="save" size={15} />
+              Save
+            </button>
+          </div>
+        </header>
         <LoadErrors session={session} />
         {(sourceMissing || session.workspace?.invalidSource) && (
-          <div role="status" className="bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          <div role="status" className="flex items-center gap-2 border-b border-warn-line bg-warn-soft px-4 py-2 text-sm text-warn">
+            <Icon name="alert" size={15} />
             {session.workspace?.invalidSource ? SOURCE_INVALID_MESSAGE : SOURCE_MISSING_MESSAGE}
           </div>
         )}
         {error && (
-          <div role="alert" className="flex items-center justify-between gap-3 bg-red-50 px-4 py-2 text-sm text-red-700">
-            <span>{error}</span>
-            <button aria-label="Dismiss error" onClick={() => useApp.setState({ error: null })}>✕</button>
+          <div role="alert" className="flex items-center gap-2 border-b border-danger-line bg-danger-soft px-4 py-2 text-sm text-danger">
+            <Icon name="alert" size={15} />
+            <span className="flex-1">{error}</span>
+            <button aria-label="Dismiss error" className="rounded p-1 hover:bg-surface/60" onClick={() => useApp.setState({ error: null })}>
+              <Icon name="x" size={14} />
+            </button>
           </div>
         )}
         {page === "translations" ? (
@@ -228,12 +249,16 @@ export function AppShell() {
               )}
             </div>
           </>
-        ) : page === "languages" ? (
-          <LanguagesPage session={session} stats={stats} />
-        ) : page === "share" ? (
-          <SharePage session={session} />
         ) : (
-          <SettingsPage session={session} />
+          <div className="min-h-0 flex-1 overflow-auto">
+            {page === "languages" ? (
+              <LanguagesPage session={session} stats={stats} />
+            ) : page === "share" ? (
+              <SharePage session={session} />
+            ) : (
+              <SettingsPage session={session} />
+            )}
+          </div>
         )}
       </main>
       {dialog?.kind === "add" && <AddKeyDialog session={session} onClose={() => setDialog(null)} />}

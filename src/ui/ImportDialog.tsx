@@ -52,7 +52,7 @@ export function ImportDialog({ session, diff, onClose, onApplied }: {
   const shown = items.slice(0, MAX_ROWS);
   return (
     <Dialog title="Import translator work" onClose={onClose} wide>
-      <p className="mb-3 flex flex-wrap gap-x-3 text-sm text-gray-700">
+      <p className="mb-3 flex flex-wrap gap-x-3 text-sm text-fg-2">
         <span>{count("new")} new</span>
         <span>{count("changed")} changed</span>
         <span>{count("status")} status only</span>
@@ -67,7 +67,7 @@ export function ImportDialog({ session, diff, onClose, onApplied }: {
           <button className={btnGhost} onClick={() => setAll("mine")}>Keep mine for all</button>
         </div>
       )}
-      <ul className="mb-3 max-h-80 divide-y divide-gray-100 overflow-auto rounded border border-gray-200 text-sm">
+      <ul className="mb-3 max-h-80 divide-y divide-line overflow-auto rounded border border-line text-sm">
         {shown.map((i) => {
           const { ns, key } = parseKeyId(i.id);
           const k = keyOf(i);
@@ -76,9 +76,9 @@ export function ImportDialog({ session, diff, onClose, onApplied }: {
             <li key={k} className="px-3 py-2">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="truncate font-mono text-xs">{ns ? `${ns}: ${key}` : key}</span>
-                <span className="shrink-0 text-xs font-semibold uppercase text-gray-500">{i.locale}</span>
+                <span className="shrink-0 text-xs font-semibold uppercase text-muted">{i.locale}</span>
               </div>
-              <div className="break-words text-gray-700">
+              <div className="break-words text-fg-2">
                 {i.kind === "status" ? "status only" : `${show(i.mine)} → ${show(i.theirs)}`}
               </div>
               {i.kind === "conflict" && (
@@ -101,9 +101,9 @@ export function ImportDialog({ session, diff, onClose, onApplied }: {
         })}
       </ul>
       {items.length > shown.length && (
-        <p className="mb-3 text-xs text-gray-500">+{items.length - shown.length} more (applied the same way)</p>
+        <p className="mb-3 text-xs text-muted">+{items.length - shown.length} more (applied the same way)</p>
       )}
-      {error && <p role="alert" className="mb-3 rounded bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+      {error && <p role="alert" className="mb-3 rounded bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
       <div className="flex justify-end gap-2">
         <button className={btnGhost} onClick={onClose}>Cancel</button>
         <button className={btnPrimary} onClick={apply}>Apply</button>
@@ -113,5 +113,5 @@ export function ImportDialog({ session, diff, onClose, onApplied }: {
 }
 
 function Warn({ children }: { children: string }) {
-  return <p className="mb-2 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">{children}</p>;
+  return <p className="mb-2 rounded bg-warn-soft px-3 py-2 text-xs text-warn">{children}</p>;
 }

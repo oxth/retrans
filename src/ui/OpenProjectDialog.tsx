@@ -1,3 +1,4 @@
+import { btnPrimary, btnGhost, Dialog, inputCls } from "./Dialog";
 import { useState } from "react";
 import type { DetectResult } from "../formats/adapter";
 import { useApp } from "./store";
@@ -28,27 +29,26 @@ export function OpenProjectDialog({ root, detected, savedBase, onCancel }: Props
   };
 
   return (
-    <div role="dialog" aria-label="Open project" className="fixed inset-0 flex items-center justify-center bg-black/30">
-      <div className="w-[28rem] rounded-xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-semibold">Open project</h2>
-        <p className="mt-1 break-all font-mono text-xs text-gray-500">{root}</p>
+    <Dialog title="Open project" onClose={onCancel}>
+      <div>
+        <p className="-mt-2 break-all font-mono text-xs text-muted">{root}</p>
         <dl className="mt-4 grid grid-cols-[7rem_1fr] gap-y-1 text-sm">
-          <dt className="text-gray-500">Format</dt>
+          <dt className="text-muted">Format</dt>
           <dd>{detected.format === "paraglide" ? "Paraglide" : "next-i18next"}</dd>
-          <dt className="text-gray-500">Languages</dt>
+          <dt className="text-muted">Languages</dt>
           <dd>{detected.locales.join(", ") || "none"}</dd>
-          <dt className="text-gray-500">{detected.workspace ? "Groups" : "Namespaces"}</dt>
+          <dt className="text-muted">{detected.workspace ? "Groups" : "Namespaces"}</dt>
           <dd>{detected.namespaces.filter(Boolean).join(", ") || "none"}</dd>
-          <dt className="text-gray-500">Keys</dt>
+          <dt className="text-muted">Keys</dt>
           <dd>{detected.keyCount} keys</dd>
         </dl>
         {detected.baseLocale === null && (
           <label className="mt-4 block text-sm">
-            <span className="text-gray-700">Base language</span>
+            <span className="text-fg-2">Base language</span>
             <select
               value={base}
               onChange={(e) => setBase(e.target.value)}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5"
+              className={`${inputCls} mt-1`}
             >
               <option value="">Choose…</option>
               {detected.locales.map((l) => (
@@ -57,20 +57,20 @@ export function OpenProjectDialog({ root, detected, savedBase, onCancel }: Props
             </select>
           </label>
         )}
-        {error && <p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onCancel} className="rounded-md px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+          <button onClick={onCancel} className={btnGhost}>
             Cancel
           </button>
           <button
             onClick={open}
             disabled={!base || busy}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className={btnPrimary}
           >
             Open
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

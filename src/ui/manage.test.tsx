@@ -106,7 +106,7 @@ afterEach(() => {
 describe("keys", () => {
   it("add key dialog shows prefix collision error", async () => {
     const s = await open(nested());
-    await userEvent.click(screen.getByRole("button", { name: "+ Key" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add key" }));
     const dlg = screen.getByRole("dialog", { name: "Add key" });
     await userEvent.selectOptions(within(dlg).getByLabelText("Namespace"), "common");
     await userEvent.type(within(dlg).getByLabelText("Key"), "nav.home.sub");
@@ -205,11 +205,11 @@ describe("saving", () => {
   it("Cmd+S saves and clears the unsaved dot", async () => {
     const fs = nested();
     const s = await open(fs);
-    expect(screen.queryByText("• Unsaved")).toBeNull();
+    expect(screen.queryByText("Unsaved")).toBeNull();
     act(() => s.setText("common::title", "th", "ใหม่"));
-    expect(screen.getByText("• Unsaved")).toBeInTheDocument();
+    expect(screen.getByText("Unsaved")).toBeInTheDocument();
     await userEvent.keyboard("{Meta>}s{/Meta}");
-    await waitFor(() => expect(screen.queryByText("• Unsaved")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Unsaved")).toBeNull());
     expect(JSON.parse(await fs.readText(TH)).title).toBe("ใหม่");
   });
 
@@ -240,7 +240,7 @@ describe("saving", () => {
     expect(screen.queryByRole("dialog", { name: "Resolve conflicts" })).toBeNull();
     expect(useApp.getState().conflicts).toEqual([]);
     await userEvent.keyboard("{Meta>}s{/Meta}");
-    await waitFor(() => expect(screen.queryByText("• Unsaved")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Unsaved")).toBeNull());
     const out = JSON.parse(await fs.readText(TH));
     expect(out.title).toBe("MINE");
     expect(out.nav.about).toBe("ABOUT-MINE");
@@ -394,7 +394,7 @@ describe("review fixes (UI)", () => {
     const fs = nested();
     const s = await open(fs);
     act(() => s.setText("common::title", "th", "W"));
-    await userEvent.click(screen.getByRole("button", { name: "+ Key" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add key" }));
     await screen.findByRole("dialog");
     fs.writes.length = 0;
     await userEvent.keyboard("{Meta>}s{/Meta}");

@@ -39,7 +39,7 @@ export function ProjectMtSettings({ session }: { session: ProjectSession }) {
             <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
           ))}
         </select>
-        <span className="mt-1 block text-xs text-gray-500">
+        <span className="mt-1 block text-xs text-muted">
           Saved in .retrans/state.json, so everyone on the project uses the same provider. Keys and models are set in Preferences.
         </span>
       </label>
@@ -66,7 +66,7 @@ export function ProjectMtSettings({ session }: { session: ProjectSession }) {
           />
         </label>
       ))}
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-muted">
         Added after the instructions for all projects (Preferences), in that order. Stored in .retrans/state.json and shared through git.
       </p>
     </div>
