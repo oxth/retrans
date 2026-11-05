@@ -1,7 +1,7 @@
 # Retrans — Preferences page, app menus, shortcuts, undo/redo — Design
 
 Date: 2026-11-05
-Status: Draft for owner review
+Status: Approved by owner 2026-11-05 (Windows: menu bar with File → Settings… Ctrl+,; undo: edits only)
 Extends: `docs/superpowers/specs/2026-11-04-retrans-v0.2-additions-design.md` (ships in v0.2.0).
 
 **Owner's request (2026-11-05):** "split the setting page to a dedicate page and have a context menu in mac call preference but for windows i'm not sure how it call and could you bind the shortcut key like to preference, undo, redo something like this".
@@ -72,6 +72,6 @@ Built with Tauri's menu API (`@tauri-apps/api/menu`). macOS uses its standard ap
   - a Translate-missing run undone as one step.
 - Preferences opens from the start screen, from a project, and with ⌘, / Ctrl+,.
 
-## Questions for the owner
-1. **Windows:** a menu bar in the window with **File → Settings… (Ctrl+,)** (recommended; it's what VS Code does). The alternative is no menu bar on Windows, with just a gear button and Ctrl+,.
-2. **Undo scope:** is the list in §3 what you expect? In particular, should undo also cover **Save**? My call is no: files always follow the workspace through auto-save.
+## Owner decisions (2026-11-05)
+1. Windows: a menu bar in the window, with **File → Settings… (Ctrl+,)**.
+2. Undo covers the edits listed in §3 only. Not Save, not changes that came from syncs.
