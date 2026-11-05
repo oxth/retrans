@@ -91,6 +91,20 @@
     nav a:hover { color: var(--text); background: var(--hover); }
     nav a.gh { display: inline-flex; align-items: center; gap: 6px; color: var(--text); border: 1px solid var(--line); margin-left: 6px; }
     nav a.gh svg { width: 16px; height: 16px; fill: currentColor; }
+    /* Language switch: two options, the current one highlighted. */
+    .lang-switch { display: inline-flex; align-items: center; gap: 2px; padding: 3px; margin-left: 6px; border: 1px solid var(--line); border-radius: 10px; }
+    .lang-switch .icon { width: 16px; height: 16px; margin: 0 2px 0 6px; color: var(--muted); }
+    nav .lang-switch a { display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; font-size: 14px; border-radius: 7px; }
+    nav .lang-switch a[aria-current="page"] { background: var(--brand-soft); color: var(--brand-text); font-weight: 600; }
+    nav .lang-switch a[aria-current="page"]:hover { background: var(--brand-soft); color: var(--brand-text); }
+    /* Suggests the Thai page to Thai-language browsers on the English page. */
+    .lang-hint { position: fixed; z-index: 30; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 16px; background: var(--card); color: var(--text); border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: var(--shadow); font-size: 15px; }
+    .lang-hint span { flex: 1; }
+    .lang-hint a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: 9px; background: var(--brand); color: var(--brand-ink); font-weight: 600; text-decoration: none; }
+    .lang-hint a:hover { background: var(--brand-hover); }
+    .lang-hint button { display: inline-grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 9px; background: none; color: var(--muted); cursor: pointer; }
+    .lang-hint button:hover { background: var(--hover); color: var(--text); }
+    .lang-hint button .icon { width: 18px; height: 18px; }
 
     /* Hero */
     .hero { text-align: center; padding-top: 64px; position: relative; }
@@ -235,7 +249,9 @@
       section { padding: 64px 0; } .cta { padding-block: 64px; }
     }
     @media (max-width: 560px) {
-      nav a:not(.gh):not(.lang) { display: none; }
+      nav > a:not(.gh) { display: none; }
+      nav .lang-switch a { min-height: 40px; }
+      .lang-hint { left: max(16px, env(safe-area-inset-left, 0px)); }
       .btn { width: 100%; }
       .hero { padding-top: 40px; }
       .cell .rev { display: none; }
@@ -262,7 +278,11 @@
         <a href="#features">Features</a>
         <a href="#install">Install</a>
         <a href="#changelog">Changelog</a>
-        <a class="lang" href="th/" hreflang="th" lang="th">ไทย</a>
+        <div class="lang-switch" role="group" aria-label="Language">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+          <a href="./" hreflang="en" lang="en" aria-label="English" aria-current="page">EN</a>
+          <a href="th/" hreflang="th" lang="th" aria-label="ภาษาไทย">ไทย</a>
+        </div>
         <a class="gh" href="https://github.com/oxth/retrans"><svg aria-hidden="true"><use href="#i-github"/></svg>GitHub</a>
       </nav>
     </div>
@@ -468,6 +488,37 @@
     const onScroll = () => header.classList.toggle("scrolled", window.scrollY > 8);
     addEventListener("scroll", onScroll, { passive: true });
     onScroll();
+
+    // Language: keep the visitor's place (#section) when switching, and remember the choice.
+    const LANG_KEY = "retrans-lang";
+    const store = {
+      get() { try { return localStorage.getItem(LANG_KEY); } catch { return null; } },
+      set(v) { try { localStorage.setItem(LANG_KEY, v); } catch {} },
+    };
+    for (const a of document.querySelectorAll(".lang-switch a[hreflang]")) {
+      a.addEventListener("click", (e) => {
+        store.set(a.hreflang);
+        if (a.getAttribute("aria-current") === "page") { e.preventDefault(); return; }
+        if (location.hash) a.href = a.href.split("#")[0] + location.hash;
+      });
+    }
+    // On the English page, suggest the Thai page to browsers set to Thai, until they pick a language.
+    if (document.documentElement.lang === "en" && !store.get() &&
+        (navigator.languages || [navigator.language]).some((l) => /^th\b/i.test(l || ""))) {
+      const hint = document.createElement("div");
+      hint.className = "lang-hint";
+      hint.lang = "th";
+      hint.setAttribute("role", "region");
+      hint.setAttribute("aria-label", "เปลี่ยนภาษา");
+      hint.innerHTML = '<span>มีหน้านี้เป็นภาษาไทย</span><a href="th/" hreflang="th">อ่านภาษาไทย</a>' +
+        '<button type="button" aria-label="ปิด"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>';
+      hint.querySelector("a").addEventListener("click", (e) => {
+        store.set("th");
+        e.currentTarget.href = "th/" + location.hash;
+      });
+      hint.querySelector("button").addEventListener("click", () => { store.set("en"); hint.remove(); });
+      document.body.append(hint);
+    }
 
     // Put the visitor's own platform first and make it the main button.
     const ua = navigator.userAgentData?.platform || navigator.platform || navigator.userAgent;
