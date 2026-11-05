@@ -1,24 +1,18 @@
 import { create } from "zustand";
 import type { KeyId } from "../core/model";
 import type { ProjectSession } from "../core/session";
-import { type BatchItem, type BatchResult, translateMissing } from "../mt/batch";
-import type { TranslateResult } from "../mt/translate";
+import type { BatchResult } from "../mt/batch";
+import { type MultiProgress, type Translator, translateMissingMulti } from "../mt/translator";
 import { useApp } from "./store";
 
 /** A Translate missing run, kept per tab so it outlives its dialog and keeps going in a background tab. */
 export type RunPhase =
-  | { kind: "running"; locale: string; done: number; total: number; current: KeyId | null }
-  | { kind: "done"; locale: string; result: BatchResult };
-
-/**
- * Translates one source text. Call `onRequest` with a function that cancels the engine request
- * now in flight, so Cancel (or closing the tab) stops it at once.
- */
-export type RunTranslate = (source: string, onRequest: (cancel: () => void) => void) => Promise<TranslateResult>;
+  | { kind: "running"; label: string; locales: string[]; perLocale: MultiProgress["perLocale"]; current: KeyId | null }
+  | { kind: "done"; label: string; locales: string[]; results: Record<string, BatchResult> };
 
 export const useRuns = create<{ byTab: Record<string, RunPhase> }>(() => ({ byTab: {} }));
 
-const live = new Map<string, { abort: AbortController; cancelRequest: (() => void) | null }>();
+const live = new Map<string, { abort: AbortController }>();
 
 function setPhase(tabId: string, phase: RunPhase | null): void {
   useRuns.setState((s) => {
@@ -29,39 +23,40 @@ function setPhase(tabId: string, phase: RunPhase | null): void {
   });
 }
 
-export function startRun(tabId: string, session: ProjectSession, items: BatchItem[], locale: string, translate: RunTranslate): void {
-  if (live.has(tabId) || !items.length) return;
-  const run = { abort: new AbortController(), cancelRequest: null as (() => void) | null };
+/**
+ * Translates every missing cell of `locales` (in group `ns`, or "all") with `translator`. The run's
+ * writes are one undo step; results are machine translations needing review.
+ */
+export function startRun(
+  tabId: string,
+  session: ProjectSession,
+  locales: string[],
+  ns: string,
+  translator: Translator,
+  instructions: (locale: string) => string = () => "",
+): void {
+  if (live.has(tabId) || !locales.length) return;
+  const run = { abort: new AbortController() };
   live.set(tabId, run);
   const { signal } = run.abort;
-  const first = items[0].id;
-  setPhase(tabId, { kind: "running", locale, done: 0, total: items.length, current: first });
+  const label = translator.label;
+  setPhase(tabId, { kind: "running", label, locales, perLocale: {}, current: null });
   useApp.getState().markBusy(tabId, 1);
   const group = session.beginGroup(); // the run's own writes are one undo step
-  const one = async (source: string): Promise<TranslateResult> => {
-    try {
-      const r = await translate(source, (cancel) => (run.cancelRequest = cancel));
-      // Cancelled while this request was in flight: never write its result.
-      return signal.aborted ? { ok: false, reason: "cancelled" } : r;
-    } catch (e) {
-      return { ok: false, reason: "error", message: e instanceof Error ? e.message : String(e) };
-    } finally {
-      run.cancelRequest = null;
-    }
+  const progress = (p: MultiProgress) => {
+    if (live.get(tabId) === run) setPhase(tabId, { kind: "running", label, locales, perLocale: p.perLocale, current: p.current });
   };
-  const progress = (p: { done: number; total: number; current: KeyId | null }) => {
-    if (live.get(tabId) === run) setPhase(tabId, { kind: "running", locale, ...p, current: p.current ?? (p.done === 0 ? first : null) });
-  };
-  let result: BatchResult = { translated: 0, unsafe: [], failed: [], skipped: 0, cancelled: true };
-  void translateMissing(session, items, locale, one, progress, signal, (fn) => session.inGroup(group, fn))
-    .then((r) => (result = r))
+  const empty = (): BatchResult => ({ translated: 0, unsafe: [], failed: [], skipped: 0, cancelled: true });
+  let results: Record<string, BatchResult> = Object.fromEntries(locales.map((l) => [l, empty()]));
+  void translateMissingMulti(session, locales, ns, translator, progress, signal, (fn) => session.inGroup(group, fn), instructions)
+    .then((r) => (results = r))
     .catch((e) => console.warn("[mt] batch translation failed", e))
     .finally(() => {
       session.endGroup(group);
       if (live.get(tabId) !== run) return; // the tab was closed: its run is already forgotten
       live.delete(tabId);
       useApp.getState().markBusy(tabId, -1);
-      setPhase(tabId, { kind: "done", locale, result });
+      setPhase(tabId, { kind: "done", label, locales, results });
     });
 }
 
@@ -70,7 +65,6 @@ export function cancelRun(tabId: string): void {
   const run = live.get(tabId);
   if (!run) return;
   run.abort.abort();
-  run.cancelRequest?.();
 }
 
 /** Forgets a finished run's summary. */

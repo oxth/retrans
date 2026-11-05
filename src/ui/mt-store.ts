@@ -3,7 +3,9 @@ import { findModel } from "../mt/catalog";
 import type { PromptTemplate } from "../mt/catalog";
 import type { ActiveModel, MtEngine } from "../mt/translate";
 import { type DownloadEvent, mtNative, tauriEngine } from "../platform/mt";
-import { getMtSettings, type MtSettings, setMtSettings } from "../platform/prefs";
+import { getMtSettings, type MtSettings, type ProviderId, setMtSettings } from "../platform/prefs";
+import type { Format } from "../core/model";
+import { acpTranslator, cloudTranslator, localTranslator, type Translator } from "../mt/translator";
 import { tauriFs } from "../platform/tauri-fs";
 
 type Downloads = Record<string, { received: number; total: number; state: DownloadEvent["state"]; message?: string }>;
@@ -25,6 +27,12 @@ interface MtState {
   cancel(id: string): Promise<void>;
   deleteModel(id: string): Promise<void>;
   setCustom(path: string, template: PromptTemplate): Promise<void>;
+  /** Who translates. A remote provider needs the user's consent first (grantConsent). */
+  setProvider(p: ProviderId): Promise<void>;
+  grantConsent(p: ProviderId): Promise<void>;
+  setCloud(p: "openai" | "anthropic" | "compatible", cfg: { model: string; baseUrl?: string }): Promise<void>;
+  setAcp(cfg: MtSettings["acp"]): Promise<void>;
+  setInstructions(text: string): Promise<void>;
   refresh(): Promise<void>;
 }
 
@@ -74,7 +82,9 @@ export const useMt = create<MtState>((set, get) => {
 
   return {
     initialized: false,
-    settings: { enabled: false, modelId: null, custom: null, accepted: [] },
+    settings: {
+      enabled: false, modelId: null, custom: null, accepted: [], provider: "local", cloud: {}, acp: null, consent: [], instructions: "",
+    },
     modelsDir: null,
     files: {},
     downloads: {},
@@ -168,6 +178,30 @@ export const useMt = create<MtState>((set, get) => {
       await get().refresh();
     },
 
+    async setProvider(p) {
+      await save({ ...get().settings, provider: p });
+    },
+
+    async grantConsent(p) {
+      const c = get().settings.consent;
+      if (!c.includes(p)) await save({ ...get().settings, consent: [...c, p] });
+    },
+
+    async setCloud(p, cfg) {
+      const cloud = { ...get().settings.cloud };
+      if (p === "compatible") cloud.compatible = { baseUrl: cfg.baseUrl ?? "", model: cfg.model };
+      else cloud[p] = { model: cfg.model };
+      await save({ ...get().settings, cloud });
+    },
+
+    async setAcp(cfg) {
+      await save({ ...get().settings, acp: cfg });
+    },
+
+    async setInstructions(text) {
+      await save({ ...get().settings, instructions: text });
+    },
+
     async setCustom(path, template) {
       const custom = { path, template };
       await save({ ...get().settings, custom, modelId: "custom" });
@@ -204,4 +238,39 @@ export function activeModel(s: Pick<MtState, "settings" | "files" | "modelsDir" 
 
 export function spaceUsed(s: Pick<MtState, "files">): number {
   return Object.values(s.files).reduce((n, f) => n + f.size, 0);
+}
+
+/** What the user agrees to: a provider, or for "compatible" the exact API address. */
+export function consentKey(provider: ProviderId, settings: MtSettings): string {
+  return provider === "compatible" ? `compatible:${(settings.cloud.compatible?.baseUrl ?? "").trim().replace(/\/+$/, "")}` : provider;
+}
+
+/**
+ * The translator to use, or null when none is ready: machine translation off, no model, a cloud
+ * provider without a model, or a remote provider the user hasn't agreed to send text to.
+ * `override` is the project's own provider choice (state.json), when it has one.
+ */
+export function activeTranslator(
+  s: Pick<MtState, "settings" | "files" | "modelsDir" | "customMissing" | "engine">,
+  format: Format,
+  override?: string,
+): Translator | null {
+  const { settings } = s;
+  if (!settings.enabled) return null;
+  const provider = (override ?? settings.provider ?? "local") as ProviderId;
+  if (provider === "local") {
+    const model = activeModel(s);
+    return model ? localTranslator(s.engine, model, format) : null;
+  }
+  if (!settings.consent.includes(consentKey(provider, settings))) return null;
+  if (provider === "acp") return settings.acp ? acpTranslator(settings.acp, format) : null;
+  if (provider === "compatible") {
+    const c = settings.cloud.compatible;
+    return c?.baseUrl && c.model ? cloudTranslator({ provider, model: c.model, baseUrl: c.baseUrl }, format) : null;
+  }
+  if (provider === "openai" || provider === "anthropic") {
+    const model = settings.cloud[provider]?.model;
+    return model ? cloudTranslator({ provider, model }, format) : null;
+  }
+  return null;
 }

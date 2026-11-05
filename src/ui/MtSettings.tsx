@@ -7,6 +7,7 @@ import { nextReqId, translateText } from "../mt/translate";
 import { pickGgufFile } from "../platform/mt";
 import { btnGhost, btnPrimary, Dialog, inputCls } from "./Dialog";
 import { activeModel, spaceUsed, useMt } from "./mt-store";
+import { ProviderSettings } from "./ProviderSettings";
 
 const GEMMA_TERMS = "https://ai.google.dev/gemma/terms";
 const GEMMA_PROHIBITED = "https://ai.google.dev/gemma/prohibited_use_policy";
@@ -213,8 +214,11 @@ export function MtSettings({ session }: { session: ProjectSession | null }) {
       </label>
       {!s.settings.enabled ? (
         <p className="text-xs text-gray-500">Runs on your computer. Nothing is downloaded until you turn this on and pick a model.</p>
+      ) : (s.settings.provider ?? "local") !== "local" ? (
+        <ProviderSettings />
       ) : (
         <>
+          <ProviderSettings />
           {CATALOG.map((m) => (
             <ModelCard key={m.id} model={m} onDownload={start} />
           ))}

@@ -3,6 +3,7 @@ import type { ProjectSession } from "../core/session";
 import { btnGhost, btnPrimary, inputCls } from "./Dialog";
 import { useApp } from "./store";
 import { FigmaSettings } from "./FigmaSettings";
+import { ProjectMtSettings } from "./ProjectMtSettings";
 
 export function SettingsPage({ session }: { session: ProjectSession }) {
   const openPrefs = useApp((s) => s.openPrefs);
@@ -51,6 +52,10 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
           <span className="text-xs text-gray-500">Takes effect when you reopen the project.</span>
         </div>
       </div>}
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold">Translation</h2>
+        <ProjectMtSettings session={session} />
+      </section>
       {session.workspace && (
         <section className="space-y-3">
           <h2 className="text-base font-semibold">Figma</h2>

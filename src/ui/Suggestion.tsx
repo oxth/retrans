@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
 import { isTranslated, type KeyId } from "../core/model";
 import type { ProjectSession } from "../core/session";
 import { sourceText } from "../mt/source";
-import { nextReqId, translateText } from "../mt/translate";
-import { activeModel, useMt } from "./mt-store";
+import { activeModel, activeTranslator, useMt } from "./mt-store";
+import { instructionsFor } from "./instructions";
 
 export type SuggestionState =
   | { status: "loading" }
@@ -28,36 +27,38 @@ export function clearSuggestionCache() {
 
 /** Machine suggestion for an untranslated target cell, or null when none applies. */
 export function useSuggestion(session: ProjectSession, id: KeyId, locale: string, active: boolean): SuggestionState | null {
-  const model = useMt(useShallow((s) => activeModel(s)));
-  const engine = useMt((s) => s.engine);
+  const mt = useMt();
+  const override = session.state.project.mtProvider;
+  const format = session.data.format;
+  const translator = activeTranslator(mt, format, override);
+  // What identifies the translator, so a cached suggestion is reused only for the same one.
+  const model = activeModel(mt);
+  const p = override ?? mt.settings.provider ?? "local";
+  const who = p === "local" ? `local|${model?.path}` : p === "acp" ? `acp|${mt.settings.acp?.command} ${mt.settings.acp?.args.join(" ")}` : `${p}|${JSON.stringify(mt.settings.cloud[p as "openai"])}`;
   const [result, setResult] = useState<{ key: string; state: SuggestionState } | null>(null);
 
   const eligible = active && locale !== session.data.baseLocale && !isTranslated(session.value(id, locale));
-  const source = eligible && model ? sourceText(session, id) : null;
-  const key = model && source !== null ? `${model.path}|${locale}|${id}|${source}` : null;
+  const source = eligible && translator ? sourceText(session, id) : null;
+  const key = translator && source !== null ? `${who}|${locale}|${id}|${source}` : null;
   const cached = key ? cache.get(key) : undefined;
-  const path = model?.path;
-  const template = model?.template;
-  const format = session.data.format;
-  const base = session.data.baseLocale;
 
   useEffect(() => {
-    if (!key || source === null || !path || !template || cache.has(key)) return;
-    const reqId = nextReqId();
-    let stale = false;
-    translateText(engine, { path, template }, format, base, locale, source, reqId).then((r) => {
-      if (stale || r.ok === false && r.reason === "cancelled") return;
-      if (r.ok) {
-        remember(key, r.text);
-        setResult({ key, state: { status: "ready", text: r.text } });
-      } else if (r.reason === "unsafe") setResult({ key, state: { status: "unsafe" } });
-      else setResult({ key, state: { status: "error", message: r.message } });
-    });
-    return () => {
-      stale = true;
-      void engine.cancel(reqId)?.catch?.(() => {});
-    };
-  }, [key, source, path, template, engine, format, base, locale]);
+    if (!key || source === null || !translator || cache.has(key)) return;
+    const ac = new AbortController();
+    void translator
+      .translate([{ id, locale, source }], { session, instructions: instructionsFor(session) }, (_job, r) => {
+        if (ac.signal.aborted || (r.ok === false && r.reason === "cancelled")) return;
+        if (r.ok) {
+          remember(key, r.text);
+          setResult({ key, state: { status: "ready", text: r.text } });
+        } else if (r.reason === "unsafe") setResult({ key, state: { status: "unsafe" } });
+        else setResult({ key, state: { status: "error", message: r.message } });
+      }, ac.signal)
+      .catch((e) => !ac.signal.aborted && setResult({ key, state: { status: "error", message: e instanceof Error ? e.message : String(e) } }));
+    return () => ac.abort();
+    // The translator is rebuilt every render; `key` already captures which one it is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
 
   if (!key) return null;
   if (cached !== undefined) return { status: "ready", text: cached };

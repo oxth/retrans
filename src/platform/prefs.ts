@@ -60,14 +60,52 @@ export async function setViewMode(root: string, m: "list" | "table"): Promise<vo
   await s.save();
 }
 
+export type ProviderId = "local" | "openai" | "anthropic" | "compatible" | "acp";
+
 export interface MtSettings {
   enabled: boolean;
   modelId: string | null;
   custom: { path: string; template: PromptTemplate } | null;
   accepted: string[];
+  /** Who translates: the built-in model (default) or a cloud / agent provider. */
+  provider: ProviderId;
+  /** Per cloud provider: the model, and for "compatible" the API base URL. Keys are never here. */
+  cloud: { openai?: { model: string }; anthropic?: { model: string }; compatible?: { baseUrl: string; model: string } };
+  acp: { preset: "claude-code" | "codex" | "gemini" | "custom"; command: string; args: string[] } | null;
+  /** Providers the user agreed to send text to. */
+  consent: string[];
+  /** Custom instructions for all projects. */
+  instructions: string;
 }
 
-const mtDefaults = (): MtSettings => ({ enabled: false, modelId: null, custom: null, accepted: [] });
+const mtDefaults = (): MtSettings => ({
+  enabled: false, modelId: null, custom: null, accepted: [], provider: "local", cloud: {}, acp: null, consent: [], instructions: "",
+});
+
+const PROVIDERS: ProviderId[] = ["local", "openai", "anthropic", "compatible", "acp"];
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+
+function cloudOf(v: unknown): MtSettings["cloud"] {
+  const out: MtSettings["cloud"] = {};
+  if (!isObj(v)) return out;
+  for (const k of ["openai", "anthropic"] as const) {
+    const m = isObj(v[k]) ? str(v[k].model) : undefined;
+    if (m !== undefined) out[k] = { model: m };
+  }
+  if (isObj(v.compatible)) {
+    const baseUrl = str(v.compatible.baseUrl);
+    const model = str(v.compatible.model);
+    if (baseUrl !== undefined && model !== undefined) out.compatible = { baseUrl, model };
+  }
+  return out;
+}
+
+function acpOf(v: unknown): MtSettings["acp"] {
+  if (!isObj(v) || typeof v.command !== "string" || !Array.isArray(v.args)) return null;
+  const preset = v.preset === "claude-code" || v.preset === "codex" || v.preset === "gemini" ? v.preset : "custom";
+  return { preset, command: v.command, args: v.args.filter((a): a is string => typeof a === "string") };
+}
 
 export async function getMtSettings(): Promise<MtSettings> {
   const s = await getStore();
@@ -83,6 +121,11 @@ export async function getMtSettings(): Promise<MtSettings> {
         ? { path: c.path, template }
         : null,
     accepted: Array.isArray(v.accepted) ? v.accepted.filter((a): a is string => typeof a === "string") : [],
+    provider: PROVIDERS.includes(v.provider as ProviderId) ? (v.provider as ProviderId) : "local",
+    cloud: cloudOf(v.cloud),
+    acp: acpOf(v.acp),
+    consent: Array.isArray(v.consent) ? v.consent.filter((a): a is string => typeof a === "string") : [],
+    instructions: typeof v.instructions === "string" ? v.instructions : "",
   };
 }
 

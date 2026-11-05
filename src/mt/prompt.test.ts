@@ -16,6 +16,13 @@ it("builds the Qwen3 prompt with thinking disabled", () => {
   expect(r.prompt).toContain("from Thai (th) to American English (en-US)");
   expect(r.prompt.endsWith("<|im_start|>assistant\n<think>\n\n</think>\n\n")).toBe(true);
 });
+it("qwen prompt carries instructions, translategemma ignores them", () => {
+  const qwen = buildPrompt("qwen3", "en", "th", "Hello [[0]]", "Keep product names in English.");
+  expect(qwen.prompt).toContain("Follow these additional instructions:\nKeep product names in English.");
+
+  const gemma = buildPrompt("translategemma", "en", "th", "Hello [[0]]", "Do not use slang.");
+  expect(gemma.prompt).not.toContain("Do not use slang.");
+});
 it("names odd locales without throwing", () => {
   expect(languageName("th")).toBe("Thai");
   expect(languageName("pt-BR")).toBe("Brazilian Portuguese");

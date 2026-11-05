@@ -16,11 +16,10 @@ import { type Page, Sidebar } from "./Sidebar";
 import { SOURCE_INVALID_MESSAGE, SOURCE_MISSING_MESSAGE, useApp, useSessionVersion } from "./store";
 import { keepKey } from "../workspace/actions";
 import { TableView } from "./TableView";
-import { activeModel, useMt } from "./mt-store";
+import { activeTranslator, useMt } from "./mt-store";
 import { Toolbar } from "./Toolbar";
 import { TranslateMissingDialog } from "./TranslateMissingDialog";
 import { isTextField } from "./edit-commands";
-import { useShallow } from "zustand/react/shallow";
 
 
 export function AppShell() {
@@ -41,7 +40,8 @@ export function AppShell() {
   const [dialog, setDialog] = useState<
     { kind: "add" | "translate" | "export" } | { kind: "rename" | "delete" | "code-key" | "link"; row: Row } | null
   >(null);
-  const hasModel = useMt(useShallow((s) => activeModel(s))) !== null;
+  // Translate missing appears once any provider is ready (a local model, or a cloud/agent provider set up).
+  const hasModel = useMt((s) => !!session && activeTranslator(s, session.data.format, session.state.project.mtProvider) !== null);
   const dirty = !!session && (version >= 0 ? session.isDirty() : false);
 
   useEffect(() => {

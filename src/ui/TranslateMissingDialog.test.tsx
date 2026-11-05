@@ -14,6 +14,8 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: vi.fn(), open: vi.fn(), confirm: vi.fn() }));
 vi.mock("../platform/watch", () => ({ watchDir: vi.fn(async () => async () => {}) }));
+const invoke = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import { keyId } from "../core/model";
 import { ProjectSession } from "../core/session";
@@ -52,7 +54,7 @@ function mtOn(gen?: (r: { reqId: number; prompt: string }) => Promise<string>) {
   cancel = vi.fn(async () => {});
   useMt.setState({
     engine: { generate, cancel } as unknown as MtEngine,
-    settings: { enabled: true, modelId: "custom", custom: { path: "/m.gguf", template: "qwen3" }, accepted: [] },
+    settings: { enabled: true, modelId: "custom", custom: { path: "/m.gguf", template: "qwen3" }, accepted: [], provider: "local", cloud: {}, acp: null, consent: [], instructions: "" },
     customMissing: false,
   });
 }
@@ -210,5 +212,76 @@ describe("toolbar button", () => {
     await openApp();
     await userEvent.click(screen.getByRole("button", { name: "Translate missing…" }));
     expect(screen.getByRole("dialog", { name: "Translate missing" })).toBeInTheDocument();
+  });
+});
+
+describe("several languages at once", () => {
+  async function threeLangs() {
+    const fs = new MemoryFs({
+      [`${R}/public/locales/en/common.json`]: j({ a: "A", b: "B" }),
+      [`${R}/public/locales/th/common.json`]: j({}),
+      [`${R}/public/locales/de/common.json`]: j({ a: "A-de" }),
+    });
+    const d = (await detectProject(fs, R))!;
+    return ProjectSession.open(fs, R, d, { baseLocale: "en", localesPath: d.localesPath });
+  }
+
+  it("tick two languages and translate both in one run", async () => {
+    mtOn(async (r) => `x:${userText(r.prompt)}`);
+    const s = await threeLangs();
+    render(<TranslateMissingDialog session={s} onClose={() => {}} defaultLocale="th" />);
+    expect(screen.getByRole("checkbox", { name: "th" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "de" })).not.toBeChecked();
+    expect(screen.getByText("2 missing")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox", { name: "de" }));
+    expect(screen.getByText("3 missing")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(await screen.findByRole("heading", { name: "de" })).toBeInTheDocument();
+    expect(s.value(c("a"), "th")).toEqual({ kind: "text", text: "x:A" });
+    expect(s.value(c("b"), "de")).toEqual({ kind: "text", text: "x:B" });
+    expect(s.value(c("a"), "de")).toEqual({ kind: "text", text: "A-de" });
+  });
+
+  it("All languages ticks every non-base language", async () => {
+    mtOn();
+    const s = await threeLangs();
+    render(<TranslateMissingDialog session={s} onClose={() => {}} defaultLocale="th" />);
+    await userEvent.click(screen.getByRole("checkbox", { name: "All languages" }));
+    expect(screen.getByRole("checkbox", { name: "th" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "de" })).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "en" })).toBeNull();
+  });
+
+  it("progress shows per language and overall", async () => {
+    let release!: (t: string) => void;
+    let n = 0;
+    mtOn(async (r) => (++n === 1 ? `x:${userText(r.prompt)}` : new Promise<string>((res) => (release = res))));
+    const s = await threeLangs();
+    render(<TranslateMissingDialog session={s} onClose={() => {}} defaultLocale="th" />);
+    await userEvent.click(screen.getByRole("checkbox", { name: "de" }));
+    await userEvent.click(screen.getByRole("button", { name: "Start" }));
+    await waitFor(() => expect(screen.getByText("1 of 3")).toBeInTheDocument());
+    // One line per language with its own total; which finished first follows the project's language order.
+    const th = screen.getByText(/^th: \d of 2$/).textContent!;
+    const de = screen.getByText(/^de: \d of 1$/).textContent!;
+    expect(Number(th.split(" ")[1]) + Number(de.split(" ")[1])).toBe(1);
+    release("x:B");
+    await waitFor(() => expect(screen.getByText("2 of 3")).toBeInTheDocument());
+  });
+
+  it("the dialog says Translating with Claude (Anthropic)… for a cloud provider", async () => {
+    mtOn();
+    useMt.setState({
+      settings: { ...useMt.getState().settings, provider: "anthropic", consent: ["anthropic"], cloud: { anthropic: { model: "claude-x" } } },
+    });
+    let release!: (v: string) => void;
+    invoke.mockImplementation(() => new Promise((res) => (release = res)));
+    const s = await threeLangs();
+    render(<TranslateMissingDialog session={s} onClose={() => {}} defaultLocale="th" />);
+    await userEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(await screen.findByText("Translating with Claude (Anthropic)…")).toBeInTheDocument();
+    release(JSON.stringify({ [c("a")]: { th: "เอ" }, [c("b")]: { th: "บี" } }));
+    expect(await screen.findByText("Translated 2.")).toBeInTheDocument();
+    expect(generate).not.toHaveBeenCalled();
   });
 });

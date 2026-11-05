@@ -14,6 +14,8 @@ vi.mock("@tauri-apps/plugin-store", () => ({
   })),
 }));
 vi.mock("../platform/watch", () => ({ watchDir: vi.fn(async () => async () => {}) }));
+const invoke = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import type { ProjectSession } from "../core/session";
 import { detectProject } from "../formats/detect";
@@ -61,7 +63,7 @@ function mtOn(gen?: (r: { reqId: number; prompt: string }) => Promise<string>) {
   cancel = vi.fn(async () => {});
   useMt.setState({
     engine: { generate, cancel } as unknown as MtEngine,
-    settings: { enabled: true, modelId: "custom", custom: { path: "/m.gguf", template: "qwen3" }, accepted: [] },
+    settings: { enabled: true, modelId: "custom", custom: { path: "/m.gguf", template: "qwen3" }, accepted: [], provider: "local", cloud: {}, acp: null, consent: [], instructions: "" },
     customMissing: false,
   });
 }
@@ -209,5 +211,21 @@ describe("suggestions", () => {
     await userEvent.click(cell("common::only_en", "th"));
     expect(screen.getByText("Suggestion: สวัสดี")).toBeInTheDocument();
     expect(generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("the cell suggestion uses the active provider", async () => {
+    mtOn();
+    useMt.setState({
+      settings: { ...useMt.getState().settings, provider: "anthropic", consent: ["anthropic"], cloud: { anthropic: { model: "claude-x" } } },
+    });
+    invoke.mockImplementation(async (cmd: string, a: { req: { user: string } }) => {
+      if (cmd !== "mt_cloud_chat") return;
+      const req = JSON.parse(a.req.user);
+      return JSON.stringify({ [req.strings[0].id]: { [req.targets[0]]: "จาก Claude" } });
+    });
+    await open(nested());
+    await userEvent.click(cell("common::only_en", "th"));
+    expect(await screen.findByText("Suggestion: จาก Claude")).toBeInTheDocument();
+    expect(generate).not.toHaveBeenCalled();
   });
 });

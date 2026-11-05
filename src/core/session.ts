@@ -716,10 +716,24 @@ export class ProjectSession {
   }
 
   /** Project-level setting stored in .retrans/state.json (e.g. the locales path override, the project id). */
-  setProjectSetting(patch: { localesPath?: string | undefined; id?: string }): void {
+  setProjectSetting(patch: {
+    localesPath?: string | undefined;
+    id?: string;
+    mtProvider?: string | undefined;
+    instructions?: StateFile["project"]["instructions"] | undefined;
+  }): void {
     if ("localesPath" in patch) {
       if (patch.localesPath) this.state.project.localesPath = patch.localesPath;
       else delete this.state.project.localesPath;
+    }
+    if ("mtProvider" in patch) {
+      if (patch.mtProvider) this.state.project.mtProvider = patch.mtProvider;
+      else delete this.state.project.mtProvider;
+    }
+    if ("instructions" in patch) {
+      const i = patch.instructions;
+      if (i && (i.all?.trim() || Object.keys(i.byLocale ?? {}).length)) this.state.project.instructions = i;
+      else delete this.state.project.instructions;
     }
     if (patch.id) this.state.project.id = patch.id;
     this.stateTouched = true;

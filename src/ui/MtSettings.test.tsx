@@ -44,7 +44,7 @@ function seed(patch: Partial<ReturnType<typeof useMt.getState>> = {}) {
     modelsDir: "/data/models",
     engine: { generate, cancel: vi.fn() },
     ...patch,
-    settings: { enabled: true, modelId: null, custom: null, accepted: [], ...(patch.settings ?? {}) },
+    settings: { enabled: true, modelId: null, custom: null, accepted: [], provider: "local", cloud: {}, acp: null, consent: [], instructions: "", ...(patch.settings ?? {}) },
   } as never, true);
 }
 const card = (name: string) => screen.getByRole("group", { name });

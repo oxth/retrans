@@ -2,41 +2,41 @@ import { useMemo, useState } from "react";
 import { parseKeyId } from "../core/model";
 import type { ProjectSession } from "../core/session";
 import { type BatchResult, missingItems } from "../mt/batch";
-import { nextReqId, translateText } from "../mt/translate";
 import { Dialog, btnGhost, btnPrimary, inputCls } from "./Dialog";
-import { activeModel, useMt } from "./mt-store";
+import { activeTranslator, useMt } from "./mt-store";
+import { instructionsFor } from "./instructions";
 import { cancelRun, clearRun, type RunPhase, startRun, UNTABBED, useRuns } from "./runs";
 import { useApp, useSessionVersion } from "./store";
-import { useShallow } from "zustand/react/shallow";
 
 const LIST_MAX = 20;
 
 export function TranslateMissingDialog(p: { session: ProjectSession; onClose: () => void; defaultLocale?: string }) {
   const { session } = p;
   const version = useSessionVersion();
-  const engine = useMt((s) => s.engine);
-  const model = useMt(useShallow((s) => activeModel(s)));
+  const mt = useMt();
   const { baseLocale, locales, namespaces, format } = session.data;
   const targets = useMemo(() => locales.filter((l) => l !== baseLocale), [locales, baseLocale]);
-  const [locale, setLocale] = useState(p.defaultLocale && targets.includes(p.defaultLocale) ? p.defaultLocale : (targets[0] ?? ""));
+  const [picked, setPicked] = useState<string[]>(() => {
+    const first = p.defaultLocale && targets.includes(p.defaultLocale) ? p.defaultLocale : targets[0];
+    return first ? [first] : [];
+  });
   const [ns, setNs] = useState("all");
+  const translator = activeTranslator(mt, format, session.state.project.mtProvider);
   // The run lives in the tab, not in this dialog: hiding the dialog or switching tabs keeps it going.
   const tabId = useApp((s) => s.tabIdOf(session)) ?? UNTABBED;
   const run = useRuns((s) => s.byTab[tabId] as RunPhase | undefined);
   const phase: { kind: "setup" } | RunPhase = run ?? { kind: "setup" };
 
-  const items = useMemo(
-    () => (locale ? missingItems(session, locale, ns) : []),
-    [session, locale, ns, version],
+  const missing = useMemo(
+    () => picked.reduce((n, l) => n + missingItems(session, l, ns).length, 0),
+    [session, picked, ns, version],
   );
+  const toggle = (l: string) => setPicked((cur) => (cur.includes(l) ? cur.filter((x) => x !== l) : targets.filter((t) => t === l || cur.includes(t))));
+  const all = targets.length > 0 && picked.length === targets.length;
 
   const start = () => {
-    if (!model || !items.length) return;
-    startRun(tabId, session, items, locale, async (source, onRequest) => {
-      const id = nextReqId();
-      onRequest(() => void engine.cancel(id).catch(() => {}));
-      return translateText(engine, model, format, baseLocale, locale, source, id);
-    });
+    if (!translator || !missing) return;
+    startRun(tabId, session, picked, ns, translator, instructionsFor(session));
   };
 
   const cancel = () => cancelRun(tabId);
@@ -46,18 +46,26 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
   };
 
   const running = phase.kind === "running";
+  const sum = (k: "done" | "total") => (running ? Object.values(phase.perLocale).reduce((n, x) => n + x[k], 0) : 0);
+  const done = sum("done");
+  const total = sum("total");
   return (
     <Dialog title="Translate missing" onClose={running ? undefined : close}>
       {phase.kind === "setup" && (
         <div className="space-y-3">
-          <label className="block text-sm">
-            Language
-            <select className={inputCls} value={locale} onChange={(e) => setLocale(e.target.value)}>
-              {targets.map((l) => (
-                <option key={l} value={l}>{l}</option>
-              ))}
-            </select>
-          </label>
+          <fieldset className="text-sm">
+            <legend>Languages</legend>
+            <label className="mr-4 inline-flex items-center gap-1.5">
+              <input type="checkbox" checked={all} onChange={() => setPicked(all ? [] : targets)} />
+              All languages
+            </label>
+            {targets.map((l) => (
+              <label key={l} className="mr-4 inline-flex items-center gap-1.5">
+                <input type="checkbox" checked={picked.includes(l)} onChange={() => toggle(l)} />
+                {l}
+              </label>
+            ))}
+          </fieldset>
           {format === "next-i18next" && (
             <label className="block text-sm">
               {session.workspace ? "Group" : "Namespace"}
@@ -69,26 +77,35 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
               </select>
             </label>
           )}
-          <p className="text-sm text-gray-600">{items.length} missing</p>
+          <p className="text-sm text-gray-600">{missing} missing</p>
+          {translator?.remote && <p className="text-xs text-gray-500">Uses {translator.label}.</p>}
           <div className="flex justify-end gap-2">
             <button className={btnGhost} onClick={p.onClose}>Close</button>
-            <button className={btnPrimary} disabled={!items.length || !model} onClick={start}>Start</button>
+            <button className={btnPrimary} disabled={!missing || !translator} onClick={start}>Start</button>
           </div>
         </div>
       )}
       {phase.kind === "running" && (
         <div className="space-y-3">
+          <p className="text-sm text-gray-600">Translating with {phase.label}…</p>
           <div
             role="progressbar"
             aria-label="Translation progress"
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={phase.total ? Math.round((phase.done / phase.total) * 100) : 0}
+            aria-valuenow={total ? Math.round((done / total) * 100) : 0}
             className="h-2 overflow-hidden rounded bg-gray-200"
           >
-            <div className="h-full bg-indigo-600" style={{ width: `${phase.total ? (phase.done / phase.total) * 100 : 0}%` }} />
+            <div className="h-full bg-indigo-600" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
           </div>
-          <p className="text-sm">{phase.done} of {phase.total}</p>
+          <p className="text-sm">{`${done} of ${total}`}</p>
+          {phase.locales.length > 1 && (
+            <ul className="text-xs text-gray-600">
+              {phase.locales.map((l) => (
+                <li key={l}>{`${l}: ${phase.perLocale[l]?.done ?? 0} of ${phase.perLocale[l]?.total ?? 0}`}</li>
+              ))}
+            </ul>
+          )}
           {phase.current && <p className="truncate font-mono text-xs text-gray-600">{parseKeyId(phase.current).key}</p>}
           <div className="flex justify-end gap-2">
             <button className={btnGhost} onClick={p.onClose}>Hide (keeps running)</button>
@@ -96,12 +113,25 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
           </div>
         </div>
       )}
-      {phase.kind === "done" && <Summary result={phase.result} onClose={close} />}
+      {phase.kind === "done" && (
+        <div className="space-y-4">
+          {phase.locales.map((l) => (
+            <section key={l} className="space-y-2">
+              {phase.locales.length > 1 && <h3 className="text-sm font-semibold">{l}</h3>}
+              <Summary result={phase.results[l]} />
+            </section>
+          ))}
+          <p className="text-xs text-gray-500">Machine translations are marked for review.</p>
+          <div className="flex justify-end">
+            <button className={btnPrimary} onClick={close}>Close</button>
+          </div>
+        </div>
+      )}
     </Dialog>
   );
 }
 
-function Summary({ result: r, onClose }: { result: BatchResult; onClose: () => void }) {
+function Summary({ result: r }: { result: BatchResult }) {
   const keys = [...r.unsafe, ...r.failed.map((f) => f.id)].slice(0, LIST_MAX);
   return (
     <div className="space-y-2 text-sm">
@@ -126,10 +156,6 @@ function Summary({ result: r, onClose }: { result: BatchResult; onClose: () => v
           ))}
         </ul>
       )}
-      <p className="text-xs text-gray-500">Machine translations are marked for review.</p>
-      <div className="flex justify-end">
-        <button className={btnPrimary} onClick={onClose}>Close</button>
-      </div>
     </div>
   );
 }
