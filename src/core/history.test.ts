@@ -4,6 +4,8 @@ import { detectProject } from "../formats/detect";
 import { loadFixtureDir } from "../platform/memory-fs";
 import { openFixtureWorkspace } from "../test/workspace-fixture";
 import { keepKey } from "../workspace/actions";
+import { syncFromSource } from "../workspace/sync";
+import { syncFromFigma } from "../figma/sync";
 import { keyId } from "./model";
 import { ProjectSession } from "./session";
 
@@ -175,5 +177,40 @@ describe("undo history", () => {
     expect(s.workspace!.removedInSource).not.toContain(id);
     s.undo();
     expect(s.workspace!.removedInSource).toContain(id);
+  });
+
+  it("a TypeScript sync is not an undo step", async () => {
+    const w = await openFixtureWorkspace();
+    const src = `${w.root}/${w.localesDir}/button.tsx`;
+    await w.fs.writeTextAtomic(src, (await w.fs.readText(src)).replace("button_save: 'Save',", "button_save: 'Store',"));
+    await syncFromSource(w.session);
+    expect(w.session.value(keyId("button", "button_save"), "en")).toEqual(text("Store"));
+    expect(w.session.canUndo).toBe(false);
+  });
+
+  it("a Figma sync is not an undo step", async () => {
+    const w = await openFixtureWorkspace();
+    const { readFileSync } = await import("node:fs");
+    const fig = resolve(__dirname, "../test/fixtures/figma/ALL");
+    for (const f of ["ENG.tokens.json", "TH.tokens.json"]) {
+      await w.fs.writeTextAtomic(`${w.root}/design/figma/ALL/${f}`, readFileSync(`${fig}/${f}`, "utf8"));
+    }
+    w.session.external(() =>
+      w.session.setWorkspaceMeta({ figma: { dir: "design/figma", modes: { ENG: "en", TH: "th" }, vars: {}, baseline: {} } }),
+    );
+    await syncFromFigma(w.session);
+    expect(w.session.data.keyOrder).toContain(keyId("figma-ALL", "ข้อมูลการรับประกัน"));
+    expect(w.session.canUndo).toBe(false);
+  });
+
+  it("reload from disk is not an undo step", async () => {
+    const { fs, s } = await open();
+    const p = "/project/public/locales/th/common.json";
+    const d = JSON.parse(await fs.readText(p));
+    d.title = "จากดิสก์";
+    await fs.writeTextAtomic(p, JSON.stringify(d, null, 2) + "\n");
+    await s.reloadFromDisk();
+    expect(s.value(TITLE, "th")).toEqual(text("จากดิสก์"));
+    expect(s.canUndo).toBe(false);
   });
 });

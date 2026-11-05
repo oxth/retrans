@@ -229,6 +229,11 @@ export class ProjectSession {
    * its group. Doesn't make the session dirty.
    */
   private addExtraRows(): void {
+    // Rows derived from the source, not an edit: never an undo step on their own.
+    this.external(() => this.addExtraRowsNow());
+  }
+
+  private addExtraRowsNow(): void {
     if (!this.wsMeta) return;
     const known = keySet(this.data.keyOrder);
     const extra = [...new Set([...this.wsMeta.emptyKeys, ...this.roCells.map((r) => r.id)])].filter(
@@ -1020,7 +1025,12 @@ export class ProjectSession {
    * mine = journal value; conflicts keep mine until resolveConflict), then status entries for the
    * cells the journal touched only.
    */
+  /** Puts back edits left by a crash: an external change, never an undo step. */
   applyJournal(j: Journal): Conflict[] {
+    return this.external(() => this.applyJournalNow(j));
+  }
+
+  private applyJournalNow(j: Journal): Conflict[] {
     if (normalizePath(j.root) !== normalizePath(this.root)) {
       throw new Error(`Journal root ${j.root} does not match project root ${this.root}`);
     }

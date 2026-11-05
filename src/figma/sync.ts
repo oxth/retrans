@@ -122,7 +122,8 @@ async function syncNow(session: ProjectSession): Promise<FigmaSyncResult> {
   const added = new Set<KeyId>();
   const updated = new Set<KeyId>();
 
-  session.batch(() => {
+  // A sync brings in changes made elsewhere: never an undo step.
+  session.external(() => session.batch(() => {
     for (const id of order) {
       const v = read.get(id)!;
       const group = figmaGroupName(v.collection);
@@ -211,7 +212,7 @@ async function syncNow(session: ProjectSession): Promise<FigmaSyncResult> {
     if (!jsonEqual(next, f)) patch.figma = next;
     if (!jsonEqual(removedInSource, meta.removedInSource)) patch.removedInSource = removedInSource;
     if (patch.figma || patch.removedInSource) session.setWorkspaceMeta(patch);
-  });
+  }));
   result.added = [...added];
   result.updated = [...updated];
   const values: Record<string, Record<string, string>> = {};

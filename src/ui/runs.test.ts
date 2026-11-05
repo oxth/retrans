@@ -104,3 +104,17 @@ describe("background Translate missing runs", () => {
     expect(useRuns.getState().byTab[id]).toBeUndefined();
   });
 });
+
+describe("undo", () => {
+  it("a Translate-missing run is one undo step", async () => {
+    const { session, id, target } = await openOne();
+    const items = missingItems(session, target, "all").slice(0, 3);
+    expect(items.length).toBe(3);
+    startRun(id, session, items, target, async (source) => ({ ok: true, text: `T:${source}` }));
+    await vi.waitFor(() => expect(useRuns.getState().byTab[id]?.kind).toBe("done"));
+    expect(items.every((it) => session.value(it.id, target) !== undefined)).toBe(true);
+    session.undo();
+    expect(items.every((it) => session.value(it.id, target) === undefined)).toBe(true);
+    expect(session.canUndo).toBe(false);
+  });
+});
