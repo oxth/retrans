@@ -7,7 +7,15 @@ export interface StateFile {
    * Explicit user choices (a Settings-page locales path, the base language the user picked when
    * detection couldn't tell) plus the project's stable id. Detected values are never stored here.
    */
-  project: { baseLocale?: string; localesPath?: string; id?: string };
+  project: {
+    baseLocale?: string;
+    localesPath?: string;
+    id?: string;
+    /** This project's translation provider, overriding the app-wide one. */
+    mtProvider?: string;
+    /** Custom AI instructions for this project, and per language. Shared through git. */
+    instructions?: { all?: string; byLocale?: Record<string, string> };
+  };
   entries: Record<KeyId, Record<string, StateEntry>>;
 }
 export const STATE_PATH = ".retrans/state.json";
@@ -26,6 +34,18 @@ function isEntry(v: unknown): v is StateEntry {
  * A missing file (null) is an empty state. Text that isn't a version-1 state object comes back as
  * an empty state plus `error`: callers must not overwrite such a file (it may hold merge markers).
  */
+function instructionsOf(v: unknown): StateFile["project"]["instructions"] | undefined {
+  if (!isRecord(v)) return undefined;
+  const out: NonNullable<StateFile["project"]["instructions"]> = {};
+  if (typeof v.all === "string" && v.all.trim()) out.all = v.all;
+  if (isRecord(v.byLocale)) {
+    const by: Record<string, string> = {};
+    for (const [l, t] of Object.entries(v.byLocale)) if (typeof t === "string" && t.trim()) by[l] = t;
+    if (Object.keys(by).length) out.byLocale = by;
+  }
+  return out.all || out.byLocale ? out : undefined;
+}
+
 export function parseState(text: string | null): { state: StateFile; error?: string } {
   const empty = (): StateFile => ({ version: 1, project: {}, entries: {} });
   if (text === null) return { state: empty() };
@@ -42,6 +62,8 @@ export function parseState(text: string | null): { state: StateFile; error?: str
     ...(typeof p.baseLocale === "string" ? { baseLocale: p.baseLocale } : {}),
     ...(typeof p.localesPath === "string" ? { localesPath: p.localesPath } : {}),
     ...(typeof p.id === "string" ? { id: p.id } : {}),
+    ...(typeof p.mtProvider === "string" ? { mtProvider: p.mtProvider } : {}),
+    ...(instructionsOf(p.instructions) ? { instructions: instructionsOf(p.instructions) } : {}),
   };
   const entries: StateFile["entries"] = {};
   if (isRecord(raw.entries)) {

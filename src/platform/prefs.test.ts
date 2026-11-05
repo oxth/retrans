@@ -66,6 +66,11 @@ describe("prefs store migration wiring", () => {
       modelId: "translategemma-4b",
       custom: null,
       accepted: ["translategemma-4b"],
+      provider: "local",
+      cloud: {},
+      acp: null,
+      consent: [],
+      instructions: "",
     });
   });
 

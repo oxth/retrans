@@ -105,7 +105,7 @@ describe("useMt", () => {
   });
 
   it("missing custom file is not active", async () => {
-    prefs.set("mt", { enabled: true, modelId: "custom", custom: { path: "/x/m.gguf", template: "qwen3" }, accepted: [] });
+    prefs.set("mt", { enabled: true, modelId: "custom", custom: { path: "/x/m.gguf", template: "qwen3" }, accepted: [], provider: "local", cloud: {}, acp: null, consent: [], instructions: "" });
     fsExists.mockResolvedValue(false);
     await useMt.getState().init();
     expect(useMt.getState().customMissing).toBe(true);
@@ -146,7 +146,7 @@ describe("useMt", () => {
   });
 
   it("replaces a selected model whose file is missing with the finished download", async () => {
-    prefs.set("mt", { enabled: true, modelId: "qwen3-1.7b", custom: null, accepted: [] });
+    prefs.set("mt", { enabled: true, modelId: "qwen3-1.7b", custom: null, accepted: [], provider: "local", cloud: {}, acp: null, consent: [], instructions: "" });
     await useMt.getState().init();
     native.status.mockResolvedValue(gemmaStatus);
     emit({ id: "translategemma-4b", state: "done", received: 10, total: 10 });
@@ -155,7 +155,7 @@ describe("useMt", () => {
 
   it("keeps a usable selected model when another download finishes", async () => {
     const qwen = findModel("qwen3-1.7b")!.file;
-    prefs.set("mt", { enabled: true, modelId: "qwen3-1.7b", custom: null, accepted: [] });
+    prefs.set("mt", { enabled: true, modelId: "qwen3-1.7b", custom: null, accepted: [], provider: "local", cloud: {}, acp: null, consent: [], instructions: "" });
     native.status.mockResolvedValue([{ file: qwen, size: 1, complete: true }]);
     await useMt.getState().init();
     native.status.mockResolvedValue([{ file: qwen, size: 1, complete: true }, ...gemmaStatus]);
@@ -165,7 +165,7 @@ describe("useMt", () => {
   });
 
   it("keeps a usable custom model when a download finishes", async () => {
-    prefs.set("mt", { enabled: true, modelId: "custom", custom: { path: "/x/m.gguf", template: "qwen3" }, accepted: [] });
+    prefs.set("mt", { enabled: true, modelId: "custom", custom: { path: "/x/m.gguf", template: "qwen3" }, accepted: [], provider: "local", cloud: {}, acp: null, consent: [], instructions: "" });
     fsExists.mockResolvedValue(true);
     await useMt.getState().init();
     native.status.mockResolvedValue(gemmaStatus);

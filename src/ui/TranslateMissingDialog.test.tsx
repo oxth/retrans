@@ -52,7 +52,7 @@ function mtOn(gen?: (r: { reqId: number; prompt: string }) => Promise<string>) {
   cancel = vi.fn(async () => {});
   useMt.setState({
     engine: { generate, cancel } as unknown as MtEngine,
-    settings: { enabled: true, modelId: "custom", custom: { path: "/m.gguf", template: "qwen3" }, accepted: [] },
+    settings: { enabled: true, modelId: "custom", custom: { path: "/m.gguf", template: "qwen3" }, accepted: [], provider: "local", cloud: {}, acp: null, consent: [], instructions: "" },
     customMissing: false,
   });
 }

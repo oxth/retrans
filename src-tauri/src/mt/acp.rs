@@ -47,6 +47,35 @@ pub struct Agent {
     pub cwd: PathBuf,
 }
 
+/**
+ * The PATH of the user's login shell. Apps opened from the Dock/Finder get a minimal PATH, so
+ * `npx`, `gemini` and friends wouldn't be found otherwise. Looked up once; None on Windows.
+ */
+async fn login_path() -> Option<String> {
+    static PATH: tokio::sync::OnceCell<Option<String>> = tokio::sync::OnceCell::const_new();
+    PATH.get_or_init(|| async {
+        if cfg!(windows) {
+            return None;
+        }
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        let out = tokio::time::timeout(
+            Duration::from_secs(3),
+            Command::new(shell)
+                .args(["-ilc", "printf %s \"$PATH\""])
+                .stdin(Stdio::null())
+                .stderr(Stdio::null())
+                .output(),
+        )
+        .await
+        .ok()?
+        .ok()?;
+        let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        (!p.is_empty()).then_some(p)
+    })
+    .await
+    .clone()
+}
+
 fn fresh_cwd() -> std::io::Result<PathBuf> {
     static N: AtomicU64 = AtomicU64::new(0);
     let dir = std::env::temp_dir().join(format!(
@@ -76,6 +105,9 @@ impl Agent {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        if let Some(path) = login_path().await {
+            cmd.env("PATH", path);
+        }
         for (k, v) in env {
             cmd.env(k, v);
         }
