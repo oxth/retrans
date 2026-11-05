@@ -20,6 +20,9 @@ jobs:
             args: '--target aarch64-apple-darwin'
           - platform: windows-latest
             args: ''
+          # Built on the oldest supported Ubuntu so the AppImage runs on older glibc versions too.
+          - platform: ubuntu-22.04
+            args: ''
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +47,13 @@ jobs:
           if [ "$tag_v" != "$tauri_v" ] || [ "$tag_v" != "$pkg_v" ]; then
             echo "::error::Version mismatch: tag $GITHUB_REF_NAME, tauri.conf.json $tauri_v, package.json $pkg_v"; exit 1
           fi
+
+      - name: Install Linux build dependencies (Tauri + llama.cpp)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libssl-dev libxdo-dev build-essential cmake clang
 
       - uses: dtolnay/rust-toolchain@stable
         with:

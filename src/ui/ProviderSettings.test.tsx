@@ -72,7 +72,7 @@ describe("provider settings", () => {
     await userEvent.type(await screen.findByLabelText("API key"), "sk-ant-secret");
     await userEvent.click(screen.getByRole("button", { name: "Save key" }));
     await waitFor(() => expect(secrets.get("anthropic")).toBe("sk-ant-secret"));
-    expect(await screen.findByText(/Saved in (Keychain|Credential Manager)/)).toBeInTheDocument();
+    expect(await screen.findByText(/Saved in (Keychain|Credential Manager|your system keyring)/)).toBeInTheDocument();
     expect(JSON.stringify([...prefs.values()])).not.toContain("sk-ant-secret");
     expect(screen.queryByDisplayValue("sk-ant-secret")).toBeNull();
   });

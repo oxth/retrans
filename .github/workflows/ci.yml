@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-latest, windows-latest]
+        platform: [macos-latest, windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +36,13 @@ jobs:
         with:
           node-version: lts/*
           cache: pnpm
+
+      - name: Install Linux build dependencies (Tauri + llama.cpp)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libssl-dev libxdo-dev build-essential cmake clang
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -87,6 +94,10 @@ jobs:
         run: |
           cargo test generates_with_tiny_model -- --ignored
           cargo test exit_with_loaded_model -- --ignored
+
+      - name: Build Linux packages (AppImage and .deb)
+        if: runner.os == 'Linux'
+        run: pnpm tauri build --bundles appimage,deb
 
       - name: Build NSIS installer
         if: runner.os == 'Windows'
