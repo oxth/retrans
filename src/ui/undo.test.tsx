@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { resolve } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +12,7 @@ import { detectProject } from "../formats/detect";
 import { loadFixtureDir, MemoryFs } from "../platform/memory-fs";
 import { AppShell } from "./AppShell";
 import { runRedo, runUndo } from "./edit-commands";
+import { MENU_ACTIONS } from "./menu-actions";
 import { UNDO_SKIPPED_MESSAGE, useApp } from "./store";
 
 const FIX = resolve(__dirname, "../test/fixtures/next-nested");
@@ -115,5 +116,23 @@ describe("undo / redo in the app", () => {
     expect(ids.every((id) => (s.value(id, "th") as { text: string }).text !== "mine")).toBe(true);
     act(() => useApp.getState().undo());
     expect(ids.every((id) => (s.value(id, "th") as { text: string }).text === "mine")).toBe(true);
+  });
+
+  it("menu requests reach the project screen: Export… opens the dialog, Table View switches", async () => {
+    await openTwo();
+    act(() => useApp.getState().requestUi("export"));
+    expect(await screen.findByRole("dialog", { name: "Export" })).toBeInTheDocument();
+    expect(useApp.getState().uiRequest).toBeNull();
+    act(() => useApp.getState().requestUi("view-table"));
+    expect(await screen.findByRole("button", { name: "table", pressed: true })).toBeInTheDocument();
+  });
+
+  it("next/previous tab wrap around", async () => {
+    await openTwo();
+    const [id1, id2] = useApp.getState().tabs.map((t) => t.id);
+    MENU_ACTIONS["next-tab"]();
+    expect(useApp.getState().activeId).toBe(id1);
+    MENU_ACTIONS["prev-tab"]();
+    expect(useApp.getState().activeId).toBe(id2);
   });
 });

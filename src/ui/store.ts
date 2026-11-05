@@ -30,6 +30,8 @@ export interface PendingRecovery { journal: Journal; path: string }
  */
 export type UiConflict = Conflict & { origin?: "source" | "figma"; base?: MessageValue };
 
+export type UiRequestKind = "export" | "import-figma" | "view-list" | "view-table" | "new-project" | "open-project";
+
 export const UNDO_SKIPPED_MESSAGE = "Some changes came from your code or Figma since — those weren't undone.";
 export const SOURCE_MISSING_MESSAGE = "Source files not found — showing the saved workspace.";
 export const SOURCE_INVALID_MESSAGE = "The workspace's source folder setting is invalid — showing the saved workspace.";
@@ -131,6 +133,13 @@ export interface AppState {
   /** Ids of the tabs with unsaved changes, in tab order (LEGACY_TAB for a session set without a tab). */
   dirtyTabs(): string[];
   resolveConflict(c: UiConflict, pick: "mine" | "theirs"): void;
+  /**
+   * A request from the app menu for a screen to act on (open the Export dialog, start Open
+   * project…). `n` makes a repeated request distinct; the screen clears it once handled.
+   */
+  uiRequest: { kind: UiRequestKind; n: number } | null;
+  requestUi(kind: UiRequestKind): void;
+  clearUiRequest(): void;
   /** Undo / redo the active tab's last step (see ProjectSession.undo). */
   undo(): void;
   redo(): void;
@@ -596,6 +605,14 @@ export const useApp = create<AppState>((set, get) => {
       conflicts: [...cur.conflicts.filter((c) => c.origin !== "source"), ...fresh],
     }));
     return r;
+  },
+
+  uiRequest: null,
+  requestUi(kind) {
+    set((s) => ({ uiRequest: { kind, n: (s.uiRequest?.n ?? 0) + 1 } }));
+  },
+  clearUiRequest() {
+    set({ uiRequest: null });
   },
 
   undo() {

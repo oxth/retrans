@@ -81,6 +81,18 @@ export function AppShell() {
     };
   }, [root]);
 
+  // Menu requests for this screen (File → Export…, View → List / Table, Import Figma Files…).
+  const uiRequest = useApp((s) => s.uiRequest);
+  useEffect(() => {
+    if (!uiRequest) return;
+    const { kind } = uiRequest;
+    if (kind === "export") setDialog({ kind: "export" });
+    else if (kind === "view-list" || kind === "view-table") onViewModeRef.current(kind === "view-list" ? "list" : "table");
+    else if (kind === "import-figma") setUi({ page: "settings" });
+    else return; // a start-screen request
+    useApp.getState().clearUiRequest();
+  }, [uiRequest, setUi]);
+
   const onViewMode = useCallback(
     (m: "list" | "table") => {
       setMode(m);
@@ -88,6 +100,8 @@ export function AppShell() {
     },
     [root],
   );
+  const onViewModeRef = useRef(onViewMode);
+  onViewModeRef.current = onViewMode;
 
   const deferredSearch = useDeferredValue(filter.search);
   const targets = useMemo(

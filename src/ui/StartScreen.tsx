@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import type { DetectResult } from "../formats/adapter";
 import { detectProject } from "../formats/detect";
@@ -32,6 +32,15 @@ export function StartScreen() {
     void getRecent().then(setRecent).catch(() => {});
   }, []);
 
+  // Menu requests: File → New Project… / Open Project….
+  const uiRequest = useApp((s) => s.uiRequest);
+  useEffect(() => {
+    if (uiRequest?.kind === "new-project") setWizard(true);
+    else if (uiRequest?.kind === "open-project") void chooseFolderRef.current();
+    else return;
+    useApp.getState().clearUiRequest();
+  }, [uiRequest]);
+
   const detect = async (root: string): Promise<DetectResult | null> => {
     setMessage(null);
     try {
@@ -55,6 +64,8 @@ export function StartScreen() {
       setMessage(e instanceof Error ? e.message : String(e));
     }
   };
+  const chooseFolderRef = useRef(chooseFolder);
+  chooseFolderRef.current = chooseFolder;
 
   /**
    * The project in `root`. Failing that, TypeScript locale modules: the workspace of the project
