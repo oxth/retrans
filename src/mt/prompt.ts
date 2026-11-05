@@ -17,6 +17,7 @@ export function buildPrompt(
   src: string,
   tgt: string,
   masked: string,
+  instructions?: string,
 ): { prompt: string; addBos: boolean; stop: string[] } {
   const S = languageName(src);
   const T = languageName(tgt);
@@ -31,9 +32,13 @@ export function buildPrompt(
       stop: ["<end_of_turn>"],
     };
   }
+  const extra = instructions?.trim();
+  const system =
+    `You translate software user-interface text from ${S} (${s}) to ${T} (${tc}). Output only the translation. Copy every token like [[0]] exactly as written and keep line breaks.` +
+    (extra ? `\n\nFollow these additional instructions:\n${extra}` : "");
   return {
     prompt:
-      `<|im_start|>system\nYou translate software user-interface text from ${S} (${s}) to ${T} (${tc}). Output only the translation. Copy every token like [[0]] exactly as written and keep line breaks.<|im_end|>\n` +
+      `<|im_start|>system\n${system}<|im_end|>\n` +
       `<|im_start|>user\n${masked}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n`,
     addBos: false,
     stop: ["<|im_end|>"],
