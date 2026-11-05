@@ -4,6 +4,12 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### What's new
+
+- **Intel Macs.** Retrans now runs on Intel Macs with macOS 11 Big Sur or newer, as well as Apple Silicon. On Intel Macs the built-in AI model runs on the CPU, so it is slower than on Apple Silicon; cloud AI providers are unaffected.
+
 ## [0.4.0] - 2026-11-05
 
 ### What's new

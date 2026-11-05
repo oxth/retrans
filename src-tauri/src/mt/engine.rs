@@ -24,9 +24,10 @@ const CANCELLED: &str = "cancelled";
 const N_CTX: u32 = 4096;
 pub const IDLE_UNLOAD_SECS: u64 = 300;
 pub const IDLE_CHECK_SECS: u64 = 30;
-#[cfg(target_os = "macos")]
+/// Every layer on the GPU (Metal) on Apple Silicon; CPU everywhere else, Intel Macs included.
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 const N_GPU_LAYERS: u32 = 999;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 const N_GPU_LAYERS: u32 = 0;
 /// Request ids start at 1 on the front end, so 0 means "nothing".
 const NO_REQ: u64 = 0;

@@ -45,6 +45,8 @@ jobs:
             libssl-dev libxdo-dev build-essential cmake clang
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'x86_64-apple-darwin' || '' }}
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -94,6 +96,17 @@ jobs:
         run: |
           cargo test generates_with_tiny_model -- --ignored
           cargo test exit_with_loaded_model -- --ignored
+
+      # Intel Macs: build for x86_64 and run the same engine tests under Rosetta.
+      - name: Engine smoke test as an Intel Mac build (Rosetta)
+        if: runner.os == 'macOS'
+        working-directory: src-tauri
+        env:
+          RETRANS_SMOKE_MODEL: ${{ runner.temp }}/stories260K-f32.gguf
+        run: |
+          softwareupdate --install-rosetta --agree-to-license >/dev/null 2>&1 || true
+          cargo test --target x86_64-apple-darwin generates_with_tiny_model -- --ignored
+          cargo test --target x86_64-apple-darwin exit_with_loaded_model -- --ignored
 
       - name: Build Linux packages (AppImage and .deb)
         if: runner.os == 'Linux'
