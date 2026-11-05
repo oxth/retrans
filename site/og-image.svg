@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!-- Link-preview image (og:image). Render: rsvg-convert -w 1200 -h 630 site/og-image.svg -o site/og-image.png -->
+  <defs>
+    <linearGradient id="bgPage" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#15123d"/>
+      <stop offset="1" stop-color="#062b29"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+    <linearGradient id="bgU" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100" y2="100">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bgPage)"/>
+
+  <!-- logo + name -->
+  <g transform="translate(80 92) scale(0.96)">
+    <rect width="100" height="100" rx="22.5" fill="url(#bg)"/>
+    <g fill="#ffffff">
+      <rect x="17.5" y="25" width="22" height="11" rx="4" opacity=".55"/>
+      <rect x="44.5" y="25" width="33" height="11" rx="4"/>
+      <rect x="17.5" y="44.5" width="22" height="11" rx="4" opacity=".55"/>
+      <rect x="17.5" y="64" width="22" height="11" rx="4" opacity=".55"/>
+      <rect x="44.5" y="64" width="33" height="11" rx="4"/>
+    </g>
+    <rect x="46" y="46" width="30" height="8" rx="3" fill="none" stroke="#fca5a5" stroke-width="3" stroke-dasharray="9 4.5"/>
+    <circle cx="76.5" cy="45" r="5.5" fill="#f87171" stroke="url(#bgU)" stroke-width="3"/>
+  </g>
+  <text x="200" y="159" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="54" font-weight="700" fill="#ffffff">Retrans</text>
+
+  <!-- tagline -->
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" font-size="56" fill="#ffffff">
+    <text x="80" y="300">Translation files,</text>
+    <text x="80" y="366" fill="#99f6e4">without the pain.</text>
+  </g>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="25" fill="#b9bdd4">
+    <text x="80" y="440">Free desktop app for next-i18next,</text>
+    <text x="80" y="474">Paraglide, TypeScript and Figma.</text>
+    <text x="80" y="540" font-size="21" fill="#8f94ad">macOS · Windows · Local or cloud AI</text>
+  </g>
+
+  <!-- translation grid, one missing cell -->
+  <g transform="translate(640 112)">
+    <rect width="480" height="406" rx="22" fill="#ffffff" fill-opacity=".06" stroke="#ffffff" stroke-opacity=".14" stroke-width="2"/>
+    <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="1.5" fill="#8f94ad">
+      <text x="32" y="52">KEY</text><text x="206" y="52">EN</text><text x="338" y="52">TH</text>
+    </g>
+    <path d="M0 74 H480 M0 157 H480 M0 240 H480 M0 323 H480" stroke="#ffffff" stroke-opacity=".1" stroke-width="2"/>
+    <g font-family="Menlo, monospace" font-size="18" fill="#9aa0b6">
+      <text x="32" y="122">nav.home</text>
+      <text x="32" y="205">common.save</text>
+      <text x="32" y="288">auth.logout</text>
+      <text x="32" y="371">nav.settings</text>
+    </g>
+    <g font-family="Helvetica Neue, Helvetica, Arial, Thonburi, sans-serif" font-size="22" fill="#ffffff">
+      <text x="206" y="122">Home</text><text x="338" y="122">หน้าแรก</text>
+      <text x="206" y="205">Save</text><text x="338" y="205">บันทึก</text>
+      <text x="206" y="288">Log out</text>
+      <text x="206" y="371">Settings</text><text x="338" y="371">ตั้งค่า</text>
+    </g>
+    <rect x="326" y="258" width="126" height="44" rx="9" fill="#f87171" fill-opacity=".1" stroke="#fca5a5" stroke-width="2.5" stroke-dasharray="10 6"/>
+    <circle cx="346" cy="280" r="6" fill="#f87171"/>
+    <text x="360" y="287" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#fca5a5">Missing</text>
+  </g>
+</svg>

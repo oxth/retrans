@@ -4,6 +4,12 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Improvements
+
+- **New app icon.** A grid of translations with one missing cell flagged in red, the same way Retrans marks missing translations. It stays clear at small sizes in the Dock, taskbar and file lists.
+
 ## [0.3.0] - 2026-11-05
 
 ### What's new

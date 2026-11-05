@@ -1,23 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- Retrans app icon: a two-language "resume" loop (white + teal arrows) around a globe.
-       Source for `pnpm tauri icon src-tauri/icons/app-icon.svg`. 824px tile with macOS-style margin. -->
+  <!-- Retrans app icon: a key/value grid with one missing translation, drawn like the app's own
+       missing cell (dashed red outline + status dot, see src/ui/Cell.tsx).
+       Source for `pnpm tauri icon src-tauri/icons/app-icon.svg`. 824px tile with macOS-style margin.
+       site/icon.svg is the same drawing cropped to the tile. -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#4f46e5"/>
       <stop offset="1" stop-color="#0d9488"/>
     </linearGradient>
+    <!-- the tile gradient in drawing units, for the cut-out ring around the badge -->
+    <linearGradient id="bgU" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100" y2="100">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
   </defs>
-  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
-  <!-- the drawing below is the 100-unit design scaled to the tile: x' = 100 + 8.24 * (x - 4) / 0.92 -->
-  <g transform="translate(100 100) scale(8.9565) translate(-4 -4)">
-    <path d="M21.02 57.76 A30 30 0 0 1 65.00 24.02" fill="none" stroke="#ffffff" stroke-width="7.5" stroke-linecap="round"/>
-    <path d="M69.50 16.23 L74.64 31.32 L60.50 31.81 Z" fill="#ffffff" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
-    <path d="M78.98 42.24 A30 30 0 0 1 35.00 75.98" fill="none" stroke="#99f6e4" stroke-width="7.5" stroke-linecap="round"/>
-    <path d="M30.50 83.77 L25.36 68.68 L39.50 68.19 Z" fill="#99f6e4" stroke="#99f6e4" stroke-width="2" stroke-linejoin="round"/>
-    <g fill="none" stroke="#ffffff" stroke-width="3.2">
-      <circle cx="50" cy="50" r="12.5"/>
-      <ellipse cx="50" cy="50" rx="5.38" ry="12.5"/>
-      <path d="M37.50 50 H62.50 M39.38 43.38 H60.62 M39.38 56.62 H60.62" stroke-linecap="round"/>
+  <!-- the drawing below is the 100-unit design scaled to the 824px tile -->
+  <g transform="translate(100 100) scale(8.24)">
+    <rect width="100" height="100" rx="22.5" fill="url(#bg)"/>
+    <g fill="#ffffff">
+      <rect x="17.5" y="25" width="22" height="11" rx="4" opacity=".55"/>
+      <rect x="44.5" y="25" width="33" height="11" rx="4"/>
+      <rect x="17.5" y="44.5" width="22" height="11" rx="4" opacity=".55"/>
+      <rect x="17.5" y="64" width="22" height="11" rx="4" opacity=".55"/>
+      <rect x="44.5" y="64" width="33" height="11" rx="4"/>
     </g>
+    <rect x="46" y="46" width="30" height="8" rx="3" fill="none" stroke="#fca5a5" stroke-width="3" stroke-dasharray="9 4.5"/>
+    <circle cx="76.5" cy="45" r="5.5" fill="#f87171" stroke="url(#bgU)" stroke-width="3"/>
   </g>
 </svg>
