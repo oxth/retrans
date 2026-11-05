@@ -17,10 +17,17 @@ export function buildBatchPrompt(a: {
 }): { system: string; user: string } {
   return {
     system:
-      "You are Retrans, an app that translates software user-interface text. " +
-      "Keep every placeholder token like [[0]] exactly as written. Keep line breaks exactly. " +
-      "Output only JSON. " +
-      a.instructions,
+      [
+        "You translate software user-interface text for Retrans. The user message is JSON: " +
+          '"source" is the source language, "targets" the languages to translate into, and each item in "strings" ' +
+          'has an "id", its "key" and "group" (context), "text" to translate, the "base" text and any "others" ' +
+          "(existing translations, for consistency).",
+        "Keep every placeholder token like [[0]] exactly as written, and keep line breaks.",
+        'Reply with JSON only, no prose: {"<id>": {"<locale>": "<translation>"}} for every id and every target language.',
+        a.instructions.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     user: JSON.stringify({
       source: a.src,
       targets: a.targets,

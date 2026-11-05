@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { buildBatchPrompt, combineInstructions, parseBatchReply } from "./cloud-prompt";
 
 it("buildBatchPrompt includes key, group, base, others and instructions", () => {
@@ -67,4 +67,12 @@ it("combineInstructions orders global, project, language and skips blanks", () =
   expect(combineInstructions(" Global ", "  ", "\nLocale\n")).toBe("Global\n\nLocale");
   expect(combineInstructions("all", "project", "locale")).toBe("all\n\nproject\n\nlocale");
   expect(combineInstructions(undefined, "", undefined)).toBe("");
+});
+
+describe("the system text tells the model the reply shape", () => {
+  it("names the id → locale → text JSON shape and separates instructions", () => {
+    const { system } = buildBatchPrompt({ src: "en", targets: ["th"], strings: [], instructions: "Formal Thai." });
+    expect(system).toContain('{"<id>": {"<locale>": "<translation>"}}');
+    expect(system).toMatch(/\n\nFormal Thai\.$/);
+  });
 });
