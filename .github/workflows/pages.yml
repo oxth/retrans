@@ -4,7 +4,7 @@ name: Website
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'CHANGELOG.md', '.github/workflows/pages.yml']
+    paths: ['site/**', 'CHANGELOG.md', 'scripts/build-site-th.mjs', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -26,6 +26,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Put the changelog next to the page
         run: cp CHANGELOG.md site/CHANGELOG.md
+      - name: Build the Thai page (site/th/)
+        run: node scripts/build-site-th.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

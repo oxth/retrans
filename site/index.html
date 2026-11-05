@@ -6,6 +6,9 @@
   <title>Retrans — free i18n translation editor for next-i18next &amp; Paraglide</title>
   <meta name="description" content="Retrans is a free desktop app for editing next-i18next, Paraglide, TypeScript and Figma translations, with local or cloud AI translation. macOS and Windows.">
   <link rel="canonical" href="https://oxth.github.io/retrans/">
+  <link rel="alternate" hreflang="en" href="https://oxth.github.io/retrans/">
+  <link rel="alternate" hreflang="th" href="https://oxth.github.io/retrans/th/">
+  <link rel="alternate" hreflang="x-default" href="https://oxth.github.io/retrans/">
   <meta name="google-site-verification" content="slEH6RkAfxwwQ4eO6fDOI1p3hSLVEPvAWhOsbwPxoO0">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="icon" href="icon-256.png" type="image/png" sizes="256x256">
@@ -15,6 +18,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Retrans">
   <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="th_TH">
   <meta property="og:url" content="https://oxth.github.io/retrans/">
   <meta property="og:title" content="Retrans — translation files, without the pain">
   <meta property="og:description" content="Edit next-i18next, Paraglide, TypeScript and Figma translations in one grid. Free, offline-first, with local or cloud AI.">
@@ -231,7 +235,7 @@
       section { padding: 64px 0; } .cta { padding-block: 64px; }
     }
     @media (max-width: 560px) {
-      nav a:not(.gh) { display: none; }
+      nav a:not(.gh):not(.lang) { display: none; }
       .btn { width: 100%; }
       .hero { padding-top: 40px; }
       .cell .rev { display: none; }
@@ -258,6 +262,7 @@
         <a href="#features">Features</a>
         <a href="#install">Install</a>
         <a href="#changelog">Changelog</a>
+        <a class="lang" href="th/" hreflang="th" lang="th">ไทย</a>
         <a class="gh" href="https://github.com/oxth/retrans"><svg aria-hidden="true"><use href="#i-github"/></svg>GitHub</a>
       </nav>
     </div>

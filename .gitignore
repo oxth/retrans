@@ -13,3 +13,7 @@ src-tauri/llama-dlls/
 
 # Internal planning docs (kept locally, not published)
 docs/superpowers/
+
+# Generated at deploy by .github/workflows/pages.yml
+site/th/
+site/CHANGELOG.md
