@@ -38,7 +38,7 @@
     "url": "https://oxth.github.io/retrans/",
     "image": "https://oxth.github.io/retrans/og-image.png",
     "applicationCategory": "DeveloperApplication",
-    "operatingSystem": "macOS, Windows, Linux",
+    "operatingSystem": "macOS (Apple Silicon and Intel), Windows, Linux",
     "downloadUrl": "https://github.com/oxth/retrans/releases/latest",
     "license": "https://opensource.org/licenses/MIT",
     "isAccessibleForFree": true,
@@ -320,7 +320,7 @@
           <span>Download for Linux<small>AppImage, 64-bit</small></span>
         </a>
       </div>
-      <p class="meta"><span id="version">Latest release</span> · <a href="https://github.com/oxth/retrans/releases">All releases</a></p>
+      <p class="meta"><span id="version">Latest release</span> · <a data-os="mac-intel" href="https://github.com/oxth/retrans/releases/latest">Download for Intel Mac</a> · <a href="https://github.com/oxth/retrans/releases">All releases</a></p>
       <ul class="facts">
         <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Free, no account</li>
         <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Works offline</li>
@@ -591,11 +591,13 @@
         const mac = find(/_aarch64\.dmg$/);
         const win = find(/_x64-setup\.exe$/);
         const linux = find(/_amd64\.AppImage$/);
+        const macIntel = find(/_x64\.dmg$/);
         const deb = find(/_amd64\.deb$/);
         for (const a of document.querySelectorAll('[data-os="mac"]')) if (mac) a.href = mac.browser_download_url;
         for (const a of document.querySelectorAll('[data-os="win"]')) if (win) a.href = win.browser_download_url;
         for (const a of document.querySelectorAll('[data-os="linux"]')) if (linux) a.href = linux.browser_download_url;
         for (const a of document.querySelectorAll('[data-os="deb"]')) if (deb) a.href = deb.browser_download_url;
+        for (const a of document.querySelectorAll('[data-os="mac-intel"]')) if (macIntel) a.href = macIntel.browser_download_url;
         const v = rel.tag_name.replace(/^v/, "");
         const date = rel.published_at ? new Date(rel.published_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
         document.getElementById("version").textContent = `Version ${v}${date ? " · " + date : ""}`;

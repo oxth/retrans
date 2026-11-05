@@ -31,7 +31,7 @@ Retrans shows every key and language side by side, makes missing translations im
 
 | Platform | Requirements |
 | --- | --- |
-| [macOS](https://github.com/oxth/retrans/releases/latest) | Apple Silicon (M1 and later), macOS 11 Big Sur or newer |
+| [macOS](https://github.com/oxth/retrans/releases/latest) | Apple Silicon (M1 and later) or Intel, macOS 11 Big Sur or newer. Pick the `aarch64` download for Apple Silicon and `x64` for Intel. |
 | [Windows](https://github.com/oxth/retrans/releases/latest) | Windows 10 or 11, 64-bit |
 | [Linux](https://github.com/oxth/retrans/releases/latest) | 64-bit (x86-64): AppImage for any distribution, .deb for Debian and Ubuntu, or .rpm for Fedora |
 

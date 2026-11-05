@@ -92,6 +92,7 @@ const pairs = [
   ["Download for Linux<small>AppImage</small>", "ดาวน์โหลดสำหรับ Linux<small>AppImage</small>"],
   ['<span id="version">Latest release</span>', '<span id="version">รุ่นล่าสุด</span>'],
   [">All releases</a>", ">ทุกรุ่น</a>"],
+  [">Download for Intel Mac</a>", ">ดาวน์โหลดสำหรับ Mac ชิป Intel</a>"],
   ["</svg>Free, no account</li>", "</svg>ฟรี ไม่ต้องสมัครบัญชี</li>"],
   ["</svg>Works offline</li>", "</svg>ใช้งานออฟไลน์ได้</li>"],
   ["</svg>No telemetry</li>", "</svg>ไม่เก็บข้อมูลการใช้งาน</li>"],
