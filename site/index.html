@@ -513,6 +513,7 @@
       }
       let html = "";
       let inRelease = false;
+      let skip = false; // inside "## [Unreleased]", which the site doesn't show
       let listDepth = 0;
       let count = 0;
       const closeLists = (to) => {
@@ -527,13 +528,18 @@
         if (v) {
           closeLists(0);
           if (inRelease) html += "</div>";
+          skip = /^unreleased$/i.test(v[1].trim());
+          if (skip) {
+            inRelease = false;
+            continue;
+          }
           count++;
           const title = refs[v[1]] ? `<a href="${refs[v[1]]}">Version ${esc(v[1])}</a>` : `Version ${esc(v[1])}`;
           html += `<div class="release${count > 2 ? " older" : ""}"><h3 class="version">${title}${count === 1 ? '<span class="latest">Latest</span>' : ""}<span class="date">${esc(v[2] || "")}</span></h3>`;
           inRelease = true;
           continue;
         }
-        if (!inRelease) continue; // the file's own title and intro
+        if (skip || !inRelease) continue; // the file's title and intro, or unreleased notes
         const h = raw.match(/^### (.+)/);
         if (h) {
           closeLists(0);
