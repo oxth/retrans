@@ -19,6 +19,7 @@ import { TableView } from "./TableView";
 import { activeModel, useMt } from "./mt-store";
 import { Toolbar } from "./Toolbar";
 import { TranslateMissingDialog } from "./TranslateMissingDialog";
+import { isTextField } from "./edit-commands";
 import { useShallow } from "zustand/react/shallow";
 
 
@@ -45,7 +46,17 @@ export function AppShell() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "s") return;
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      // Undo / redo: a focused text field keeps its own (the browser handles it there).
+      if (k === "z" || k === "y") {
+        if (isTextField(document.activeElement) || document.querySelector('[role="dialog"]')) return;
+        e.preventDefault();
+        if (k === "y" || e.shiftKey) useApp.getState().redo();
+        else useApp.getState().undo();
+        return;
+      }
+      if (e.shiftKey || k !== "s") return;
       e.preventDefault();
       // Not while a modal (conflicts, unsaved-changes prompt, key dialogs) is up.
       if (document.querySelector('[role="dialog"]')) return;

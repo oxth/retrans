@@ -30,6 +30,7 @@ export interface PendingRecovery { journal: Journal; path: string }
  */
 export type UiConflict = Conflict & { origin?: "source" | "figma"; base?: MessageValue };
 
+export const UNDO_SKIPPED_MESSAGE = "Some changes came from your code or Figma since — those weren't undone.";
 export const SOURCE_MISSING_MESSAGE = "Source files not found — showing the saved workspace.";
 export const SOURCE_INVALID_MESSAGE = "The workspace's source folder setting is invalid — showing the saved workspace.";
 
@@ -127,6 +128,9 @@ export interface AppState {
   /** Ids of the tabs with unsaved changes, in tab order (LEGACY_TAB for a session set without a tab). */
   dirtyTabs(): string[];
   resolveConflict(c: UiConflict, pick: "mine" | "theirs"): void;
+  /** Undo / redo the active tab's last step (see ProjectSession.undo). */
+  undo(): void;
+  redo(): void;
   /** Resolves a conflict with a final text the user typed (keeps "mine", then sets the text). */
   resolveConflictWith(c: UiConflict, text: string): void;
   resolveAllConflicts(pick: "mine" | "theirs"): void;
@@ -580,6 +584,16 @@ export const useApp = create<AppState>((set, get) => {
       conflicts: [...cur.conflicts.filter((c) => c.origin !== "source"), ...fresh],
     }));
     return r;
+  },
+
+  undo() {
+    const s = get().session;
+    if (s && s.undo().skipped > 0) set({ error: UNDO_SKIPPED_MESSAGE });
+  },
+
+  redo() {
+    const s = get().session;
+    if (s && s.redo().skipped > 0) set({ error: UNDO_SKIPPED_MESSAGE });
   },
 
   resolveConflictWith(c, text) {
