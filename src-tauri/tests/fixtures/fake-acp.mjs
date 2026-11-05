@@ -1,7 +1,7 @@
 // A fake ACP agent for tests: newline-delimited JSON-RPC over stdio. During a prompt turn it asks
 // for a permission and to read a file (both must be refused), then streams two text chunks.
 // FAKE_ACP_LOG: file to append every message it receives. FAKE_ACP_SLOW: wait for cancel.
-// FAKE_ACP_DIE: exit mid-turn with a message on stderr.
+// FAKE_ACP_DIE: exit mid-turn with a message on stderr. FAKE_ACP_SILENT: never answer anything.
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -47,6 +47,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (!line.trim()) return;
   const m = JSON.parse(line);
   log(m);
+  if (process.env.FAKE_ACP_SILENT) return; // alive, but never speaks ACP
   if (m.id !== undefined && !m.method) {
     waiting.get(m.id)?.(m);
     waiting.delete(m.id);

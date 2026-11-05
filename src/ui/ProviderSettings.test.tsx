@@ -110,4 +110,37 @@ describe("provider settings", () => {
     expect(activeTranslator({ ...st, settings }, "next-i18next", "openai")).toBeNull(); // no consent yet
     expect(activeTranslator({ ...st, settings: { ...settings, consent: ["openai"] } }, "next-i18next", "openai")?.label).toBe("OpenAI (ChatGPT)");
   });
+
+  it("OpenAI-compatible asks when the address is saved, naming its host, and again for a new address", async () => {
+    render(<ProviderSettings />);
+    await pickProvider("OpenAI-compatible");
+    expect(screen.queryByRole("dialog")).toBeNull(); // nothing is sent until an address is set
+    const base = screen.getByLabelText("API base URL");
+    await userEvent.type(base, "http://localhost:11434/v1");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    const dlg = screen.getByRole("dialog", { name: "Send text to OpenAI-compatible?" });
+    expect(within(dlg).getByText(/localhost:11434/)).toBeInTheDocument();
+    await userEvent.click(within(dlg).getByRole("button", { name: "Continue" }));
+    expect(useMt.getState().settings.consent).toContain("compatible:http://localhost:11434/v1");
+    await userEvent.clear(base);
+    await userEvent.type(base, "https://api.example.com/v1");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByRole("dialog", { name: "Send text to OpenAI-compatible?" })).toBeInTheDocument();
+  });
+
+  it("a compatible provider is used only for the address the user agreed to", () => {
+    const st = useMt.getState();
+    const settings = {
+      ...st.settings, provider: "compatible" as const, cloud: { compatible: { baseUrl: "https://api.example.com/v1", model: "m" } },
+      consent: ["compatible", "compatible:http://localhost:11434/v1"],
+    };
+    expect(activeTranslator({ ...st, settings }, "next-i18next")).toBeNull();
+    expect(activeTranslator({ ...st, settings: { ...settings, consent: ["compatible:https://api.example.com/v1"] } }, "next-i18next")).not.toBeNull();
+  });
+
+  it("the agent note says what Retrans can and can't control", async () => {
+    useMt.setState({ settings: { ...useMt.getState().settings, provider: "acp", consent: ["acp"] } });
+    render(<ProviderSettings />);
+    expect(screen.getByText(/its own built-in tools can still read files on this computer/)).toBeInTheDocument();
+  });
 });

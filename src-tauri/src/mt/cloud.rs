@@ -50,11 +50,22 @@ fn trim_base(s: &str) -> String {
     s.trim().trim_end_matches('/').to_string()
 }
 
-/// Where to send, and with which key. `base_override` replaces the provider's default URL (tests).
+/// Where to send, and with which key. `base_url` is only used for "compatible": OpenAI and Claude
+/// keys always go to their own hosts, whatever the frontend passes.
 pub fn endpoint(
     store: &dyn SecretStore,
     provider: &str,
     base_url: Option<&str>,
+) -> Result<Endpoint, String> {
+    endpoint_with(store, provider, base_url, None)
+}
+
+/// `endpoint`, with the OpenAI/Claude host replaced (tests only, pointing at a fake server).
+pub(crate) fn endpoint_with(
+    store: &dyn SecretStore,
+    provider: &str,
+    base_url: Option<&str>,
+    fixed_base: Option<&str>,
 ) -> Result<Endpoint, String> {
     let need = |account: &str| match secret_get(store, account) {
         Ok(k) => Ok(Some(k)),
@@ -63,13 +74,13 @@ pub fn endpoint(
     match provider {
         "openai" => Ok(Endpoint {
             kind: Kind::OpenAi,
-            base: trim_base(base_url.unwrap_or(OPENAI_BASE)),
+            base: trim_base(fixed_base.unwrap_or(OPENAI_BASE)),
             key: need("openai")?,
             label: "OpenAI",
         }),
         "anthropic" => Ok(Endpoint {
             kind: Kind::Anthropic,
-            base: trim_base(base_url.unwrap_or(ANTHROPIC_BASE)),
+            base: trim_base(fixed_base.unwrap_or(ANTHROPIC_BASE)),
             key: need("anthropic")?,
             label: "Claude",
         }),
@@ -144,13 +155,34 @@ async fn send_with_retries(
             200..=299 => return Ok(body),
             401 | 403 => return Err("The API key was rejected.".into()),
             429 | 500..=599 if attempt < RETRIES => {
-                tokio::time::sleep(retry_after.unwrap_or_else(|| backoff(attempt))).await;
+                let wait = if retry_after.is_some() {
+                    retry_wait(retry_after, attempt)
+                } else {
+                    backoff(attempt)
+                };
+                tokio::time::sleep(wait).await;
                 attempt += 1;
             }
-            429 => return Err("Rate limited — try again in a minute.".into()),
+            // Out of credit is a 429 too: show the provider's own words when it gives some.
+            429 => {
+                let m = error_message(&body);
+                return Err(if m.trim().is_empty() || m.trim() == "{}" {
+                    "Rate limited — try again in a minute.".into()
+                } else {
+                    format!("Rate limited — try again in a minute. {label}: {m}")
+                });
+            }
             _ => return Err(format!("{label}: {}", error_message(&body))),
         }
     }
+}
+
+/// The longest a provider's Retry-After may make a run wait.
+const MAX_WAIT: Duration = Duration::from_secs(30);
+
+/// How long to wait before retry `attempt`: the provider's Retry-After (capped), else 1, 2, 4 s.
+fn retry_wait(retry_after: Option<Duration>, attempt: u32) -> Duration {
+    retry_after.map_or_else(|| default_backoff(attempt), |d| d.min(MAX_WAIT))
 }
 
 fn default_backoff(attempt: u32) -> Duration {
@@ -172,7 +204,7 @@ pub async fn chat(
             "messages": [{ "role": "system", "content": system }, { "role": "user", "content": user }],
         }),
         Kind::Anthropic => json!({
-            "model": model, "system": system, "max_tokens": 4096,
+            "model": model, "system": system, "max_tokens": 8192,
             "messages": [{ "role": "user", "content": user }],
         }),
     };
@@ -360,7 +392,13 @@ mod tests {
             r#"{"choices":[{"message":{"content":"สวัสดี"}}]}"#.into(),
             0,
         )]);
-        let ep = endpoint(&store_with(&[("openai", "sk-1")]), "openai", Some(&base)).unwrap();
+        let ep = endpoint_with(
+            &store_with(&[("openai", "sk-1")]),
+            "openai",
+            None,
+            Some(&base),
+        )
+        .unwrap();
         let out = chat(
             &reqwest::Client::new(),
             &ep,
@@ -397,9 +435,10 @@ mod tests {
             r#"{"content":[{"type":"text","text":"a"},{"type":"text","text":"b"}]}"#.into(),
             0,
         )]);
-        let ep = endpoint(
+        let ep = endpoint_with(
             &store_with(&[("anthropic", "ak-1")]),
             "anthropic",
+            None,
             Some(&base),
         )
         .unwrap();
@@ -420,7 +459,7 @@ mod tests {
         let raw = seen.lock().unwrap()[0].clone();
         let body: Value = serde_json::from_str(&raw[raw.find("\r\n\r\n").unwrap() + 4..]).unwrap();
         assert_eq!(body["system"], "sys");
-        assert_eq!(body["max_tokens"], 4096);
+        assert_eq!(body["max_tokens"], 8192);
     }
 
     #[tokio::test]
@@ -465,7 +504,8 @@ mod tests {
                 0,
             ),
         ]);
-        let ep = endpoint(&store_with(&[("openai", "k")]), "openai", Some(&base)).unwrap();
+        let ep =
+            endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
         assert_eq!(
             chat(&reqwest::Client::new(), &ep, "m", "s", "u", NO_WAIT).await,
             Ok("done".into())
@@ -477,7 +517,8 @@ mod tests {
     async fn rate_limited_after_retries() {
         let replies = (0..4).map(|_| Reply(429, "", "{}".into(), 0)).collect();
         let (base, _) = serve(replies);
-        let ep = endpoint(&store_with(&[("openai", "k")]), "openai", Some(&base)).unwrap();
+        let ep =
+            endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
         assert_eq!(
             chat(&reqwest::Client::new(), &ep, "m", "s", "u", NO_WAIT).await,
             Err("Rate limited — try again in a minute.".into())
@@ -495,7 +536,13 @@ mod tests {
                 0,
             ),
         ]);
-        let ep = endpoint(&store_with(&[("anthropic", "k")]), "anthropic", Some(&base)).unwrap();
+        let ep = endpoint_with(
+            &store_with(&[("anthropic", "k")]),
+            "anthropic",
+            None,
+            Some(&base),
+        )
+        .unwrap();
         let c = reqwest::Client::new();
         assert_eq!(
             chat(&c, &ep, "m", "s", "u", NO_WAIT).await,
@@ -527,7 +574,8 @@ mod tests {
             r#"{"choices":[{"message":{"content":"late"}}]}"#.into(),
             3000,
         )]);
-        let ep = endpoint(&store_with(&[("openai", "k")]), "openai", Some(&base)).unwrap();
+        let ep =
+            endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
         let stop = Arc::new(Notify::new());
         let s2 = stop.clone();
         tokio::spawn(async move {
@@ -552,11 +600,59 @@ mod tests {
             r#"{"data":[{"id":"z-model"},{"id":"a-model"}]}"#.into(),
             0,
         )]);
-        let ep = endpoint(&store_with(&[("openai", "k")]), "openai", Some(&base)).unwrap();
+        let ep =
+            endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
         assert_eq!(
             models(&reqwest::Client::new(), &ep).await,
             Ok(vec!["a-model".into(), "z-model".into()])
         );
         assert!(seen.lock().unwrap()[0].starts_with("GET /models"));
+    }
+
+    #[test]
+    fn openai_and_anthropic_ignore_a_base_url_from_the_frontend() {
+        let store = store_with(&[("openai", "k"), ("anthropic", "k")]);
+        assert_eq!(
+            endpoint(&store, "openai", Some("https://evil.example"))
+                .unwrap()
+                .base,
+            OPENAI_BASE
+        );
+        assert_eq!(
+            endpoint(&store, "anthropic", Some("https://evil.example"))
+                .unwrap()
+                .base,
+            ANTHROPIC_BASE
+        );
+    }
+
+    #[tokio::test]
+    async fn final_429_keeps_the_provider_message() {
+        let replies = (0..4)
+            .map(|_| {
+                Reply(
+                    429,
+                    "",
+                    r#"{"error":{"message":"You exceeded your current quota"}}"#.into(),
+                    0,
+                )
+            })
+            .collect();
+        let (base, _) = serve(replies);
+        let ep =
+            endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
+        let err = chat(&reqwest::Client::new(), &ep, "m", "s", "u", NO_WAIT)
+            .await
+            .unwrap_err();
+        assert!(err.contains("You exceeded your current quota"), "{err}");
+    }
+
+    #[test]
+    fn retry_after_is_capped() {
+        assert_eq!(
+            retry_wait(Some(Duration::from_secs(3600)), 0),
+            Duration::from_secs(30)
+        );
+        assert_eq!(retry_wait(None, 2), Duration::from_secs(4));
     }
 }

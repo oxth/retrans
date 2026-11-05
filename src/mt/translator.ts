@@ -45,6 +45,8 @@ export interface AcpConfig {
 }
 
 export const BATCH_STRINGS = 20;
+/** Strings × target languages per request: keeps replies well under the models' output limits. */
+export const BATCH_CELLS = 60;
 export const INCOMPLETE = "The model's reply was incomplete.";
 const TOO_LONG = "Text is too long to translate";
 
@@ -111,10 +113,23 @@ function remoteTranslator(
       const base = session.data.baseLocale;
       const byId = new Map<KeyId, TranslateJob[]>();
       for (const job of jobs) byId.set(job.id, [...(byId.get(job.id) ?? []), job]);
-      const ids = [...byId.keys()];
-      for (let i = 0; i < ids.length; i += BATCH_STRINGS) {
+      // Requests of at most BATCH_STRINGS strings and BATCH_CELLS cells (strings × their languages).
+      const chunks: KeyId[][] = [];
+      let cur: KeyId[] = [];
+      let cells = 0;
+      for (const id of byId.keys()) {
+        const n = byId.get(id)!.length;
+        if (cur.length && (cur.length >= BATCH_STRINGS || cells + n > BATCH_CELLS)) {
+          chunks.push(cur);
+          cur = [];
+          cells = 0;
+        }
+        cur.push(id);
+        cells += n;
+      }
+      if (cur.length) chunks.push(cur);
+      for (const chunk of chunks) {
         if (signal.aborted) return;
-        const chunk = ids.slice(i, i + BATCH_STRINGS);
         const targets = [...new Set(chunk.flatMap((id) => byId.get(id)!.map((j) => j.locale)))];
         const guarded = new Map(chunk.map((id) => [id, protect(format, byId.get(id)![0].source)]));
         const strings: BatchString[] = chunk.map((id) => {

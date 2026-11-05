@@ -240,6 +240,11 @@ export function spaceUsed(s: Pick<MtState, "files">): number {
   return Object.values(s.files).reduce((n, f) => n + f.size, 0);
 }
 
+/** What the user agrees to: a provider, or for "compatible" the exact API address. */
+export function consentKey(provider: ProviderId, settings: MtSettings): string {
+  return provider === "compatible" ? `compatible:${(settings.cloud.compatible?.baseUrl ?? "").trim().replace(/\/+$/, "")}` : provider;
+}
+
 /**
  * The translator to use, or null when none is ready: machine translation off, no model, a cloud
  * provider without a model, or a remote provider the user hasn't agreed to send text to.
@@ -257,7 +262,7 @@ export function activeTranslator(
     const model = activeModel(s);
     return model ? localTranslator(s.engine, model, format) : null;
   }
-  if (!settings.consent.includes(provider)) return null;
+  if (!settings.consent.includes(consentKey(provider, settings))) return null;
   if (provider === "acp") return settings.acp ? acpTranslator(settings.acp, format) : null;
   if (provider === "compatible") {
     const c = settings.cloud.compatible;

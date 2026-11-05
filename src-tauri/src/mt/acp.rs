@@ -39,8 +39,6 @@ pub struct Agent {
     sink: Arc<std::sync::Mutex<Option<mpsc::UnboundedSender<String>>>>,
     stderr_tail: Arc<std::sync::Mutex<String>>,
     next_id: AtomicU64,
-    /// Set once session/new answers.
-    session_id: std::sync::OnceLock<String>,
     /// One turn at a time.
     turn: Mutex<()>,
     last_used: std::sync::Mutex<Instant>,
@@ -58,23 +56,39 @@ async fn login_path() -> Option<String> {
             return None;
         }
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        // Between markers: an rc file that prints a greeting can't spoil the PATH read.
         let out = tokio::time::timeout(
             Duration::from_secs(3),
             Command::new(shell)
-                .args(["-ilc", "printf %s \"$PATH\""])
+                .args([
+                    "-ilc",
+                    "printf '__RETRANS_PATH__%s__RETRANS_END__' \"$PATH\"",
+                ])
                 .stdin(Stdio::null())
                 .stderr(Stdio::null())
+                .kill_on_drop(true)
                 .output(),
         )
         .await
         .ok()?
         .ok()?;
-        let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        (!p.is_empty()).then_some(p)
+        path_between_markers(&String::from_utf8_lossy(&out.stdout))
     })
     .await
     .clone()
 }
+
+fn path_between_markers(out: &str) -> Option<String> {
+    let start = out.find("__RETRANS_PATH__")? + "__RETRANS_PATH__".len();
+    let end = start + out[start..].find("__RETRANS_END__")?;
+    let p = out[start..end].trim();
+    (!p.is_empty()).then(|| p.to_string())
+}
+
+/// How long an agent gets to answer `initialize` (it may first be downloaded by npx).
+const START_TIMEOUT: Duration = Duration::from_secs(120);
+/// How long an agent gets to open a session.
+const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn fresh_cwd() -> std::io::Result<PathBuf> {
     static N: AtomicU64 = AtomicU64::new(0);
@@ -91,11 +105,21 @@ fn fresh_cwd() -> std::io::Result<PathBuf> {
 }
 
 impl Agent {
-    /// Starts the agent and opens a session (initialize + session/new).
+    /// Starts the agent and initializes the protocol. Each prompt opens its own session.
     pub async fn start(
         command: &str,
         args: &[String],
         env: &[(String, String)],
+    ) -> Result<Arc<Agent>, String> {
+        Self::start_within(command, args, env, START_TIMEOUT).await
+    }
+
+    /// `start`, giving up (and stopping the process) if `initialize` isn't answered within `limit`.
+    pub async fn start_within(
+        command: &str,
+        args: &[String],
+        env: &[(String, String)],
+        limit: Duration,
     ) -> Result<Arc<Agent>, String> {
         let cwd = fresh_cwd().map_err(|e| e.to_string())?;
         let mut cmd = Command::new(command);
@@ -185,7 +209,6 @@ impl Agent {
             sink,
             stderr_tail,
             next_id: AtomicU64::new(1),
-            session_id: std::sync::OnceLock::new(),
             turn: Mutex::new(()),
             last_used: std::sync::Mutex::new(Instant::now()),
             cwd: cwd.clone(),
@@ -200,25 +223,27 @@ impl Agent {
             }
         });
 
-        agent
-            .call(
-                "initialize",
-                json!({
-                    "protocolVersion": 1,
-                    "clientCapabilities": { "fs": { "readTextFile": false, "writeTextFile": false }, "terminal": false },
-                    "clientInfo": { "name": "Retrans", "version": env!("CARGO_PKG_VERSION") },
-                }),
-            )
-            .await?;
-        let s = agent
-            .call("session/new", json!({ "cwd": cwd, "mcpServers": [] }))
-            .await?;
-        let session_id = s["sessionId"]
-            .as_str()
-            .ok_or("The agent didn't open a session")?
-            .to_string();
-        let _ = agent.session_id.set(session_id);
-        Ok(agent)
+        let init = agent.call(
+            "initialize",
+            json!({
+                "protocolVersion": 1,
+                "clientCapabilities": { "fs": { "readTextFile": false, "writeTextFile": false }, "terminal": false },
+                "clientInfo": { "name": "Retrans", "version": env!("CARGO_PKG_VERSION") },
+            }),
+        );
+        match tokio::time::timeout(limit, init).await {
+            Ok(Ok(_)) => Ok(agent),
+            Ok(Err(e)) => {
+                agent.kill().await;
+                Err(e)
+            }
+            Err(_) => {
+                agent.kill().await;
+                Err(format!(
+                    "The agent didn't answer — is \"{command}\" an ACP agent?"
+                ))
+            }
+        }
     }
 
     async fn write(&self, m: &Value) -> Result<(), String> {
@@ -227,10 +252,6 @@ impl Agent {
         let mut w = self.stdin.lock().await;
         w.write_all(&line).await.map_err(|e| e.to_string())?;
         w.flush().await.map_err(|e| e.to_string())
-    }
-
-    fn sid(&self) -> &str {
-        self.session_id.get().map(String::as_str).unwrap_or("")
     }
 
     fn died(&self) -> String {
@@ -258,18 +279,30 @@ impl Agent {
         Ok(m["result"].clone())
     }
 
-    /// One prompt turn: the agent's reply text. `stop` cancels it (session/cancel is sent).
+    /// One prompt turn in a fresh session (no history carried between batches or projects): the
+    /// agent's reply text. `stop` cancels it (session/cancel is sent once a session is open).
     pub async fn prompt(&self, text: &str, stop: Arc<Notify>) -> Result<String, String> {
         let _turn = self.turn.lock().await;
         *self.last_used.lock().unwrap() = Instant::now();
+        let opened = tokio::select! {
+            r = tokio::time::timeout(SESSION_TIMEOUT, self.call("session/new", json!({ "cwd": self.cwd, "mcpServers": [] }))) => r,
+            _ = stop.notified() => return Err("cancelled".to_string()),
+        };
+        let session = match opened {
+            Ok(Ok(s)) => s["sessionId"]
+                .as_str()
+                .ok_or("The agent didn't open a session")?
+                .to_string(),
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err("The agent didn't open a session in time.".into()),
+        };
         let (tx, mut rx) = mpsc::unbounded_channel();
         *self.sink.lock().unwrap() = Some(tx);
-        let params =
-            json!({ "sessionId": self.sid(), "prompt": [{ "type": "text", "text": text }] });
+        let params = json!({ "sessionId": session, "prompt": [{ "type": "text", "text": text }] });
         let out = tokio::select! {
             r = self.call("session/prompt", params) => r.map(|_| ()),
             _ = stop.notified() => {
-                let _ = self.write(&json!({ "jsonrpc": "2.0", "method": "session/cancel", "params": { "sessionId": self.sid() } })).await;
+                let _ = self.write(&json!({ "jsonrpc": "2.0", "method": "session/cancel", "params": { "sessionId": session } })).await;
                 Err("cancelled".to_string())
             }
         };
@@ -297,7 +330,12 @@ pub struct AcpAgents {
 }
 
 impl AcpAgents {
-    async fn get(&self, command: &str, args: &[String]) -> Result<Arc<Agent>, String> {
+    async fn get(
+        &self,
+        command: &str,
+        args: &[String],
+        env: &[(String, String)],
+    ) -> Result<Arc<Agent>, String> {
         let key = format!("{command}\0{}", args.join("\0"));
         let mut agents = self.agents.lock().await;
         // Agents idle for a while are stopped.
@@ -323,9 +361,32 @@ impl AcpAgents {
             }
             agents.remove(&key);
         }
-        let a = Agent::start(command, args, &[]).await?;
+        // Start outside the lock: a slow or silent agent must not block other agents or quitting.
+        drop(agents);
+        let a = Agent::start(command, args, env).await?;
+        let mut agents = self.agents.lock().await;
+        if let Some(existing) = agents.get(&key) {
+            a.kill().await; // another turn started the same agent meanwhile
+            return Ok(existing.clone());
+        }
         agents.insert(key, a.clone());
         Ok(a)
+    }
+
+    /// One turn with the agent for `command args`, started if needed. `stop` also cancels a start.
+    pub async fn prompt_with(
+        &self,
+        command: &str,
+        args: &[String],
+        env: &[(String, String)],
+        text: &str,
+        stop: Arc<Notify>,
+    ) -> Result<String, String> {
+        let agent = tokio::select! {
+            a = self.get(command, args, env) => a?,
+            _ = stop.notified() => return Err("cancelled".to_string()),
+        };
+        agent.prompt(text, stop).await
     }
 
     pub async fn stop_all(&self) {
@@ -340,14 +401,16 @@ pub async fn mt_acp_prompt(
     agents: State<'_, AcpAgents>,
     req: AcpRequest,
 ) -> Result<String, String> {
-    let agent = agents.get(&req.command, &req.args).await?;
+    // Registered before the agent starts, so Cancel works while it's starting too.
     let stop = Arc::new(Notify::new());
     agents
         .turns
         .lock()
         .unwrap()
         .insert(req.req_id, stop.clone());
-    let out = agent.prompt(&req.text, stop).await;
+    let out = agents
+        .prompt_with(&req.command, &req.args, &[], &req.text, stop)
+        .await;
     agents.turns.lock().unwrap().remove(&req.req_id);
     out
 }
@@ -460,6 +523,7 @@ mod tests {
         let Some((a, d)) = start(&[]).await else {
             return;
         };
+        a.prompt("x", Arc::new(Notify::new())).await.unwrap(); // sessions open per turn
         let log = log_of(&d.path().join("log.jsonl"));
         let new = log.iter().find(|m| m["method"] == "session/new").unwrap();
         let cwd = PathBuf::from(new["params"]["cwd"].as_str().unwrap());
@@ -504,5 +568,65 @@ mod tests {
             a.died()
         };
         assert!(err.contains("out of tokens"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_silent_agent_times_out_instead_of_hanging() {
+        let Some((node, args)) = fake() else { return };
+        let env = vec![("FAKE_ACP_SILENT".to_string(), "1".to_string())];
+        let started = std::time::Instant::now();
+        let err = Agent::start_within(&node, &args, &env, Duration::from_millis(400))
+            .await
+            .err()
+            .unwrap();
+        assert!(err.contains("didn't answer"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[tokio::test]
+    async fn a_cancel_during_agent_start_is_not_lost() {
+        let Some((node, args)) = fake() else { return };
+        let agents = AcpAgents::default();
+        let stop = Arc::new(Notify::new());
+        let s2 = stop.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            s2.notify_one();
+        });
+        let env = vec![("FAKE_ACP_SILENT".to_string(), "1".to_string())];
+        let started = std::time::Instant::now();
+        let out = agents.prompt_with(&node, &args, &env, "x", stop).await;
+        assert_eq!(out, Err("cancelled".into()));
+        assert!(started.elapsed() < Duration::from_secs(3));
+        // Quitting isn't blocked by the half-started agent.
+        tokio::time::timeout(Duration::from_secs(3), agents.stop_all())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn each_prompt_opens_a_new_session() {
+        let Some((a, d)) = start(&[]).await else {
+            return;
+        };
+        a.prompt("one", Arc::new(Notify::new())).await.unwrap();
+        a.prompt("two", Arc::new(Notify::new())).await.unwrap();
+        let news = log_of(&d.path().join("log.jsonl"))
+            .iter()
+            .filter(|m| m["method"] == "session/new")
+            .count();
+        assert_eq!(news, 2);
+        a.kill().await;
+    }
+
+    #[test]
+    fn login_path_is_read_between_markers() {
+        assert_eq!(
+            path_between_markers(
+                "Welcome!\n__RETRANS_PATH__/opt/homebrew/bin:/usr/bin__RETRANS_END__\nbye"
+            ),
+            Some("/opt/homebrew/bin:/usr/bin".into())
+        );
+        assert_eq!(path_between_markers("no markers here"), None);
     }
 }

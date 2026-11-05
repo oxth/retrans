@@ -137,3 +137,23 @@ describe("translators", () => {
     expect(invoke.mock.calls[0][1].req).toMatchObject({ command: "agent", args: ["--acp"] });
   });
 });
+
+describe("review fixes", () => {
+  it("a request never carries more than 60 cells", async () => {
+    const fs = new MemoryFs({
+      [`${R}/public/locales/en/common.json`]: j(Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`k${i}`, `Hi ${i}`]))),
+      ...Object.fromEntries(["th", "ja", "de", "fr", "es"].map((l) => [`${R}/public/locales/${l}/common.json`, j({})])),
+    });
+    const d = (await detectProject(fs, R))!;
+    const s = await ProjectSession.open(fs, R, d, { baseLocale: "en", localesPath: d.localesPath });
+    invoke.mockImplementation(async (cmd: string, args: { req: { user: string } }) => (cmd === "mt_cloud_chat" ? echoReply(args.req.user) : undefined));
+    const r = await translateMissingMulti(s, ["th", "ja", "de", "fr", "es"], "all", cloudTranslator({ provider: "anthropic", model: "c" }, "next-i18next"), () => {}, new AbortController().signal);
+    const calls = invoke.mock.calls.filter(([c]) => c === "mt_cloud_chat");
+    for (const [, a] of calls) {
+      const u = JSON.parse(a.req.user);
+      expect(u.strings.length * u.targets.length).toBeLessThanOrEqual(60);
+    }
+    expect(calls.length).toBe(2);
+    expect(Object.values(r).every((x) => x.translated === 20)).toBe(true);
+  });
+});

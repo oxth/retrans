@@ -38,14 +38,23 @@ function destination(p: ProviderId, s: MtSettings): string {
 }
 
 /** Settings → Machine translation: who translates (built-in model, a cloud API, or an ACP agent). */
+/** A pending "send text to …?" question: the consent key, who and where, and what follows a yes. */
+interface Ask {
+  provider: ProviderId;
+  key: string;
+  where: string;
+  then: () => Promise<void>;
+}
+
 export function ProviderSettings() {
   const s = useMt();
   const settings = s.settings;
-  const [asking, setAsking] = useState<ProviderId | null>(null);
+  const [asking, setAsking] = useState<Ask | null>(null);
 
   const choose = (p: ProviderId) => {
-    if (p !== "local" && !settings.consent.includes(p)) setAsking(p);
-    else void s.setProvider(p);
+    // OpenAI-compatible asks once its address is saved, since that's where text goes.
+    if (p === "local" || p === "compatible" || settings.consent.includes(p)) void s.setProvider(p);
+    else setAsking({ provider: p, key: p, where: destination(p, settings), then: () => s.setProvider(p) });
   };
 
   return (
@@ -59,14 +68,14 @@ export function ProviderSettings() {
         </select>
       </label>
       {(settings.provider === "openai" || settings.provider === "anthropic" || settings.provider === "compatible") && (
-        <CloudFields provider={settings.provider} />
+        <CloudFields provider={settings.provider} ask={setAsking} />
       )}
       {settings.provider === "acp" && <AcpFields />}
       {settings.provider !== "local" && <RemoteTest />}
       {asking && (
-        <Dialog title={`Send text to ${PROVIDER_LABELS[asking]}?`} onClose={() => setAsking(null)}>
+        <Dialog title={`Send text to ${PROVIDER_LABELS[asking.provider]}?`} onClose={() => setAsking(null)}>
           <p className="text-sm">
-            Text you translate will be sent to {PROVIDER_LABELS[asking]} ({destination(asking, settings)}). The built-in model keeps everything on
+            Text you translate will be sent to {PROVIDER_LABELS[asking.provider]} ({asking.where}). The built-in model keeps everything on
             this computer. Continue?
           </p>
           <div className="mt-5 flex justify-end gap-2">
@@ -74,10 +83,10 @@ export function ProviderSettings() {
             <button
               className={btnPrimary}
               onClick={async () => {
-                const p = asking;
+                const a = asking;
                 setAsking(null);
-                await s.grantConsent(p);
-                await s.setProvider(p);
+                await s.grantConsent(a.key as ProviderId);
+                await a.then();
               }}
             >
               Continue
@@ -151,7 +160,7 @@ function RemoteTest() {
   );
 }
 
-function CloudFields({ provider }: { provider: Cloud }) {
+function CloudFields({ provider, ask }: { provider: Cloud; ask: (a: Ask) => void }) {
   const s = useMt();
   const cfg = s.settings.cloud[provider];
   const baseUrl = provider === "compatible" ? (s.settings.cloud.compatible?.baseUrl ?? "") : undefined;
@@ -200,7 +209,24 @@ function CloudFields({ provider }: { provider: Cloud }) {
           API base URL
           <div className="flex gap-2">
             <input aria-label="API base URL" className={inputCls} placeholder="https://openrouter.ai/api/v1" value={base} onChange={(e) => setBase(e.target.value)} />
-            <button className={btnGhost} onClick={() => void s.setCloud("compatible", { model: cfg?.model ?? "", baseUrl: trimBase(base) })}>Save</button>
+            <button
+              className={btnGhost}
+              onClick={() => {
+                const baseUrl = trimBase(base);
+                const save = () => s.setCloud("compatible", { model: cfg?.model ?? "", baseUrl });
+                const key = `compatible:${baseUrl}`;
+                if (!baseUrl || s.settings.consent.includes(key)) return void save();
+                let where = "the API address you set";
+                try {
+                  where = new URL(baseUrl).host || where;
+                } catch {
+                  /* keep the generic wording */
+                }
+                ask({ provider: "compatible", key, where, then: save });
+              }}
+            >
+              Save
+            </button>
           </div>
         </label>
       )}
@@ -312,8 +338,9 @@ function AcpFields() {
         </label>
       )}
       <p className="text-xs text-gray-500">
-        The agent uses its own login (your Claude, ChatGPT or Gemini subscription). Retrans gives it no access to your files or terminal: it
-        can only reply with text.
+        The agent uses its own login (your Claude, ChatGPT or Gemini subscription) and runs on this computer. Retrans gives it no file or
+        terminal access of its own and refuses every permission it asks for, but its own built-in tools can still read files on this
+        computer. Use agents you trust, and prefer an API provider for text from people you don't know.
       </p>
     </div>
   );
