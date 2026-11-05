@@ -21,7 +21,12 @@ export const ACP_PRESETS: Record<Exclude<Acp["preset"], "custom">, { label: stri
 
 const trimBase = (u: string) => u.trim().replace(/\/+$/, "");
 const accountOf = (p: Cloud, baseUrl?: string) => (p === "compatible" ? `compatible:${trimBase(baseUrl ?? "")}` : p);
-const storeName = () => (/Mac/.test(navigator.userAgent) ? "Keychain" : "Credential Manager");
+const storeName = () => {
+  const ua = navigator.userAgent;
+  if (/Mac/.test(ua)) return "Keychain";
+  if (/Windows/.test(ua)) return "Credential Manager";
+  return "your system keyring";
+};
 
 /** Where text goes, for the one-time consent. */
 function destination(p: ProviderId, s: MtSettings): string {

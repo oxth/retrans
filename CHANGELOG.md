@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### What's new
+
+- **Linux.** Retrans now runs on Linux, as an AppImage (which updates itself) or a .deb package for Debian and Ubuntu. API keys are kept in your system keyring (GNOME Keyring or KWallet). The built-in AI model runs on the CPU in a version that works on any 64-bit PC, so it is slower than on macOS and Windows; cloud AI providers are unaffected.
+
 ### Improvements
 
 - **New app icon.** A grid of translations with one missing cell flagged in red, the same way Retrans marks missing translations. It stays clear at small sizes in the Dock, taskbar and file lists.

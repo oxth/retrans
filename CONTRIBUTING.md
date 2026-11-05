@@ -8,6 +8,7 @@ Retrans is a [Tauri 2](https://tauri.app/) app: a React + TypeScript frontend in
 - pnpm
 - Rust (stable toolchain) and the [Tauri 2 platform prerequisites](https://tauri.app/start/prerequisites/)
 - CMake, to build the embedded translation engine (llama.cpp): `brew install cmake` on macOS. On Windows, install CMake and the MSVC build tools.
+- Linux (Ubuntu/Debian): `sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libxdo-dev build-essential cmake clang`
 
 ## Development
 
@@ -83,13 +84,13 @@ The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every branch push and pull request, on macOS and Windows: frontend tests, type check, `cargo test`, and an engine smoke test with a tiny (1.2 MB) model whose SHA-256 is checked. On Windows it also builds the NSIS installer and fails if `llama.dll`, `ggml*.dll` or the `ggml-cpu-*.dll` variants are not next to `retrans.exe` in the installer.
+`.github/workflows/ci.yml` runs on every branch push and pull request, on macOS, Windows and Linux (Ubuntu 22.04): frontend tests, type check, `cargo test`, and an engine smoke test with a tiny (1.2 MB) model whose SHA-256 is checked. On Linux it also builds the AppImage and .deb. On Windows it also builds the NSIS installer and fails if `llama.dll`, `ggml*.dll` or the `ggml-cpu-*.dll` variants are not next to `retrans.exe` in the installer.
 
 `.github/workflows/pages.yml` publishes the website in `site/` to GitHub Pages whenever `site/` or `CHANGELOG.md` changes on `main`. The website's changelog shows released versions only; an `## [Unreleased]` section stays in `CHANGELOG.md` until release.
 
 ## Releasing
 
-Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed. It builds macOS installers for Apple Silicon (M1 and later) only, and Windows installers, signs the updater artifacts, and uploads everything, including `latest.json`, to a **draft** GitHub release.
+Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed. It builds macOS installers for Apple Silicon (M1 and later) only, Windows installers, and a Linux AppImage and .deb (built on Ubuntu 22.04 so they run on older systems too), signs the updater artifacts, and uploads everything, including `latest.json`, to a **draft** GitHub release.
 
 1. Bump `version` in `src-tauri/tauri.conf.json` and `package.json` (they must match; the workflow fails if the tag doesn't match both).
 2. In `CHANGELOG.md`, rename `## [Unreleased]` to the new version and date, and add its link at the bottom.
