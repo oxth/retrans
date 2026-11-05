@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { resolve } from "node:path";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -270,5 +270,57 @@ describe("StartScreen translator package", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open translator package…" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("This file isn't a Retrans package or project.");
     expect(await fs.exists("/w/foo")).toBe(false);
+  });
+});
+
+describe("opening a folder of Figma Variables files", () => {
+  const FIGMA = resolve(__dirname, "../test/fixtures/figma/ALL") + "/";
+  const DL = "/Users/someone/Downloads/ALL (1)";
+  const figmaFolder = () => {
+    const { readFileSync } = process.getBuiltinModule("node:fs");
+    return new MemoryFs({
+      [`${DL}/ENG.tokens.json`]: readFileSync(`${FIGMA}ENG.tokens.json`, "utf8"),
+      [`${DL}/TH.tokens.json`]: readFileSync(`${FIGMA}TH.tokens.json`, "utf8"),
+    });
+  };
+
+  it("offers to create a workspace there and opens it with the Figma strings", async () => {
+    const fs = figmaFolder();
+    pick.value = DL;
+    await setup(fs);
+    await userEvent.click(screen.getByRole("button", { name: "Open project" }));
+    const dlg = await screen.findByRole("dialog", { name: "Create a workspace from Figma files" });
+    expect(within(dlg).getByLabelText("Language for ENG")).toHaveValue("en");
+    expect(within(dlg).getByLabelText("Language for TH")).toHaveValue("th");
+    await userEvent.selectOptions(within(dlg).getByLabelText("Base language"), "th");
+    await userEvent.click(within(dlg).getByRole("button", { name: "Create workspace" }));
+    await screen.findByRole("button", { name: "Close project" });
+    const s = useApp.getState().session!;
+    expect(s.workspace?.figma).toMatchObject({ dir: ".", modes: { ENG: "en", TH: "th" } });
+    await waitFor(() =>
+      expect(s.value("figma::ข้อมูลการรับประกัน", "en")).toEqual({ kind: "text", text: "Warranty info" }),
+    );
+    expect(s.data.baseLocale).toBe("th");
+    // The Figma files themselves are untouched.
+    const { readFileSync } = process.getBuiltinModule("node:fs");
+    expect(await fs.readText(`${DL}/ENG.tokens.json`)).toBe(readFileSync(`${FIGMA}ENG.tokens.json`, "utf8"));
+  });
+
+  it("reopening the folder later opens the workspace directly", async () => {
+    const fs = figmaFolder();
+    pick.value = DL;
+    await setup(fs);
+    await userEvent.click(screen.getByRole("button", { name: "Open project" }));
+    const dlg = await screen.findByRole("dialog", { name: "Create a workspace from Figma files" });
+    await userEvent.click(within(dlg).getByRole("button", { name: "Create workspace" }));
+    await screen.findByRole("button", { name: "Close project" });
+    expect(await detectProject(fs, DL)).not.toBeNull();
+  });
+
+  it("a folder with neither a project nor Figma files still says so", async () => {
+    pick.value = "/empty";
+    await setup(new MemoryFs({ "/empty/readme.txt": "hi" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open project" }));
+    expect(await screen.findByText("No next-i18next or Paraglide project found in this folder.")).toBeInTheDocument();
   });
 });
