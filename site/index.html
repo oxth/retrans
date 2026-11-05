@@ -91,12 +91,19 @@
     nav a:hover { color: var(--text); background: var(--hover); }
     nav a.gh { display: inline-flex; align-items: center; gap: 6px; color: var(--text); border: 1px solid var(--line); margin-left: 6px; }
     nav a.gh svg { width: 16px; height: 16px; fill: currentColor; }
-    /* Language switch: two options, the current one highlighted. */
-    .lang-switch { display: inline-flex; align-items: center; gap: 2px; padding: 3px; margin-left: 6px; border: 1px solid var(--line); border-radius: 10px; }
-    .lang-switch .icon { width: 16px; height: 16px; margin: 0 2px 0 6px; color: var(--muted); }
-    nav .lang-switch a { display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; font-size: 14px; border-radius: 7px; }
-    nav .lang-switch a[aria-current="page"] { background: var(--brand-soft); color: var(--brand-text); font-weight: 600; }
-    nav .lang-switch a[aria-current="page"]:hover { background: var(--brand-soft); color: var(--brand-text); }
+    /* Language menu: a button showing the current language, opening a list of all languages. */
+    .lang-menu { position: relative; margin-left: 6px; }
+    .lang-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 10px; font: inherit; font-size: 15px; color: var(--text); background: none; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+    .lang-btn:hover, .lang-btn[aria-expanded="true"] { background: var(--hover); }
+    .lang-btn .icon { width: 16px; height: 16px; color: var(--muted); }
+    .lang-btn .chev { width: 14px; height: 14px; transition: transform .15s ease; }
+    .lang-btn[aria-expanded="true"] .chev { transform: rotate(180deg); }
+    .lang-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 25; min-width: 168px; margin: 0; padding: 6px; list-style: none; background: var(--card); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: var(--shadow); }
+    nav .lang-list a { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; font-size: 15px; color: var(--text); border-radius: 8px; }
+    nav .lang-list a:hover { background: var(--hover); }
+    .lang-list .icon { width: 16px; height: 16px; color: var(--brand-text); visibility: hidden; }
+    nav .lang-list a[aria-current="page"] { font-weight: 600; color: var(--brand-text); }
+    .lang-list a[aria-current="page"] .icon { visibility: visible; }
     /* Suggests the Thai page to Thai-language browsers on the English page. */
     .lang-hint { position: fixed; z-index: 30; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 16px; background: var(--card); color: var(--text); border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: var(--shadow); font-size: 15px; }
     .lang-hint span { flex: 1; }
@@ -250,7 +257,6 @@
     }
     @media (max-width: 560px) {
       nav > a:not(.gh) { display: none; }
-      nav .lang-switch a { min-height: 40px; }
       .lang-hint { left: max(16px, env(safe-area-inset-left, 0px)); }
       .btn { width: 100%; }
       .hero { padding-top: 40px; }
@@ -278,10 +284,16 @@
         <a href="#features">Features</a>
         <a href="#install">Install</a>
         <a href="#changelog">Changelog</a>
-        <div class="lang-switch" role="group" aria-label="Language">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
-          <a href="./" hreflang="en" lang="en" aria-label="English" aria-current="page">EN</a>
-          <a href="th/" hreflang="th" lang="th" aria-label="ภาษาไทย">ไทย</a>
+        <div class="lang-menu">
+          <button type="button" class="lang-btn" aria-expanded="false" aria-controls="lang-list" aria-label="Language: English">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+            <span>English</span>
+            <svg class="icon chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <ul class="lang-list" id="lang-list" hidden>
+            <li><a href="./" hreflang="en" lang="en" aria-current="page"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>English</a></li>
+            <li><a href="th/" hreflang="th" lang="th"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>ไทย</a></li>
+          </ul>
         </div>
         <a class="gh" href="https://github.com/oxth/retrans"><svg aria-hidden="true"><use href="#i-github"/></svg>GitHub</a>
       </nav>
@@ -495,10 +507,32 @@
       get() { try { return localStorage.getItem(LANG_KEY); } catch { return null; } },
       set(v) { try { localStorage.setItem(LANG_KEY, v); } catch {} },
     };
-    for (const a of document.querySelectorAll(".lang-switch a[hreflang]")) {
+    const langMenu = document.querySelector(".lang-menu");
+    const langBtn = langMenu.querySelector(".lang-btn");
+    const langList = langMenu.querySelector(".lang-list");
+    const setLangOpen = (open, focusButton) => {
+      langBtn.setAttribute("aria-expanded", String(open));
+      langList.hidden = !open;
+      if (open) langList.querySelector('[aria-current="page"]').focus();
+      else if (focusButton) langBtn.focus();
+    };
+    langBtn.addEventListener("click", () => setLangOpen(langList.hidden));
+    langMenu.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !langList.hidden) setLangOpen(false, true);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        const items = [...langList.querySelectorAll("a")];
+        if (langList.hidden) { e.preventDefault(); setLangOpen(true); return; }
+        const i = items.indexOf(document.activeElement);
+        e.preventDefault();
+        items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+      }
+    });
+    document.addEventListener("click", (e) => { if (!langMenu.contains(e.target)) setLangOpen(false); });
+    langMenu.addEventListener("focusout", (e) => { if (!langMenu.contains(e.relatedTarget)) setLangOpen(false); });
+    for (const a of langList.querySelectorAll("a[hreflang]")) {
       a.addEventListener("click", (e) => {
         store.set(a.hreflang);
-        if (a.getAttribute("aria-current") === "page") { e.preventDefault(); return; }
+        if (a.getAttribute("aria-current") === "page") { e.preventDefault(); setLangOpen(false, true); return; }
         if (location.hash) a.href = a.href.split("#")[0] + location.hash;
       });
     }

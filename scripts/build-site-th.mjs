@@ -54,14 +54,15 @@ const pairs = [
   ['<a href="#features">Features</a>', '<a href="#features">ฟีเจอร์</a>'],
   ['<a href="#install">Install</a>', '<a href="#install">ติดตั้ง</a>'],
   ['<a href="#changelog">Changelog</a>', '<a href="#changelog">มีอะไรใหม่</a>'],
-  ['<div class="lang-switch" role="group" aria-label="Language">', '<div class="lang-switch" role="group" aria-label="ภาษา">'],
+  ['aria-label="Language: English"', 'aria-label="ภาษา: ไทย"'],
+  ["<span>English</span>", "<span>ไทย</span>"],
   [
-    '<a href="./" hreflang="en" lang="en" aria-label="English" aria-current="page">EN</a>',
-    '<a href="../" hreflang="en" lang="en" aria-label="English">EN</a>',
+    '<a href="./" hreflang="en" lang="en" aria-current="page">',
+    '<a href="../" hreflang="en" lang="en">',
   ],
   [
-    '<a href="th/" hreflang="th" lang="th" aria-label="ภาษาไทย">ไทย</a>',
-    '<a href="./" hreflang="th" lang="th" aria-label="ภาษาไทย" aria-current="page">ไทย</a>',
+    '<a href="th/" hreflang="th" lang="th">',
+    '<a href="./" hreflang="th" lang="th" aria-current="page">',
   ],
 
   // Hero
