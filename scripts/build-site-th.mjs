@@ -22,8 +22,8 @@ const pairs = [
     "<title>Retrans — โปรแกรมแก้ไขไฟล์แปลภาษา (i18n) ฟรี สำหรับ next-i18next และ Paraglide</title>",
   ],
   [
-    'content="Retrans is a free desktop app for editing next-i18next, Paraglide, TypeScript and Figma translations, with local or cloud AI translation. macOS and Windows."',
-    'content="Retrans แอปเดสก์ท็อปฟรีสำหรับแก้ไขไฟล์แปลภาษา next-i18next, Paraglide, TypeScript และ Figma พร้อม AI ช่วยแปลทั้งแบบในเครื่องและบนคลาวด์ ใช้ได้บน macOS และ Windows"',
+    'content="Retrans is a free desktop app for editing next-i18next, Paraglide, TypeScript and Figma translations, with local or cloud AI translation. macOS, Windows and Linux."',
+    'content="Retrans แอปเดสก์ท็อปฟรีสำหรับแก้ไขไฟล์แปลภาษา next-i18next, Paraglide, TypeScript และ Figma พร้อม AI ช่วยแปลทั้งแบบในเครื่องและบนคลาวด์ ใช้ได้บน macOS, Windows และ Linux"',
   ],
   [`<link rel="canonical" href="${BASE}">`, `<link rel="canonical" href="${BASE}th/">`],
   ['<meta property="og:locale" content="en_US">', '<meta property="og:locale" content="th_TH">'],
@@ -88,6 +88,8 @@ const pairs = [
     "ดาวน์โหลดสำหรับ Windows<small>Windows 10 และ 11 (64 บิต)</small>",
   ],
   ["Download for Windows<small>Windows 10 and 11</small>", "ดาวน์โหลดสำหรับ Windows<small>Windows 10 และ 11</small>"],
+  ["Download for Linux<small>AppImage, 64-bit</small>", "ดาวน์โหลดสำหรับ Linux<small>AppImage, 64 บิต</small>"],
+  ["Download for Linux<small>AppImage</small>", "ดาวน์โหลดสำหรับ Linux<small>AppImage</small>"],
   ['<span id="version">Latest release</span>', '<span id="version">รุ่นล่าสุด</span>'],
   [">All releases</a>", ">ทุกรุ่น</a>"],
   ["</svg>Free, no account</li>", "</svg>ฟรี ไม่ต้องสมัครบัญชี</li>"],
@@ -175,8 +177,17 @@ const pairs = [
     "<li>ถ้า SmartScreen แจ้งว่าได้ปกป้องพีซีของคุณ ให้คลิก <strong>More info → Run anyway</strong></li>",
   ],
   [
-    "<span>Retrans updates itself: once installed, new versions are offered inside the app.</span>",
-    "<span>Retrans อัปเดตตัวเองได้ เมื่อติดตั้งแล้ว เวอร์ชันใหม่จะแจ้งให้อัปเดตภายในแอป</span>",
+    "<span>Retrans updates itself on macOS, Windows and with the Linux AppImage: once installed, new versions are offered inside the app.</span>",
+    "<span>Retrans อัปเดตตัวเองได้บน macOS, Windows และ AppImage บน Linux เมื่อติดตั้งแล้ว เวอร์ชันใหม่จะแจ้งให้อัปเดตภายในแอป</span>",
+  ],
+
+  [
+    "<li>Make the downloaded AppImage executable with <code>chmod +x Retrans_*.AppImage</code>, then run it. If it doesn't start, install <code>libfuse2</code> (<code>libfuse2t64</code> on Ubuntu 24.04).</li>",
+    "<li>ทำให้ไฟล์ AppImage ที่ดาวน์โหลดมารันได้ด้วยคำสั่ง <code>chmod +x Retrans_*.AppImage</code> แล้วเปิดใช้งาน ถ้าเปิดไม่ขึ้น ให้ติดตั้ง <code>libfuse2</code> (บน Ubuntu 24.04 ใช้ <code>libfuse2t64</code>)</li>",
+  ],
+  [
+    "<li>On Debian or Ubuntu you can use the <a data-os=\"deb\" href=\"https://github.com/oxth/retrans/releases/latest\">.deb package</a> instead: <code>sudo apt install ./Retrans_*_amd64.deb</code>. It doesn't update itself; install the newer .deb to update.</li>",
+    "<li>บน Debian หรือ Ubuntu จะใช้<a data-os=\"deb\" href=\"https://github.com/oxth/retrans/releases/latest\">แพ็กเกจ .deb</a>แทนก็ได้: <code>sudo apt install ./Retrans_*_amd64.deb</code> แบบนี้จะไม่อัปเดตตัวเอง ต้องติดตั้งไฟล์ .deb เวอร์ชันใหม่เมื่อต้องการอัปเดต</li>",
   ],
 
   // Changelog (the entries themselves come from CHANGELOG.md and stay in English)
@@ -192,8 +203,8 @@ const pairs = [
   // Closing call to action and footer
   ["<h2>Give your translations one good home</h2>", "<h2>ให้งานแปลของคุณมีที่อยู่ที่ดี</h2>"],
   [
-    "<p>Free for macOS and Windows. No account, nothing to set up.</p>",
-    "<p>ฟรีสำหรับ macOS และ Windows ไม่ต้องมีบัญชี ไม่ต้องตั้งค่าอะไร</p>",
+    "<p>Free for macOS, Windows and Linux. No account, nothing to set up.</p>",
+    "<p>ฟรีสำหรับ macOS, Windows และ Linux ไม่ต้องมีบัญชี ไม่ต้องตั้งค่าอะไร</p>",
   ],
   [">Report a problem</a>", ">แจ้งปัญหา</a>"],
   ['<a href="https://github.com/oxth/retrans/releases">Releases</a>', '<a href="https://github.com/oxth/retrans/releases">ทุกรุ่น</a>'],

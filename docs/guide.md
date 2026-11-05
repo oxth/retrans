@@ -17,7 +17,7 @@ Retrans can suggest a translation while you edit a cell, or fill every missing c
 - **Built-in model.** Runs entirely on your computer. Pick a model in Settings; sizes start at about 1.8 GB, and the settings list the exact download size of each. Models live in the app data folder; a custom GGUF file you add stays where it is.
   - TranslateGemma is under the Gemma terms of use. The app shows a summary and links, and asks you to accept before downloading.
   - The Qwen models follow your custom instructions. TranslateGemma uses a fixed prompt, and Settings says so.
-- **Cloud APIs.** OpenAI (ChatGPT), Claude (Anthropic), or any OpenAI-compatible API such as OpenRouter, Groq, DeepSeek, Ollama or LM Studio. API keys are stored in the macOS Keychain or Windows Credential Manager, never in files.
+- **Cloud APIs.** OpenAI (ChatGPT), Claude (Anthropic), or any OpenAI-compatible API such as OpenRouter, Groq, DeepSeek, Ollama or LM Studio. API keys are stored in the macOS Keychain, Windows Credential Manager or your Linux desktop's keyring, never in files.
 - **AI agents (ACP).** Use an agent you already have, such as Claude Code, Codex or Gemini CLI, with your existing subscription.
 
 The first time you choose a provider that sends text off your computer, Retrans asks before sending anything and names where it goes. **Test this model** shows exactly what is sent. Each project can use its own provider, and replies stream in as they arrive.

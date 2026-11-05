@@ -18,7 +18,7 @@
 <p align="center">
   <a href="https://github.com/oxth/retrans/releases/latest"><img src="https://img.shields.io/github/v/release/oxth/retrans?label=release" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey" alt="macOS and Windows">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey" alt="macOS, Windows and Linux">
 </p>
 
 <p align="center">
@@ -33,8 +33,9 @@ Retrans shows every key and language side by side, makes missing translations im
 | --- | --- |
 | [macOS](https://github.com/oxth/retrans/releases/latest) | Apple Silicon (M1 and later), macOS 11 Big Sur or newer |
 | [Windows](https://github.com/oxth/retrans/releases/latest) | Windows 10 or 11, 64-bit |
+| [Linux](https://github.com/oxth/retrans/releases/latest) | 64-bit (x86-64): AppImage for any distribution, .deb for Debian and Ubuntu, or .rpm for Fedora |
 
-Once installed, Retrans updates itself: new versions are offered inside the app.
+Once installed, Retrans updates itself on macOS, Windows and with the Linux AppImage: new versions are offered inside the app. The .deb package is updated by installing the newer .deb.
 
 ### First launch
 
@@ -42,6 +43,9 @@ Releases aren't code-signed yet, so the system warns the first time you open Ret
 
 - **macOS:** open the app once (macOS says it can't verify the developer), then go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. On macOS 14 and older you can also right-click the app and choose **Open**. If macOS ever says the app "is damaged", run `xattr -cr /Applications/Retrans.app` once in Terminal and open it again.
 - **Windows:** when SmartScreen appears, click **More info**, then **Run anyway**.
+- **Linux (AppImage):** make it executable with `chmod +x Retrans_*.AppImage`, then run it. If it doesn't start, install `libfuse2` (`libfuse2t64` on Ubuntu 24.04).
+- **Linux (.deb):** `sudo apt install ./Retrans_*_amd64.deb`.
+- **Linux (.rpm):** `sudo dnf install ./Retrans-*.x86_64.rpm`.
 
 ## Supported formats
 
@@ -68,7 +72,7 @@ The [guide](docs/guide.md) covers each of these in detail.
 
 ## Privacy
 
-Retrans has no account and no telemetry. With the built-in model, your text never leaves your computer: the only network traffic is the model download from huggingface.co and update checks on github.com. Text is sent elsewhere only if you choose a cloud provider or an AI agent, and Retrans asks first, naming where it goes. API keys are stored in the macOS Keychain or Windows Credential Manager, never in files.
+Retrans has no account and no telemetry. With the built-in model, your text never leaves your computer: the only network traffic is the model download from huggingface.co and update checks on github.com. Text is sent elsewhere only if you choose a cloud provider or an AI agent, and Retrans asks first, naming where it goes. API keys are stored in the macOS Keychain, Windows Credential Manager or your Linux desktop's keyring (GNOME Keyring or KWallet), never in files.
 
 ## Build from source
 
