@@ -41,9 +41,11 @@ export async function translateText(
   tgt: string,
   text: string,
   reqId: number = nextReqId(),
+  /** Custom instructions (used by Qwen-style models; TranslateGemma's prompt is fixed). */
+  instructions?: string,
 ): Promise<TranslateResult> {
   const p = protect(format, text);
-  const { prompt, addBos, stop } = buildPrompt(model.template, src, tgt, p.masked);
+  const { prompt, addBos, stop } = buildPrompt(model.template, src, tgt, p.masked, instructions);
   let raw: string;
   try {
     raw = await engine.generate({
