@@ -192,7 +192,7 @@ function TestPanel({ session }: { session: ProjectSession }) {
   );
 }
 
-export function MtSettings({ session }: { session: ProjectSession }) {
+export function MtSettings({ session }: { session: ProjectSession | null }) {
   const s = useMt();
   const used = useMt((x) => spaceUsed(x));
   const [license, setLicense] = useState<CatalogModel | null>(null);
@@ -220,7 +220,7 @@ export function MtSettings({ session }: { session: ProjectSession }) {
           ))}
           <CustomCard />
           <div className="text-xs text-gray-600">Space used: {formatBytes(used)}</div>
-          <TestPanel session={session} />
+          {session && <TestPanel session={session} />}
         </>
       )}
       {license && (

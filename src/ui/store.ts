@@ -30,6 +30,9 @@ export interface PendingRecovery { journal: Journal; path: string }
  */
 export type UiConflict = Conflict & { origin?: "source" | "figma"; base?: MessageValue };
 
+export type UiRequestKind = "export" | "import-figma" | "view-list" | "view-table" | "new-project" | "open-project";
+
+export const UNDO_SKIPPED_MESSAGE = "Some changes came from your code or Figma since — those weren't undone.";
 export const SOURCE_MISSING_MESSAGE = "Source files not found — showing the saved workspace.";
 export const SOURCE_INVALID_MESSAGE = "The workspace's source folder setting is invalid — showing the saved workspace.";
 
@@ -60,6 +63,7 @@ export const normRoot = (root: string) => root.replace(/[\\/]+$/, "") || root;
 
 export interface AppState {
   fs: Fs;
+  prefsOpen: boolean;
   /** Open projects, in tab order. */
   tabs: Tab[];
   /** The tab on screen; null shows the start screen (other tabs may still be open). */
@@ -87,6 +91,8 @@ export interface AppState {
     | { then: "quit"; tabs: string[] }
     | { then: "proceed"; tabs: string[]; resolve: (go: boolean) => void }
     | null;
+  openPrefs(): void;
+  closePrefs(): void;
   switchTab(id: string): void;
   /** The "+" button: keeps every tab and shows the start screen. */
   showStart(): void;
@@ -127,6 +133,16 @@ export interface AppState {
   /** Ids of the tabs with unsaved changes, in tab order (LEGACY_TAB for a session set without a tab). */
   dirtyTabs(): string[];
   resolveConflict(c: UiConflict, pick: "mine" | "theirs"): void;
+  /**
+   * A request from the app menu for a screen to act on (open the Export dialog, start Open
+   * project…). `n` makes a repeated request distinct; the screen clears it once handled.
+   */
+  uiRequest: { kind: UiRequestKind; n: number } | null;
+  requestUi(kind: UiRequestKind): void;
+  clearUiRequest(): void;
+  /** Undo / redo the active tab's last step (see ProjectSession.undo). */
+  undo(): void;
+  redo(): void;
   /** Resolves a conflict with a final text the user typed (keeps "mine", then sets the text). */
   resolveConflictWith(c: UiConflict, text: string): void;
   resolveAllConflicts(pick: "mine" | "theirs"): void;
@@ -314,11 +330,20 @@ export const useApp = create<AppState>((set, get) => {
 
   return {
   fs: tauriFs,
+  prefsOpen: false,
   tabs: [],
   activeId: null,
   notice: null,
   ...emptyFlat(),
   closePrompt: null,
+
+  openPrefs() {
+    set({ prefsOpen: true });
+  },
+
+  closePrefs() {
+    set({ prefsOpen: false });
+  },
 
   switchTab(id) {
     const s = get();
@@ -580,6 +605,24 @@ export const useApp = create<AppState>((set, get) => {
       conflicts: [...cur.conflicts.filter((c) => c.origin !== "source"), ...fresh],
     }));
     return r;
+  },
+
+  uiRequest: null,
+  requestUi(kind) {
+    set((s) => ({ uiRequest: { kind, n: (s.uiRequest?.n ?? 0) + 1 } }));
+  },
+  clearUiRequest() {
+    set({ uiRequest: null });
+  },
+
+  undo() {
+    const s = get().session;
+    if (s && s.undo().skipped > 0) set({ error: UNDO_SKIPPED_MESSAGE });
+  },
+
+  redo() {
+    const s = get().session;
+    if (s && s.redo().skipped > 0) set({ error: UNDO_SKIPPED_MESSAGE });
   },
 
   resolveConflictWith(c, text) {

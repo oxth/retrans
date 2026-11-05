@@ -15,6 +15,12 @@ import { expandPluralKeys, isApplicable, pluralCategories, splitPlural } from ".
 import {
   applyChanges, type CellChange, checkCollision, isValidLocale, KeyError, newFile, validateKey,
 } from "./session-helpers";
+import { type CellImage, HISTORY_LIMIT, isEmpty, localesOf, moveMeta, moveOrder, sameCell, sameOrder, type Step } from "./history";
+
+/** See ProjectSession.beginGroup. */
+export interface UndoGroup {
+  step: Step;
+}
 import type { Journal } from "./recovery";
 import { planReload } from "./session-reload";
 import { parseState, reconcile, serializeState, STATE_PATH, type StateEntry, type StateFile } from "./state-file";
@@ -93,6 +99,14 @@ export class ProjectSession {
   /** Nesting depth of batch(); listeners are held while > 0. */
   private batchDepth = 0;
   private batchEmitted = false;
+  /** Undo history (see history.ts). */
+  private undoStack: Step[] = [];
+  private redoStack: Step[] = [];
+  private openStep: Step | null = null;
+  /** > 0 while changes must not be recorded: external changes, or undo/redo applying a step. */
+  private noRecord = 0;
+  /** The group whose writes are being recorded right now (inside inGroup). */
+  private activeGroup: UndoGroup | null = null;
   private dirtyCache: { version: number; cells: Array<{ id: KeyId; locale: string }> } | null = null;
   /** Workspace meta (null for plain projects); written by save() when it differs from metaBaseline. */
   private wsMeta: WorkspaceMeta | null;
@@ -221,6 +235,11 @@ export class ProjectSession {
    * its group. Doesn't make the session dirty.
    */
   private addExtraRows(): void {
+    // Rows derived from the source, not an edit: never an undo step on their own.
+    this.external(() => this.addExtraRowsNow());
+  }
+
+  private addExtraRowsNow(): void {
     if (!this.wsMeta) return;
     const known = keySet(this.data.keyOrder);
     const extra = [...new Set([...this.wsMeta.emptyKeys, ...this.roCells.map((r) => r.id)])].filter(
@@ -250,6 +269,7 @@ export class ProjectSession {
   /** Workspace only: merge `patch` into the meta; written by the next save(). */
   setWorkspaceMeta(patch: Partial<WorkspaceMeta>): void {
     if (!this.wsMeta) throw new Error("This project is not a workspace");
+    this.stepNow();
     this.wsMeta = { ...this.wsMeta, ...patch, retransWorkspace: 1 };
     if (patch.emptyKeys) this.addExtraRows();
     this.emit();
@@ -297,9 +317,12 @@ export class ProjectSession {
     try {
       return fn();
     } finally {
-      if (--this.batchDepth === 0 && this.batchEmitted) {
-        this.batchEmitted = false;
-        this.notify();
+      if (--this.batchDepth === 0) {
+        this.closeStep();
+        if (this.batchEmitted) {
+          this.batchEmitted = false;
+          this.notify();
+        }
       }
     }
   }
@@ -417,6 +440,7 @@ export class ProjectSession {
 
   markReviewed(id: KeyId, locale: string): void {
     this.requireKey(id);
+    this.touch(id);
     recordReviewed(this.data, this.state, id, locale);
     this.stateTouched = true;
     this.emit();
@@ -480,6 +504,7 @@ export class ProjectSession {
     for (const target of pairs.values()) checkCollision(this.data.keyOrder, ns, parseKeyId(target).key, ignore);
     for (const src of pairs.keys()) this.assertWritableKey(src);
     if ([...pairs.keys()].some((src) => this.roCells.some((r) => r.id === src))) throw new Error(RENAME_READ_ONLY_MESSAGE);
+    this.touch(...pairs.keys(), ...pairs.values());
 
     for (const [src, dst] of pairs) {
       const cells = this.data.values.get(src);
@@ -508,6 +533,7 @@ export class ProjectSession {
     this.assertWritableKey(id);
     for (const locale of this.data.values.get(id)?.keys() ?? [this.data.baseLocale]) this.assertWritable(locale, target.ns);
     if (this.roCells.some((r) => r.id === id)) throw new Error(RENAME_READ_ONLY_MESSAGE);
+    this.touch(id, to);
 
     const cells = this.data.values.get(id);
     this.data.values.delete(id);
@@ -534,6 +560,7 @@ export class ProjectSession {
     this.requireKey(id);
     const ids = splitPlural(parseKeyId(id).key)?.category === "other" ? this.pluralSiblings(id) : [id];
     for (const k of ids) this.assertWritableKey(k);
+    this.touch(...ids);
     const drop = new Set(ids);
     for (const k of ids) {
       this.data.values.delete(k);
@@ -615,6 +642,8 @@ export class ProjectSession {
   addLanguage(locale: string): { configSnippet?: string } {
     if (!isValidLocale(locale)) throw new Error(`"${locale}" is not a valid locale`);
     if (this.data.locales.includes(locale)) throw new Error(`"${locale}" is already a language of this project`);
+    const step = this.stepNow();
+    if (step) step.lang = { added: locale };
     const [base, ...rest] = this.data.locales;
     const locales =
       this.data.format === "paraglide" ? [base, ...rest, locale] : [base, ...[...rest, locale].sort()];
@@ -631,6 +660,12 @@ export class ProjectSession {
   removeLanguage(locale: string): void {
     if (locale === this.data.baseLocale) throw new Error("The base language can't be removed");
     if (!this.data.locales.includes(locale)) throw new Error(`"${locale}" is not a language of this project`);
+    const step = this.stepNow();
+    if (step) {
+      step.lang = { removed: locale };
+      this.touch(...this.data.values.keys());
+      this.touch(...Object.keys(this.state.entries));
+    }
     for (const f of this.files) if (f.locale === locale) this.removed.set(f.relPath, f);
     this.files = this.files.filter((f) => f.locale !== locale);
     for (const [p, c] of this.creates) if (c.locale === locale) this.creates.delete(p);
@@ -839,6 +874,13 @@ export class ProjectSession {
     const stateText = await readOrNull(this.fs, joinPath(this.root, STATE_PATH));
     const metaText = this.wsMeta ? await readOrNull(this.fs, joinPath(this.root, WORKSPACE_META_PATH)) : null;
     // Everything below is synchronous, so edits made during the awaits are included as "mine".
+    // A reload brings in what's on disk (often our own auto-save): never an undo step.
+    return this.external(() => this.applyReload(load, stateText, metaText));
+  }
+
+  private applyReload(
+    load: Awaited<ReturnType<FormatAdapter["load"]>>, stateText: string | null, metaText: string | null,
+  ): Conflict[] {
     const plan = planReload({ data: this.data, disk: this.disk, creates: this.creates, removed: this.removed, load });
     for (const p of plan.adopted) this.creates.delete(p);
     for (const f of load.files) if (this.removed.has(f.relPath)) this.removed.set(f.relPath, f);
@@ -996,7 +1038,12 @@ export class ProjectSession {
    * mine = journal value; conflicts keep mine until resolveConflict), then status entries for the
    * cells the journal touched only.
    */
+  /** Puts back edits left by a crash: an external change, never an undo step. */
   applyJournal(j: Journal): Conflict[] {
+    return this.external(() => this.applyJournalNow(j));
+  }
+
+  private applyJournalNow(j: Journal): Conflict[] {
     if (normalizePath(j.root) !== normalizePath(this.root)) {
       throw new Error(`Journal root ${j.root} does not match project root ${this.root}`);
     }
@@ -1061,7 +1108,175 @@ export class ProjectSession {
   private emit(): void {
     this.version++;
     if (this.batchDepth > 0) this.batchEmitted = true;
-    else this.notify();
+    else {
+      this.closeStep();
+      this.notify();
+    }
+  }
+
+  // ---- undo / redo ----------------------------------------------------------------------
+
+  get canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+
+  get canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
+
+  /** Runs `fn` without recording its changes: sync from source or Figma, reloads, journals. */
+  external<T>(fn: () => T): T {
+    this.noRecord++;
+    try {
+      return fn();
+    } finally {
+      this.noRecord--;
+    }
+  }
+
+  /**
+   * A long action recorded as one undo step (a Translate-missing run): only the writes made inside
+   * inGroup(group, …) belong to it, so the user's own edits meanwhile stay their own steps.
+   */
+  beginGroup(): UndoGroup {
+    return { step: { before: { cells: new Map() }, after: { cells: new Map() } } };
+  }
+
+  inGroup<T>(group: UndoGroup, fn: () => T): T {
+    const prev = this.activeGroup;
+    this.closeStep();
+    this.activeGroup = group;
+    try {
+      return this.batch(fn);
+    } finally {
+      this.activeGroup = prev;
+    }
+  }
+
+  endGroup(group: UndoGroup): void {
+    const step = group.step;
+    step.after = { cells: new Map([...step.before.cells.keys()].map((id) => [id, this.cellImage(id)])) };
+    group.step = { before: { cells: new Map() }, after: { cells: new Map() } };
+    if (isEmpty(step)) return;
+    this.undoStack.push(step);
+    if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
+    this.redoStack = [];
+  }
+
+  undo(): { done: boolean; skipped: number } {
+    this.closeStep();
+    const step = this.undoStack.pop();
+    if (!step) return { done: false, skipped: 0 };
+    const skipped = this.applyStep(step, "back");
+    this.redoStack.push(step);
+    return { done: true, skipped };
+  }
+
+  redo(): { done: boolean; skipped: number } {
+    this.closeStep();
+    const step = this.redoStack.pop();
+    if (!step) return { done: false, skipped: 0 };
+    const skipped = this.applyStep(step, "forward");
+    this.undoStack.push(step);
+    return { done: true, skipped };
+  }
+
+  private cellImage(id: KeyId): CellImage {
+    const v = this.data.values.get(id);
+    const e = this.state.entries[id];
+    return { values: v ? new Map(v) : undefined, entries: e ? structuredClone(e) : undefined };
+  }
+
+  /** Opens a step (capturing key order and meta) unless recording is off. */
+  private stepNow(): Step | null {
+    if (this.noRecord > 0) return null;
+    if (this.activeGroup) return this.activeGroup.step;
+    this.openStep ??= {
+      before: { cells: new Map(), keyOrder: this.data.keyOrder, meta: this.wsMeta },
+      after: { cells: new Map(), keyOrder: this.data.keyOrder, meta: this.wsMeta },
+    };
+    return this.openStep;
+  }
+
+  /** Records a key's cells and review entries as they were before this step first changed them. */
+  private touch(...ids: KeyId[]): void {
+    const step = this.stepNow();
+    if (!step) return;
+    for (const id of ids) if (!step.before.cells.has(id)) step.before.cells.set(id, this.cellImage(id));
+  }
+
+  private closeStep(): void {
+    const step = this.openStep;
+    if (!step || this.activeGroup || this.batchDepth > 0) return;
+    this.openStep = null;
+    step.after = {
+      cells: new Map([...step.before.cells.keys()].map((id) => [id, this.cellImage(id)])),
+      keyOrder: this.data.keyOrder,
+      meta: this.wsMeta,
+    };
+    if (isEmpty(step)) return;
+    this.undoStack.push(step);
+    if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
+    this.redoStack = [];
+  }
+
+  /** Moves the session from one side of `step` to the other; returns the cells left alone (changed since). */
+  private applyStep(step: Step, dir: "back" | "forward"): number {
+    const [from, to] = dir === "back" ? [step.after, step.before] : [step.before, step.after];
+    const addLang = dir === "back" ? step.lang?.removed : step.lang?.added;
+    const dropLang = dir === "back" ? step.lang?.added : step.lang?.removed;
+    let skipped = 0;
+    this.noRecord++;
+    try {
+      this.batch(() => {
+        if (addLang && !this.data.locales.includes(addLang)) this.addLanguage(addLang);
+        for (const [id, target] of to.cells) {
+          const expected = from.cells.get(id)!;
+          const cur = this.cellImage(id);
+          for (const l of localesOf(expected, target, cur)) {
+            if (sameCell(expected, target, l)) continue; // the step didn't change this cell
+            if (!sameCell(cur, expected, l)) {
+              skipped++;
+              continue; // changed since (e.g. by a sync): never overwritten
+            }
+            const v = target.values?.get(l);
+            let cells = this.data.values.get(id);
+            if (v) {
+              if (!cells) this.data.values.set(id, (cells = new Map()));
+              cells.set(l, v);
+            } else if (cells) {
+              cells.delete(l);
+              if (cells.size === 0) this.data.values.delete(id);
+            }
+            const e = target.entries?.[l];
+            if (e) (this.state.entries[id] ??= {})[l] = { ...e };
+            else if (this.state.entries[id]) {
+              delete this.state.entries[id][l];
+              if (Object.keys(this.state.entries[id]).length === 0) delete this.state.entries[id];
+            }
+          }
+        }
+        // Only the step's own row and meta changes move; anything a sync changed since stays.
+        if (from.keyOrder && to.keyOrder && !sameOrder(from.keyOrder, to.keyOrder)) {
+          const m = moveOrder(this.data.keyOrder, from.keyOrder, to.keyOrder);
+          skipped += m.missing;
+          this.setKeyOrder(m.order);
+        }
+        if (from.meta && to.meta && this.wsMeta && from.meta !== to.meta) {
+          const m = moveMeta(this.wsMeta, from.meta, to.meta);
+          skipped += m.missing;
+          this.wsMeta = m.meta;
+        } else if (from.meta !== undefined && to.meta !== undefined && from.meta !== to.meta && this.wsMeta === from.meta) {
+          this.wsMeta = to.meta;
+        }
+        if (dropLang && this.data.locales.includes(dropLang)) this.removeLanguage(dropLang);
+        this.stateTouched = true;
+        this.emit();
+      });
+    } finally {
+      this.noRecord--;
+    }
+    return skipped;
   }
 
   private notify(): void {
@@ -1081,11 +1296,13 @@ export class ProjectSession {
 
   /** Assign a new keyOrder array (never mutate in place) and re-expand plural categories. */
   private setKeyOrder(order: KeyId[]): void {
+    this.stepNow();
     this.data.keyOrder = expandPluralKeys({ ...this.data, keyOrder: order });
   }
 
   /** Set/clear a value. A base change first pins un-tracked translations to the old base hash. */
   private put(id: KeyId, locale: string, v: MessageValue | undefined): void {
+    this.touch(id);
     let cells = this.data.values.get(id);
     if (locale === this.data.baseLocale && cells && !valuesEqual(cells.get(locale), v)) {
       const h = hashValue(cells.get(locale));

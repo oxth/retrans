@@ -37,6 +37,7 @@ export function startRun(tabId: string, session: ProjectSession, items: BatchIte
   const first = items[0].id;
   setPhase(tabId, { kind: "running", locale, done: 0, total: items.length, current: first });
   useApp.getState().markBusy(tabId, 1);
+  const group = session.beginGroup(); // the run's own writes are one undo step
   const one = async (source: string): Promise<TranslateResult> => {
     try {
       const r = await translate(source, (cancel) => (run.cancelRequest = cancel));
@@ -52,10 +53,11 @@ export function startRun(tabId: string, session: ProjectSession, items: BatchIte
     if (live.get(tabId) === run) setPhase(tabId, { kind: "running", locale, ...p, current: p.current ?? (p.done === 0 ? first : null) });
   };
   let result: BatchResult = { translated: 0, unsafe: [], failed: [], skipped: 0, cancelled: true };
-  void translateMissing(session, items, locale, one, progress, signal)
+  void translateMissing(session, items, locale, one, progress, signal, (fn) => session.inGroup(group, fn))
     .then((r) => (result = r))
     .catch((e) => console.warn("[mt] batch translation failed", e))
     .finally(() => {
+      session.endGroup(group);
       if (live.get(tabId) !== run) return; // the tab was closed: its run is already forgotten
       live.delete(tabId);
       useApp.getState().markBusy(tabId, -1);

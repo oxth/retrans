@@ -361,11 +361,11 @@ describe("settings and load errors", () => {
     expect(s.isDirty()).toBe(true);
   });
 
-  it("settings: default view mode writes prefs", async () => {
+  it("settings links to Preferences for app-wide options", async () => {
     await open(nested());
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
-    await userEvent.selectOptions(screen.getByLabelText("Default view"), "table");
-    await waitFor(() => expect(prefs.get("defaultViewMode")).toBe("table"));
+    expect(screen.getByRole("button", { name: "Preferences…" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Default view")).toBeNull();
   });
 
   it("load error banner lists the malformed file", async () => {

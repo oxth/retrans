@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import type { DetectResult } from "../formats/adapter";
 import { detectProject } from "../formats/detect";
@@ -16,7 +16,7 @@ import { savedBaseLocale, useApp } from "./store";
 import { FigmaWorkspaceDialog, figmaModesIn } from "./FigmaWorkspaceDialog";
 
 export function StartScreen() {
-  const { fs, openProject } = useApp();
+  const { fs, openProject, openPrefs } = useApp();
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [pending, setPending] = useState<{ root: string; detected: DetectResult; savedBase?: string | null } | null>(null);
   const [wizard, setWizard] = useState(false);
@@ -31,6 +31,15 @@ export function StartScreen() {
   useEffect(() => {
     void getRecent().then(setRecent).catch(() => {});
   }, []);
+
+  // Menu requests: File → New Project… / Open Project….
+  const uiRequest = useApp((s) => s.uiRequest);
+  useEffect(() => {
+    if (uiRequest?.kind === "new-project") setWizard(true);
+    else if (uiRequest?.kind === "open-project") void chooseFolderRef.current();
+    else return;
+    useApp.getState().clearUiRequest();
+  }, [uiRequest]);
 
   const detect = async (root: string): Promise<DetectResult | null> => {
     setMessage(null);
@@ -55,6 +64,8 @@ export function StartScreen() {
       setMessage(e instanceof Error ? e.message : String(e));
     }
   };
+  const chooseFolderRef = useRef(chooseFolder);
+  chooseFolderRef.current = chooseFolder;
 
   /**
    * The project in `root`. Failing that, TypeScript locale modules: the workspace of the project
@@ -155,8 +166,13 @@ export function StartScreen() {
   return (
     <main className="flex min-h-0 flex-1 justify-center overflow-auto bg-gray-50 p-8 text-gray-900">
       <div className="my-auto w-full max-w-xl">
-        <h1 className="text-3xl font-bold text-indigo-600">Retrans</h1>
-        <p className="mt-1 text-gray-500">Edit next-i18next and Paraglide translations side by side.</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-bold text-indigo-600">Retrans</h1>
+            <p className="mt-1 text-gray-500">Edit next-i18next and Paraglide translations side by side.</p>
+          </div>
+          <button className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-100" onClick={openPrefs}>Preferences</button>
+        </div>
         <div className="mt-6 flex gap-3">
           <button onClick={chooseFolder} className="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700">
             Open project

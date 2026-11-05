@@ -142,7 +142,8 @@ async function syncNow(session: ProjectSession): Promise<SyncResult> {
   const result: SyncResult = { sourceAvailable: true, conflicts, added: [], updated: [], removedInSource: removedNow, newGroups: [] };
   const added = new Set<KeyId>();
   const updated = new Set<KeyId>();
-  session.batch(() => {
+  // A sync brings in changes made elsewhere: never an undo step.
+  session.external(() => session.batch(() => {
     for (const group of parsedGroups) {
       if (session.data.namespaces.includes(group)) continue;
       session.addNamespace(group);
@@ -200,7 +201,7 @@ async function syncNow(session: ProjectSession): Promise<SyncResult> {
     // After the merge: a cell that just became computed in code still took the source's change.
     session.setSourceReadOnly(src.readOnly);
     session.setSourceKeys(src.keyOrder);
-  });
+  }));
   return result;
 }
 
