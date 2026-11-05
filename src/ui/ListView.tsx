@@ -4,6 +4,7 @@ import type { Row } from "../core/rows";
 import type { ProjectSession } from "../core/session";
 import { Cell, type EditActions } from "./Cell";
 import { RowMenu } from "./RowMenu";
+import { isUnmappedFigmaRow } from "../figma/meta";
 import { RowWarnings } from "./Warnings";
 import { duplicateGroups } from "../workspace/actions";
 
@@ -14,8 +15,17 @@ export interface ViewProps {
   version: number;
   editing: { id: string; locale: string } | null;
   actions: EditActions;
-  onRowAction?: (row: Row, action: "rename" | "delete" | "keep") => void;
+  onRowAction?: (row: Row, action: RowAction) => void;
 }
+
+export type RowAction = "rename" | "delete" | "keep" | "code-key" | "link";
+
+/** A Figma string that has no code key yet (still in its Figma group). */
+export const isFigmaRow = (session: ProjectSession, id: string) =>
+  !!session.workspace?.figma && isUnmappedFigmaRow(session.workspace, id);
+
+/** The row badge for a Figma string with no code key yet. */
+export const NoCodeKeyBadge = () => <span className="rounded bg-violet-50 px-1 text-violet-700">No code key yet</span>;
 
 /** True when this workspace row's key was removed from the TypeScript source. */
 export const isRemovedInSource = (session: ProjectSession, id: string) => !!session.workspace?.removedInSource.includes(id);
@@ -46,6 +56,7 @@ export function ListView({ session, rows, locales, version, editing, actions, on
           const row = rows[vi.index];
           const base = session.value(row.id, session.data.baseLocale);
           const removed = isRemovedInSource(session, row.id);
+          const figmaRow = isFigmaRow(session, row.id);
           return (
             <div
               key={vi.key}
@@ -64,6 +75,8 @@ export function ListView({ session, rows, locales, version, editing, actions, on
                       onRename={() => onRowAction(row, "rename")}
                       onDelete={() => onRowAction(row, "delete")}
                       onKeep={removed ? () => onRowAction(row, "keep") : undefined}
+                      onCodeKey={figmaRow ? () => onRowAction(row, "code-key") : undefined}
+                      onLink={figmaRow ? () => onRowAction(row, "link") : undefined}
                     />
                   )}
                 </div>
@@ -73,6 +86,7 @@ export function ListView({ session, rows, locales, version, editing, actions, on
                     <span className="rounded bg-indigo-50 px-1 text-indigo-700">plural · {row.pluralCategory}</span>
                   )}
                   {base?.kind === "complex" && <span className="rounded bg-gray-100 px-1 text-gray-600">complex</span>}
+                  {figmaRow && <NoCodeKeyBadge />}
                   <RowWarnings duplicateOf={duplicateGroups(session, row.id)} removedInSource={removed} />
                 </div>
               </div>

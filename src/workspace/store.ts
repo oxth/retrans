@@ -4,7 +4,7 @@ import type { DetectResult, FormatAdapter } from "../formats/adapter";
 import { detectAt, nextI18nextAdapter } from "../formats/next-i18next";
 import { type Fs, FsError, joinPath } from "../platform/fs";
 import {
-  parseWorkspaceMeta, serializeWorkspaceMeta, WORKSPACE_DIR, WORKSPACE_META_ERROR, WORKSPACE_META_PATH, type WorkspaceMeta,
+  parseWorkspaceMeta, serializeWorkspaceMeta, WORKSPACE_DIR, WORKSPACE_META_ERROR, WORKSPACE_META_PATH, type FigmaSource, type WorkspaceMeta,
 } from "./meta";
 
 async function readOrNull(fs: Fs, path: string): Promise<string | null> {
@@ -72,10 +72,11 @@ export async function detectWorkspace(fs: Fs, root: string): Promise<DetectResul
  * base language in .retrans/state.json (left alone when that file is malformed).
  */
 export async function createWorkspace(
-  fs: Fs, root: string, opts: { name: string; baseLocale: string; locales: string[]; group?: string },
+  fs: Fs, root: string, opts: { name: string; baseLocale: string; locales: string[]; group?: string; figma?: FigmaSource },
 ): Promise<void> {
   const meta: WorkspaceMeta = {
     retransWorkspace: 1, name: opts.name, drafts: {}, markers: {}, removedInSource: [], duplicates: [], emptyKeys: [], renames: {}, deletedKeys: [],
+    ...(opts.figma ? { figma: opts.figma } : {}),
   };
   const group = opts.group ?? "common";
   const locales = [opts.baseLocale, ...opts.locales.filter((l) => l !== opts.baseLocale)];

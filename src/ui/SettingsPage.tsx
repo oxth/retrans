@@ -6,6 +6,7 @@ import { MtSettings } from "./MtSettings";
 import { useApp } from "./store";
 import { UpdateSettings } from "./UpdateBanner";
 import { StartupSettings } from "./StartupSettings";
+import { FigmaSettings } from "./FigmaSettings";
 
 export function SettingsPage({ session }: { session: ProjectSession }) {
   const [mode, setMode] = useState<"list" | "table">("list");
@@ -83,6 +84,12 @@ export function SettingsPage({ session }: { session: ProjectSession }) {
         <h2 className="text-base font-semibold">Machine translation</h2>
         <MtSettings session={session} />
       </section>
+      {session.workspace && (
+        <section className="space-y-3">
+          <h2 className="text-base font-semibold">Figma</h2>
+          <FigmaSettings session={session} />
+        </section>
+      )}
       <section className="space-y-3">
         <h2 className="text-base font-semibold">Startup</h2>
         <StartupSettings />

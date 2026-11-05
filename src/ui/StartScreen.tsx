@@ -13,6 +13,7 @@ import { ImportTsDialog } from "./ImportTsDialog";
 import { NewProjectWizard } from "./NewProjectWizard";
 import { OpenProjectDialog } from "./OpenProjectDialog";
 import { savedBaseLocale, useApp } from "./store";
+import { FigmaWorkspaceDialog, figmaModesIn } from "./FigmaWorkspaceDialog";
 
 export function StartScreen() {
   const { fs, openProject } = useApp();
@@ -22,6 +23,8 @@ export function StartScreen() {
   /** TypeScript locale modules found where no project was: offered for import. */
   const [importing, setImporting] = useState<{ root: string; localesDir: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  /** Figma Variables files found where no project was: offered as a new workspace. */
+  const [figmaHere, setFigmaHere] = useState<{ root: string; modes: string[] } | null>(null);
   /** A package's folder that already holds that package (re-opened zip): offered instead of extracting. */
   const [existing, setExisting] = useState<string | null>(null);
 
@@ -67,7 +70,12 @@ export function StartScreen() {
       const d = await detectProject(fs, ts.root);
       if (d?.workspace) return { root: ts.root, detected: d };
     }
-    if (ts) setImporting(ts);
+    if (ts) {
+      setImporting(ts);
+      return null;
+    }
+    const modes = await figmaModesIn(fs, root);
+    if (modes.length) setFigmaHere({ root, modes });
     else setMessage("No next-i18next or Paraglide project found in this folder.");
     return null;
   };
@@ -180,6 +188,7 @@ export function StartScreen() {
       {pending && <OpenProjectDialog {...pending} onCancel={() => setPending(null)} />}
       {wizard && <NewProjectWizard onCancel={() => setWizard(false)} />}
       {importing && <ImportTsDialog {...importing} onCancel={() => setImporting(null)} />}
+      {figmaHere && <FigmaWorkspaceDialog {...figmaHere} onClose={() => setFigmaHere(null)} />}
       {existing && (
         <Dialog title="Package already open" onClose={() => setExisting(null)}>
           <p className="break-words text-sm">This package is already open in {existing}. Open it?</p>

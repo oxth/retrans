@@ -1,0 +1,38 @@
+{
+  "เลือกไฮไลต์เซนเซอร์": {
+    "$type": "string",
+    "$value": "Select Highlight Sensors",
+    "$extensions": {
+      "com.figma.variableId": "VariableID:3058:129318",
+      "com.figma.scopes": [
+        "ALL_SCOPES"
+      ],
+      "com.figma.type": "string"
+    }
+  },
+  "ข้อมูลการรับประกัน": {
+    "$type": "string",
+    "$value": "Warranty info",
+    "$extensions": {
+      "com.figma.variableId": "VariableID:3084:181892",
+      "com.figma.scopes": [
+        "ALL_SCOPES"
+      ],
+      "com.figma.type": "string"
+    }
+  },
+  "สวัสดี คุณ": {
+    "$type": "string",
+    "$value": "Welcome {{neme}} to [Product Name]. Thank you for registering with us. To ensure the security of your account, please verify your identity in this final step. Once verified, you will have full access to the system. Please click the button below to confirm your account.",
+    "$extensions": {
+      "com.figma.variableId": "VariableID:3106:435788",
+      "com.figma.scopes": [
+        "ALL_SCOPES"
+      ],
+      "com.figma.type": "string"
+    }
+  },
+  "$extensions": {
+    "com.figma.modeName": "ENG"
+  }
+}

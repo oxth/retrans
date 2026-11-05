@@ -10,12 +10,32 @@ export interface TsSourceRef {
   localesDir: string;
 }
 
+export interface FigmaVarLink {
+  collection: string;
+  name: string;
+  row: KeyId;
+}
+
+export interface FigmaSource {
+  /** Root-relative folder with Figma Variables files. */
+  dir: string;
+  /** Figma mode name -> project locale. */
+  modes: Record<string, string>;
+  /** Figma variable id -> row link. */
+  vars: Record<string, FigmaVarLink>;
+  /** Figma variable id -> locale -> value at the last sync. */
+  baseline: Record<string, Record<string, string>>;
+}
+
+export const FIGMA_DEFAULT_DIR = "design/figma";
+
 export type ExportTarget =
   | { kind: "ts-writeback" }
   | { kind: "ts-copy"; dir: string }
   | { kind: "ts-modules"; dir: string }
   | { kind: "i18next-json"; dir: string; namespaces: "per-group" | "single" }
-  | { kind: "paraglide"; dir: string };
+  | { kind: "paraglide"; dir: string }
+  | { kind: "figma"; dir: string };
 
 export interface ExportSettings {
   target: ExportTarget;
@@ -46,6 +66,7 @@ export interface WorkspaceMeta {
    * brings them back; write-back removes them from the source files, then clears them.
    */
   deletedKeys: KeyId[];
+  figma?: FigmaSource;
   lastExport?: ExportSettings;
 }
 
@@ -86,6 +107,26 @@ function stringMap(v: unknown): Record<string, string> {
   return out;
 }
 
+function parseFigmaVars(v: unknown): Record<string, FigmaVarLink> {
+  const out: Record<string, FigmaVarLink> = {};
+  if (!isRecord(v)) return out;
+  for (const [id, link] of Object.entries(v)) {
+    if (!isRecord(link) || typeof link.collection !== "string" || typeof link.name !== "string" || typeof link.row !== "string") continue;
+    out[id] = { collection: link.collection, name: link.name, row: link.row };
+  }
+  return out;
+}
+
+function parseFigma(v: unknown): FigmaSource | undefined {
+  if (!isRecord(v) || typeof v.dir !== "string" || !isSafeLocalesDir(v.dir)) return undefined;
+  return {
+    dir: v.dir,
+    modes: stringMap(v.modes),
+    vars: parseFigmaVars(v.vars),
+    baseline: stringTable(v.baseline),
+  };
+}
+
 const stringList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
 function parseTarget(v: unknown): ExportTarget | undefined {
@@ -97,6 +138,7 @@ function parseTarget(v: unknown): ExportTarget | undefined {
     case "ts-copy":
     case "ts-modules":
     case "paraglide":
+    case "figma":
       return dir === undefined ? undefined : { kind: v.kind, dir };
     case "i18next-json":
       return dir !== undefined && (v.namespaces === "per-group" || v.namespaces === "single")
@@ -138,6 +180,8 @@ export function parseWorkspaceMeta(text: string | null): WorkspaceMeta | null {
   }
   const target = isRecord(raw.lastExport) ? parseTarget(raw.lastExport.target) : undefined;
   if (target) meta.lastExport = { target };
+  const figma = parseFigma(raw.figma);
+  if (figma) meta.figma = figma;
   return meta;
 }
 

@@ -494,6 +494,42 @@ export class ProjectSession {
     return pairs.get(id)!;
   }
 
+  moveKey(id: KeyId, to: KeyId): KeyId {
+    this.requireKey(id);
+    const from = parseKeyId(id);
+    const target = parseKeyId(to);
+    validateKey(target.key);
+    if (!this.data.namespaces.includes(target.ns)) throw new KeyError("invalid", `namespace "${target.ns}" does not exist`);
+    if (id === to) return id;
+    if (splitPlural(from.key) && this.pluralSiblings(id).length > 1) {
+      throw new KeyError("invalid", `Can't move plural key "${id}"`);
+    }
+    checkCollision(this.data.keyOrder, target.ns, target.key, new Set([id]));
+    this.assertWritableKey(id);
+    for (const locale of this.data.values.get(id)?.keys() ?? [this.data.baseLocale]) this.assertWritable(locale, target.ns);
+    if (this.roCells.some((r) => r.id === id)) throw new Error(RENAME_READ_ONLY_MESSAGE);
+
+    const cells = this.data.values.get(id);
+    this.data.values.delete(id);
+    if (cells) this.data.values.set(to, cells);
+    renameInState(this.state, id, to);
+    if (this.wsMeta) this.moveInMeta(id, to);
+
+    const order = this.data.keyOrder.filter((k) => k !== id);
+    let at = -1;
+    for (let i = order.length - 1; i >= 0; i--) {
+      if (parseKeyId(order[i]).ns === target.ns) {
+        at = i;
+        break;
+      }
+    }
+    order.splice(at < 0 ? order.length : at + 1, 0, to);
+    this.setKeyOrder(order);
+    this.stateTouched = true;
+    this.emit();
+    return to;
+  }
+
   deleteKey(id: KeyId): void {
     this.requireKey(id);
     const ids = splitPlural(parseKeyId(id).key)?.category === "other" ? this.pluralSiblings(id) : [id];
@@ -526,6 +562,23 @@ export class ProjectSession {
     this.wsMeta = {
       ...meta,
       renames,
+      emptyKeys: ids(meta.emptyKeys).sort(),
+      removedInSource: ids(meta.removedInSource),
+      drafts: table(meta.drafts),
+      markers: table(meta.markers),
+    };
+  }
+
+  /** A moved key keeps its workspace marks (empty, removed-in-source, draft, marker). */
+  private moveInMeta(from: KeyId, to: KeyId): void {
+    const meta = this.wsMeta!;
+    const map = (id: KeyId) => (id === from ? to : id);
+    const ids = (list: KeyId[]) => [...new Set(list.map(map))];
+    const table = <T>(t: Record<KeyId, T>) =>
+      Object.fromEntries(Object.entries(t).map(([id, v]) => [map(id), v])) as Record<KeyId, T>;
+    this.sourceIds = new Set([...this.sourceIds].map(map));
+    this.wsMeta = {
+      ...meta,
       emptyKeys: ids(meta.emptyKeys).sort(),
       removedInSource: ids(meta.removedInSource),
       drafts: table(meta.drafts),

@@ -5,6 +5,8 @@ import { appDataDir } from "@tauri-apps/api/path";
 import type { DetectResult, ProjectOptions } from "../formats/adapter";
 import { ProjectSession } from "../core/session";
 import type { Conflict } from "../core/merge";
+import type { MessageValue } from "../core/model";
+import { resolveFigmaConflict, syncFromFigma } from "../figma/sync";
 import { type Journal, journalPath, readJournal } from "../core/recovery";
 import { parseState, STATE_PATH } from "../core/state-file";
 import { isRelevantChange, isSourceChange } from "../core/watch-filter";
@@ -26,7 +28,7 @@ export interface PendingRecovery { journal: Journal; path: string }
  * workspace and in the TypeScript source (from syncFromSource; resolved with resolveSyncConflict).
  * Otherwise: changed both here and in the workspace files on disk (session.resolveConflict).
  */
-export type UiConflict = Conflict & { origin?: "source" };
+export type UiConflict = Conflict & { origin?: "source" | "figma"; base?: MessageValue };
 
 export const SOURCE_MISSING_MESSAGE = "Source files not found — showing the saved workspace.";
 export const SOURCE_INVALID_MESSAGE = "The workspace's source folder setting is invalid — showing the saved workspace.";
@@ -125,6 +127,8 @@ export interface AppState {
   /** Ids of the tabs with unsaved changes, in tab order (LEGACY_TAB for a session set without a tab). */
   dirtyTabs(): string[];
   resolveConflict(c: UiConflict, pick: "mine" | "theirs"): void;
+  /** Resolves a conflict with a final text the user typed (keeps "mine", then sets the text). */
+  resolveConflictWith(c: UiConflict, text: string): void;
   resolveAllConflicts(pick: "mine" | "theirs"): void;
   /**
    * Runs syncFromSource on `session` and, while it is still the open one, shows the outcome:
@@ -166,8 +170,8 @@ export async function savedBaseLocale(fs: Fs, root: string, d: DetectResult): Pr
 
 /** File conflicts brought up to date with `more` added; source conflicts are kept as they are. */
 function withFileConflicts(session: ProjectSession, list: UiConflict[], more: Conflict[]): UiConflict[] {
-  const source = list.filter((c) => c.origin === "source");
-  return [...session.refreshConflicts([...list.filter((c) => c.origin !== "source"), ...more]), ...source];
+  const source = list.filter((c) => c.origin !== undefined);
+  return [...session.refreshConflicts([...list.filter((c) => c.origin === undefined), ...more]), ...source];
 }
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -264,10 +268,12 @@ export const useApp = create<AppState>((set, get) => {
     }));
 
     const sourceDir = session.workspace?.source?.localesDir;
+    // Read each time: the Figma folder can be set (Import Figma files…) after the project opened.
+    const figmaDir = () => session.workspace?.figma?.dir;
     const sync = () => {
       get().syncSource(session).catch((e) => patchSession(session, { error: `Sync from source failed: ${msg(e)}` }));
     };
-    if (sourceDir !== undefined) {
+    if (sourceDir !== undefined || figmaDir() !== undefined) {
       if (recovery) rt.deferredSync = sync; // runs right after the journal is applied
       else sync();
     }
@@ -282,7 +288,10 @@ export const useApp = create<AppState>((set, get) => {
       const stop = await watchDir(root, (paths) => {
         if (!alive()) return;
         // While a recovery is pending the deferred sync covers source changes too.
-        if (sourceDir !== undefined && isSourceChange(paths, root, sourceDir) && !rt.deferredSync) sync();
+        const fd = figmaDir();
+        const changed =
+          (sourceDir !== undefined && isSourceChange(paths, root, sourceDir)) || (fd !== undefined && isSourceChange(paths, root, fd));
+        if (changed && !rt.deferredSync) sync();
         if (!isRelevantChange(paths, scope)) return;
         session.reloadFromDisk().then(
           (c) => {
@@ -533,22 +542,49 @@ export const useApp = create<AppState>((set, get) => {
     const busyId = get().tabIdOf(session);
     if (busyId) get().markBusy(busyId, 1);
     let r: SyncResult;
+    const hasTs = !!session.workspace?.source;
     try {
-      r = await syncFromSource(session);
+      r = hasTs ? await syncFromSource(session) : { ...NO_TS_SYNC };
+      if (session.workspace?.figma) {
+        // A Figma failure must not swallow the TypeScript result above: report it and go on.
+        const f = await syncFromFigma(session).catch((e) => {
+          patchSession(session, { error: `Figma sync failed: ${msg(e)}` });
+          return null;
+        });
+        if (f) {
+        // Each sync reports every open conflict of its origin: they replace the previous ones.
+        const fresh: UiConflict[] = f.conflicts.map((c) => ({ ...c, origin: "figma" }));
+        const problems = [
+          ...(f.warnings.length ? [`Figma: ${f.warnings.join("; ")}`] : []),
+          ...(f.unmappedModes.length
+            ? [`Figma modes not mapped to a language: ${f.unmappedModes.join(", ")} — set them in Settings → Figma.`]
+            : []),
+        ];
+        patchSession(session, (cur) => ({
+          conflicts: [...cur.conflicts.filter((c) => c.origin !== "figma"), ...fresh],
+          ...(problems.length ? { error: problems.join(" ") } : {}),
+        }));
+        }
+      }
     } finally {
       if (busyId) get().markBusy(busyId, -1);
     }
+    if (!hasTs) return r;
     if (!r.sourceAvailable) {
       patchSession(session, { sourceMissing: true });
       return r;
     }
-    // Each sync reports every open source conflict: they replace the previous ones.
     const fresh: UiConflict[] = r.conflicts.map((c) => ({ ...c, origin: "source" }));
     patchSession(session, (cur) => ({
       sourceMissing: false,
       conflicts: [...cur.conflicts.filter((c) => c.origin !== "source"), ...fresh],
     }));
     return r;
+  },
+
+  resolveConflictWith(c, text) {
+    get().resolveConflict(c, "mine");
+    get().session?.setText(c.id, c.locale, text);
   },
 
   resolveAllConflicts(pick) {
@@ -560,8 +596,9 @@ export const useApp = create<AppState>((set, get) => {
 });
 
 function resolveOne(session: ProjectSession, c: UiConflict, pick: "mine" | "theirs"): void {
-  const { origin, ...conflict } = c;
+  const { origin, base: _base, ...conflict } = c;
   if (origin === "source") resolveSyncConflict(session, conflict, pick);
+  else if (origin === "figma") resolveFigmaConflict(session, conflict, pick);
   else session.resolveConflict(conflict, pick);
 }
 
@@ -671,6 +708,11 @@ export function startAutosave(): () => void {
     timers.clear();
   };
 }
+
+/** syncSource's result for a workspace with no TypeScript source (only Figma). */
+const NO_TS_SYNC: SyncResult = {
+  sourceAvailable: true, conflicts: [], added: [], updated: [], removedInSource: [], newGroups: [],
+};
 
 /** The tab id used for a session set without a tab (tests, legacy callers). */
 export const LEGACY_TAB = "";
