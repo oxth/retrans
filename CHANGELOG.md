@@ -4,6 +4,25 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-11-06
+
+### What's new
+
+- **One Settings window.** Open it from the gear at the top right (or ⌘, / Ctrl+,). The sidebar lists the open project's settings first, then the app's: General, Appearance, Machine translation, AI instructions and About. A search box finds any setting.
+- **Appearance.** Choose a light or dark theme, or follow your system, and make the whole interface smaller or larger. The default List or Table view now changes open projects straight away, and Settings tells you when a project keeps its own view.
+- **Source changed.** "Needs review" is now called **Source changed**, and it finally shows up when it should: when the base text changes in your code editor or through a `git pull`, not only when you edit it in Retrans. The first time you open a project, Retrans records what each translation was based on in `.retrans/state.json`. Commit that change once.
+- **Rename and delete groups.** The Languages page explains what groups (namespaces) are, lists them with their key counts, and lets you rename or delete them. Groups that come from your TypeScript code say why they can only be changed there.
+- **Plural keys made clear.** When adding a key, switch the text to **Plural** to fill in each form your base language needs, such as "1 item" and "5 items", with the numbers each form is used for.
+
+### Improvements
+
+- Machine translation settings apply when you press **Save**, with **Discard** and **Test connection**, so nothing changes halfway through typing an address or a key. Retrans asks before you leave with unsaved changes.
+- **Test this model** lets you pick the language you're translating from and to, refuses the same language on both sides, and points out when a model sends your text back unchanged.
+- **About** shows the version, update checks and a link to what's new.
+- Dropdowns now match the text fields around them in both themes.
+- The start screen and About show the real app icon.
+- The project sidebar is simpler: close a project with the **×** on its tab or ⌘W / Ctrl+W.
+
 ## [0.4.1] - 2026-11-06
 
 ### What's new
@@ -104,6 +123,7 @@ First release.
 - **Crash recovery.** Unsaved edits are kept and offered back after a crash.
 - **Automatic updates** on macOS (Apple Silicon) and Windows.
 
+[0.5.0]: https://github.com/oxth/retrans/releases/tag/v0.5.0
 [0.4.1]: https://github.com/oxth/retrans/releases/tag/v0.4.1
 [0.4.0]: https://github.com/oxth/retrans/releases/tag/v0.4.0
 [0.3.0]: https://github.com/oxth/retrans/releases/tag/v0.3.0
