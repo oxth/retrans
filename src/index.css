@@ -42,10 +42,13 @@
   --c-st-translated: #f59e0b;
   --c-st-reviewed: #14b8a6;
   --shadow-pop: 0 1px 2px rgb(15 17 23 / 0.06), 0 8px 24px rgb(15 17 23 / 0.12);
+  /* The select arrow, in --c-muted. */
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b6070' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
+/* Dark: follows the system unless the user picked a theme in Settings → Appearance (data-theme). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --c-surface: #0f1117;
     --c-panel: #151824;
     --c-sunken: #1b1f2d;
@@ -80,7 +83,51 @@
     --c-st-translated: #fbbf24;
     --c-st-reviewed: #2dd4bf;
     --shadow-pop: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
+    --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a0a6b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --c-surface: #0f1117;
+  --c-panel: #151824;
+  --c-sunken: #1b1f2d;
+  --c-hover: #1d2130;
+  --c-fg: #e8eaf2;
+  --c-fg-2: #c4c8d4;
+  --c-muted: #a0a6b8;
+  --c-faint: #6e7487;
+  --c-line: #262a39;
+  --c-line-strong: #363c50;
+  --c-brand: #8b85ff;
+  --c-brand-hover: #a39eff;
+  --c-on-brand: #0f1117;
+  --c-brand-soft: #1d1f33;
+  --c-brand-line: #3a3d66;
+  --c-brand-ink: #c7c4ff;
+  --c-danger: #fca5a5;
+  --c-danger-solid: #dc2626;
+  --c-danger-soft: #2a1517;
+  --c-danger-line: #5c2327;
+  --c-warn: #fcd34d;
+  --c-warn-solid: #f59e0b;
+  --c-warn-soft: #2a2112;
+  --c-warn-line: #5c4415;
+  --c-ok: #5eead4;
+  --c-ok-solid: #2dd4bf;
+  --c-ok-soft: #0f2624;
+  --c-info: #c4b5fd;
+  --c-info-soft: #221a38;
+  --c-scrim: rgb(0 0 0 / 0.6);
+  --c-st-missing: #f87171;
+  --c-st-translated: #fbbf24;
+  --c-st-reviewed: #2dd4bf;
+  --shadow-pop: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a0a6b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 @theme inline {
@@ -179,4 +226,20 @@
     animation-duration: 0ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+/*
+ * Selects look like the text inputs beside them (same border, radius, height, font) with one
+ * arrow that follows the theme, instead of each platform's own control. Unlayered on purpose:
+ * it outranks utility classes, so a select's px-* can't take away the room for the arrow.
+ */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: var(--select-arrow);
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 0.9rem;
+  padding-right: 2rem;
+  text-overflow: ellipsis;
 }

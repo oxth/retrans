@@ -1,19 +1,29 @@
 import type { ProjectSession } from "../core/session";
 import { sectionLabel } from "./Dialog";
 import { Icon, type IconName } from "./Icon";
+import { SOURCE_CHANGED } from "./StatusDot";
 
-export type Page = "translations" | "languages" | "share" | "settings";
+export type Page = "translations" | "languages" | "share";
 
 const NAV: Array<{ page: Page; label: string; icon: IconName }> = [
   { page: "translations", label: "Translations", icon: "list" },
   { page: "languages", label: "Languages", icon: "languages" },
   { page: "share", label: "Import / Export", icon: "share" },
-  { page: "settings", label: "Settings", icon: "settings" },
 ];
 
 export const PAGE_LABEL = Object.fromEntries(NAV.map((n) => [n.page, n.label])) as Record<Page, string>;
 
-export function Sidebar({ session, stats, page, onPage, onClose }: { session: ProjectSession; stats: Map<string, { done: number; total: number }>; page: Page; onPage: (p: Page) => void; onClose: () => void }) {
+export function Sidebar({
+  session,
+  stats,
+  page,
+  onPage,
+}: {
+  session: ProjectSession;
+  stats: Map<string, { done: number; total: number }>;
+  page: Page;
+  onPage: (p: Page) => void;
+}) {
   const name = session.data.root.split("/").filter(Boolean).pop() ?? session.data.root;
   const base = session.data.baseLocale;
   const item = (on: boolean) =>
@@ -73,19 +83,22 @@ export function Sidebar({ session, stats, page, onPage, onClose }: { session: Pr
             <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-st-reviewed" aria-hidden="true" />Reviewed</li>
             <li className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-st-reviewed ring-2 ring-warn-solid ring-offset-1 ring-offset-panel" aria-hidden="true" />
-              Needs review
+              {SOURCE_CHANGED}
             </li>
           </ul>
-          <p className="mt-2.5 text-[11px] leading-4 text-muted">
-            "Needs review" means the base text changed after the translation was written. Click <span className="font-medium text-fg-2">✓ Review</span> on a translation, or press ⌘⇧R while it's selected.
-          </p>
+          <dl className="mt-2.5 space-y-1.5 text-[11px] leading-4 text-muted">
+            <div>
+              <dt className="inline font-medium text-fg-2">Not reviewed:</dt> <dd className="inline">translated, but nobody has checked it yet.</dd>
+            </div>
+            <div>
+              <dt className="inline font-medium text-fg-2">{SOURCE_CHANGED}:</dt>{" "}
+              <dd className="inline">the base text was edited after this was translated, so it may be out of date.</dd>
+            </div>
+            <div>
+              Click <span className="font-medium text-fg-2">✓ Review</span> on a translation, or press ⌘⇧R while it's selected, to mark it reviewed.
+            </div>
+          </dl>
         </section>
-      </div>
-      <div className="border-t border-line p-2">
-        <button onClick={onClose} className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-fg-2 hover:bg-hover hover:text-fg">
-          <Icon name="close" size={16} className="text-muted" />
-          Close project
-        </button>
       </div>
     </aside>
   );

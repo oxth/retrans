@@ -2,6 +2,7 @@ import type { ProjectSession } from "../core/session";
 import { PROVIDER_LABELS } from "../mt/translator";
 import type { ProviderId } from "../platform/prefs";
 import { inputCls } from "./Dialog";
+import { fieldCls, Group, Row } from "./settings-ui";
 import { useMt } from "./mt-store";
 import { useSessionVersion } from "./store";
 
@@ -25,50 +26,48 @@ export function ProjectMtSettings({ session }: { session: ProjectSession }) {
     });
   };
   return (
-    <div className="space-y-3">
-      <label className="block">
-        Translation provider for this project
-        <select
-          aria-label="Translation provider for this project"
-          className={inputCls}
-          value={override}
-          onChange={(e) => session.setProjectSetting({ mtProvider: e.target.value || undefined })}
-        >
-          <option value="">Use the app setting ({PROVIDER_LABELS[global as ProviderId] ?? PROVIDER_LABELS.local})</option>
-          {(Object.keys(PROVIDER_LABELS) as ProviderId[]).map((p) => (
-            <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
-          ))}
-        </select>
-        <span className="mt-1 block text-xs text-muted">
-          Saved in .retrans/state.json, so everyone on the project uses the same provider. Keys and models are set in Preferences.
-        </span>
-      </label>
-      <label className="block">
-        Instructions for this project
-        <textarea
-          aria-label="Instructions for this project"
-          className={inputCls}
-          rows={3}
-          placeholder="e.g. Formal Thai. Keep [Product Name] in English."
-          defaultValue={instr.all ?? ""}
-          onBlur={(e) => saveInstr({ all: e.target.value.trim() })}
-        />
-      </label>
-      {targets.map((l) => (
-        <label key={l} className="block">
-          Instructions for {l}
+    <>
+      <Group label="Provider" footer="Saved in .retrans/state.json, so everyone on the project uses the same provider. Keys and models are set in Machine translation.">
+        <Row label="Translation provider" hint="Overrides the app setting for this project only." htmlFor="project-provider">
+          <select
+            id="project-provider"
+            aria-label="Translation provider for this project"
+            className={fieldCls}
+            value={override}
+            onChange={(e) => session.setProjectSetting({ mtProvider: e.target.value || undefined })}
+          >
+            <option value="">Use the app setting ({PROVIDER_LABELS[global as ProviderId] ?? PROVIDER_LABELS.local})</option>
+            {(Object.keys(PROVIDER_LABELS) as ProviderId[]).map((p) => (
+              <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+            ))}
+          </select>
+        </Row>
+      </Group>
+      <Group label="Instructions" footer="Added after the instructions for all projects (AI instructions), in that order. Stored in .retrans/state.json and shared through git.">
+        <Row stacked label="For this project" hint="Tone, terminology, words to keep in the original language." htmlFor="instr-all">
           <textarea
-            aria-label={`Instructions for ${l}`}
-            className={inputCls}
-            rows={2}
-            defaultValue={instr.byLocale?.[l] ?? ""}
-            onBlur={(e) => saveInstr({ locale: [l, e.target.value.trim()] })}
+            id="instr-all"
+            aria-label="Instructions for this project"
+            className={`${inputCls} resize-y`}
+            rows={3}
+            placeholder="e.g. Formal Thai. Keep [Product Name] in English."
+            defaultValue={instr.all ?? ""}
+            onBlur={(e) => saveInstr({ all: e.target.value.trim() })}
           />
-        </label>
-      ))}
-      <p className="text-xs text-muted">
-        Added after the instructions for all projects (Preferences), in that order. Stored in .retrans/state.json and shared through git.
-      </p>
-    </div>
+        </Row>
+        {targets.map((l) => (
+          <Row key={l} stacked label={<>For <span className="font-mono uppercase">{l}</span></>} htmlFor={`instr-${l}`}>
+            <textarea
+              id={`instr-${l}`}
+              aria-label={`Instructions for ${l}`}
+              className={`${inputCls} resize-y`}
+              rows={2}
+              defaultValue={instr.byLocale?.[l] ?? ""}
+              onBlur={(e) => saveInstr({ locale: [l, e.target.value.trim()] })}
+            />
+          </Row>
+        ))}
+      </Group>
+    </>
   );
 }

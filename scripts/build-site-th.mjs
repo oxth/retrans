@@ -98,8 +98,8 @@ const pairs = [
   ["</svg>No telemetry</li>", "</svg>ไม่เก็บข้อมูลการใช้งาน</li>"],
   ["</svg>Updates itself</li>", "</svg>อัปเดตตัวเองอัตโนมัติ</li>"],
   [
-    'aria-label="The Retrans window: a sidebar with per-language progress, and a grid of keys with English, Thai and German translations. Each translation has a status dot, one cell is missing, one needs review, and one is being edited with an AI suggestion."',
-    'aria-label="หน้าต่าง Retrans: แถบด้านข้างแสดงความคืบหน้าของแต่ละภาษา และตารางคีย์พร้อมคำแปลภาษาอังกฤษ ไทย และเยอรมัน ทุกคำแปลมีจุดบอกสถานะ มีหนึ่งช่องที่ยังไม่แปล หนึ่งช่องที่ต้องตรวจทาน และหนึ่งช่องที่กำลังแก้ไขพร้อมคำแนะนำจาก AI"',
+    'aria-label="The Retrans window: a sidebar with per-language progress, and a grid of keys with English, Thai and German translations. Each translation has a status dot, one cell is missing, one has a source text that changed, and one is being edited with an AI suggestion."',
+    'aria-label="หน้าต่าง Retrans: แถบด้านข้างแสดงความคืบหน้าของแต่ละภาษา และตารางคีย์พร้อมคำแปลภาษาอังกฤษ ไทย และเยอรมัน ทุกคำแปลมีจุดบอกสถานะ มีหนึ่งช่องที่ยังไม่แปล หนึ่งช่องที่ข้อความต้นฉบับเปลี่ยนไป และหนึ่งช่องที่กำลังแก้ไขพร้อมคำแนะนำจาก AI"',
   ],
 
   // Formats

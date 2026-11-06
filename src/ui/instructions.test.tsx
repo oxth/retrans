@@ -30,9 +30,10 @@ import { detectProject } from "../formats/detect";
 import { loadFixtureDir } from "../platform/memory-fs";
 import { instructionsFor } from "./instructions";
 import { useMt } from "./mt-store";
-import { PreferencesPage } from "./PreferencesPage";
+import { SettingsDialog } from "./SettingsDialog";
+import { useApp } from "./store";
 import { ProjectMtSettings } from "./ProjectMtSettings";
-import { ProviderSettings } from "./ProviderSettings";
+import { MtSettings } from "./MtSettings";
 
 const FIX = resolve(__dirname, "../test/fixtures/next-nested");
 const initial = useMt.getState();
@@ -52,8 +53,9 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("custom instructions", () => {
-  it("Instructions for all projects are saved in Preferences", async () => {
-    render(<PreferencesPage />);
+  it("Instructions for all projects are saved in Settings → AI instructions", async () => {
+    useApp.setState({ session: null, prefsOpen: true, prefsSection: "instructions" });
+    render(<SettingsDialog />);
     await userEvent.type(screen.getByLabelText("Instructions for all projects"), "Keep it short.");
     await userEvent.tab();
     await waitFor(() => expect(useMt.getState().settings.instructions).toBe("Keep it short."));
@@ -61,7 +63,8 @@ describe("custom instructions", () => {
 
   it("TranslateGemma shows the fixed-prompt note", async () => {
     useMt.setState({ settings: { ...useMt.getState().settings, modelId: "custom", custom: { path: "/g.gguf", template: "translategemma" } } });
-    render(<PreferencesPage />);
+    useApp.setState({ session: null, prefsOpen: true, prefsSection: "instructions" });
+    render(<SettingsDialog />);
     expect(screen.getByText("TranslateGemma uses a fixed prompt and ignores custom instructions.")).toBeInTheDocument();
   });
 
@@ -102,7 +105,7 @@ describe("custom instructions", () => {
         return JSON.stringify({ [req.strings[0].id]: { [req.targets[0]]: "สวัสดี" } });
       }
     });
-    render(<ProviderSettings />);
+    render(<MtSettings session={null} />);
     await userEvent.type(screen.getByLabelText("Test text"), "Hello");
     await userEvent.click(screen.getByRole("button", { name: "Test this model" }));
     expect(await screen.findByText("สวัสดี")).toBeInTheDocument();

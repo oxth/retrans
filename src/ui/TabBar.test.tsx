@@ -91,4 +91,12 @@ describe("TabBar", () => {
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(useApp.getState().notice).toBeNull();
   });
+
+  it("the gear at the top right opens Settings", async () => {
+    await twoProjects();
+    useApp.setState({ prefsOpen: false });
+    render(<TabBar />);
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    expect(useApp.getState().prefsOpen).toBe(true);
+  });
 });

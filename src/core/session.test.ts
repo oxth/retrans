@@ -125,6 +125,17 @@ describe("ProjectSession", () => {
     expect(s.data.keyOrder).not.toContain(c("fresh"));
   });
 
+  it("addKey with plural forms gives each form its own text, and needs every one", async () => {
+    const { s } = await openFx("next-nested");
+    const id = s.addKey("common", "cart", "", { plural: true, forms: { one: "{{count}} item", other: "{{count}} items" } });
+    expect(id).toBe(keyId("common", "cart_other"));
+    expect(s.value(keyId("common", "cart_one"), "en")).toEqual({ kind: "text", text: "{{count}} item" });
+    expect(s.value(keyId("common", "cart_other"), "en")).toEqual({ kind: "text", text: "{{count}} items" });
+    expect(() => s.addKey("common", "box", "", { plural: true, forms: { other: "{{count}} boxes" } })).toThrow(
+      expect.objectContaining({ code: "invalid" }),
+    );
+  });
+
   it("addKey adds to the base file only; other locales stay absent", async () => {
     const { fs, s } = await openFx("next-nested");
     const thBefore = await read(fs, `${NEXT}/th/common.json`);
@@ -557,5 +568,67 @@ describe("ProjectSession project id", () => {
     s.setProjectSetting({ id: "p-9" });
     await s.save();
     expect((await json(fs, STATE_PATH)).project.id).toBe("p-9");
+  });
+});
+
+describe("renaming and deleting a namespace (group)", () => {
+  const EN = (ns: string) => `${R}/${NEXT}/en/${ns}.json`;
+  const THf = (ns: string) => `${R}/${NEXT}/th/${ns}.json`;
+
+  it("rename moves the keys, their translations and review records, and renames every language's file on save", async () => {
+    const { fs, s } = await openFx("next-nested");
+    s.setText(keyId("common", "title"), "th", "สวัสดีครับ");
+    s.markReviewed(keyId("common", "title"), "th");
+    await s.save();
+    const keysBefore = s.data.keyOrder.filter((id) => id.startsWith("common::")).length;
+    s.renameNamespace("common", "shared");
+    expect(s.data.namespaces).toEqual(["checkout", "shared"]);
+    expect(s.data.keyOrder.filter((id) => id.startsWith("shared::"))).toHaveLength(keysBefore);
+    expect(s.value(keyId("shared", "title"), "th")).toEqual({ kind: "text", text: "สวัสดีครับ" });
+    expect(s.meta(keyId("shared", "title"), "th").status).toBe("reviewed");
+    expect(s.isDirty()).toBe(true);
+    await s.save();
+    expect(await fs.exists(EN("common"))).toBe(false);
+    expect(await fs.exists(THf("common"))).toBe(false);
+    expect(JSON.parse(await fs.readText(EN("shared"))).nav.home).toBe("Home");
+    expect(JSON.parse(await fs.readText(THf("shared"))).title).toBe("สวัสดีครับ");
+    expect(s.isDirty()).toBe(false);
+  });
+
+  it("rename refuses a name that exists or isn't valid", async () => {
+    const { s } = await openFx("next-nested");
+    expect(() => s.renameNamespace("common", "checkout")).toThrow(/already exists/);
+    expect(() => s.renameNamespace("common", "a/b")).toThrow(/not a valid name/);
+  });
+
+  it("delete removes the keys and every language's file on save; the last one can't go", async () => {
+    const { fs, s } = await openFx("next-nested");
+    s.deleteNamespace("checkout");
+    expect(s.data.namespaces).toEqual(["common"]);
+    expect(s.data.keyOrder.some((id) => id.startsWith("checkout::"))).toBe(false);
+    await s.save();
+    expect(await fs.exists(EN("checkout"))).toBe(false);
+    expect(await fs.exists(EN("common"))).toBe(true);
+    expect(s.isDirty()).toBe(false);
+    expect(() => s.deleteNamespace("common")).toThrow(/at least one/);
+  });
+
+  it("a namespace with an unreadable file can't be renamed or deleted", async () => {
+    const { s } = await openFx("next-broken");
+    const broken = s.data.namespaces.find((ns) => s.namespaceLockReason(ns) !== null)!;
+    expect(s.namespaceLockReason(broken)).toMatch(/can't be read/);
+    expect(() => s.deleteNamespace(broken)).toThrow(/can't be read/);
+  });
+
+  it("a namespace not saved yet can be renamed or deleted without leaving files behind", async () => {
+    const { fs, s } = await openFx("next-nested");
+    s.addNamespace("footer");
+    s.renameNamespace("footer", "bottom");
+    await s.save();
+    expect(await fs.exists(EN("footer"))).toBe(false);
+    expect(await fs.exists(EN("bottom"))).toBe(true);
+    s.deleteNamespace("bottom");
+    await s.save();
+    expect(await fs.exists(EN("bottom"))).toBe(false);
   });
 });

@@ -11,7 +11,7 @@ import { installMenu } from "./platform/menu";
 import { MENU_ACTIONS } from "./ui/menu-actions";
 import { launch, startTabPersistence } from "./ui/restore";
 import { UnsavedPrompt } from "./ui/UnsavedPrompt";
-import { PreferencesPage } from "./ui/PreferencesPage";
+import { SettingsDialog } from "./ui/SettingsDialog";
 
 /**
  * Routes every way of quitting through one prompt listing the tabs with unsaved changes: the
@@ -93,7 +93,7 @@ export default function App() {
       ) : (
         <StartScreen />
       )}
-      {prefsOpen && <PreferencesPage />}
+      {prefsOpen && <SettingsDialog />}
       {/* Here, not in a tab: quitting from the start screen can still list other tabs. */}
       <UnsavedPrompt />
     </div>

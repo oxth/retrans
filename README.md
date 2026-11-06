@@ -61,7 +61,7 @@ A workspace can also be exported to i18next JSON or Paraglide, and **New project
 ## Features
 
 - **One grid for every key and language,** as a list or a table. Missing translations stand out, and Tab jumps to the next one.
-- **Review status that travels.** Every translation is missing, waiting for review or reviewed. When the base text changes, the cell says **Needs review**. Status lives in `.retrans/` and is shared through git.
+- **Review status that travels.** Every translation is missing, waiting for review or reviewed. When the base text changes, even in your editor or through a `git pull`, the cell says **Source changed**. Status lives in `.retrans/` and is shared through git.
 - **Local or cloud AI.** A built-in model (TranslateGemma or Qwen) runs entirely on your computer. You can also use OpenAI, Claude, any OpenAI-compatible API (OpenRouter, Groq, DeepSeek, Ollama, LM Studio…), or an AI agent you already have through ACP (Claude Code, Codex, Gemini CLI).
 - **Many languages in one run.** Translate every missing string in all your languages at once, with your own instructions for tone and terms, per project or per language.
 - **Translator packages.** Send a translator a `.zip`. They open it in Retrans and send it back, and you import their work with a clear view of what changed and any conflicts.

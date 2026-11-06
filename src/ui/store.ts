@@ -61,9 +61,16 @@ export interface Tab {
 /** A project folder path without trailing slashes: two spellings of one folder are one tab. */
 export const normRoot = (root: string) => root.replace(/[\\/]+$/, "") || root;
 
+/** Sections of the Settings window: the first three belong to the open project. */
+export type SettingsSection = "project" | "translation" | "figma" | "appearance" | "general" | "mt" | "instructions" | "about";
+
 export interface AppState {
   fs: Fs;
   prefsOpen: boolean;
+  /** The Settings section to show when Settings opens (null: the first one that applies). */
+  prefsSection: SettingsSection | null;
+  /** Bumped when view preferences change in Settings, so open projects re-read their view. */
+  viewPrefsVersion: number;
   /** Open projects, in tab order. */
   tabs: Tab[];
   /** The tab on screen; null shows the start screen (other tabs may still be open). */
@@ -91,12 +98,13 @@ export interface AppState {
     | { then: "quit"; tabs: string[] }
     | { then: "proceed"; tabs: string[]; resolve: (go: boolean) => void }
     | null;
-  openPrefs(): void;
+  openPrefs(section?: SettingsSection): void;
+  viewPrefsChanged(): void;
   closePrefs(): void;
   switchTab(id: string): void;
   /** The "+" button: keeps every tab and shows the start screen. */
   showStart(): void;
-  /** Activates the tab, then closes it like Close project (asking about unsaved changes). */
+  /** Activates the tab, then closes its project (saving first, or asking about unsaved changes). */
   closeTab(id: string): Promise<void>;
   /** Closes every tab without asking (quit after the prompt, tests). */
   closeAllTabs(): Promise<void>;
@@ -331,14 +339,20 @@ export const useApp = create<AppState>((set, get) => {
   return {
   fs: tauriFs,
   prefsOpen: false,
+  prefsSection: null,
+  viewPrefsVersion: 0,
   tabs: [],
   activeId: null,
   notice: null,
   ...emptyFlat(),
   closePrompt: null,
 
-  openPrefs() {
-    set({ prefsOpen: true });
+  openPrefs(section) {
+    set({ prefsOpen: true, prefsSection: section ?? null });
+  },
+
+  viewPrefsChanged() {
+    set((s) => ({ viewPrefsVersion: s.viewPrefsVersion + 1 }));
   },
 
   closePrefs() {
@@ -657,7 +671,14 @@ async function openSession(fs: Fs, root: string, d: DetectResult, opts: ProjectO
     // A workspace's files always live in .retrans/workspace.
     localesPath: d.workspace ? d.localesPath : (st.project.localesPath ?? opts.localesPath),
   };
-  return ProjectSession.open(fs, root, d, effective);
+  const session = await ProjectSession.open(fs, root, d, effective);
+  // Translations never touched in Retrans get a record of the base text they stand for, so a
+  // later base change made in the editor or by a git pull shows "Source changed". Written to
+  // .retrans/state.json right away (once per translation), so the project still opens clean;
+  // if that can't be written now, auto-save retries it.
+  const wasDirty = session.isDirty();
+  if (session.recordBaseFingerprints() && !wasDirty) await session.save().catch(() => {});
+  return session;
 }
 
 /** The unresolved conflicts of whichever tab holds `session`. */

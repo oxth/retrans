@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { getAutoCheckUpdates, setAutoCheckUpdates } from "../platform/prefs";
 import { checkForUpdate, type AvailableUpdate } from "../platform/updates";
 import { btnGhost, btnPrimary } from "./Dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { Icon } from "./Icon";
+
+/** Release notes (the updater downloads from the same releases). */
+export const RELEASES_URL = "https://github.com/oxth/retrans/releases";
+import { btnRow, Group, Row, Switch } from "./settings-ui";
 import { useApp } from "./store";
 
 type Phase = { kind: "idle" } | { kind: "installing"; pct: number } | { kind: "failed" };
@@ -99,30 +105,46 @@ export function UpdateSettings() {
   };
 
   return (
-    <div className="space-y-2">
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
+    <Group label="Updates">
+      <Row label="Check automatically" hint="Look for a new version each time Retrans starts.">
+        <Switch
+          label="Check for updates automatically"
           checked={auto}
-          onChange={(e) => {
-            setAuto(e.target.checked);
-            void setAutoCheckUpdates(e.target.checked).catch(() => {});
+          onChange={(v) => {
+            setAuto(v);
+            void setAutoCheckUpdates(v).catch(() => {});
           }}
         />
-        <span>Check for updates automatically</span>
-      </label>
-      <div className="flex items-center gap-3">
-        <button className={btnGhost} disabled={result === "checking"} onClick={() => void check()}>Check for updates</button>
-        {result === "current" && <span role="status">You're up to date.</span>}
-        {result === "error" && <span role="status">Couldn't check for updates.</span>}
-        {update && (
-          <>
-            <span role="status">Retrans {update.version} is available.</span>
-            {phase.kind === "idle" && <button className={btnPrimary} onClick={() => void run()}>Install and restart</button>}
-            <InstallStatus phase={phase} />
-          </>
-        )}
-      </div>
-    </div>
+      </Row>
+      <Row
+        label={update ? `Retrans ${update.version} is available.` : "Check now"}
+        hint={
+          result === "current" ? (
+            <span role="status">You're up to date.</span>
+          ) : result === "error" ? (
+            <span role="status" className="text-danger">Couldn't check for updates.</span>
+          ) : update ? (
+            <span role="status">
+              <InstallStatus phase={phase} />
+              {phase.kind === "idle" && "Installing restarts Retrans. Unsaved changes are saved or discarded first."}
+            </span>
+          ) : (
+            "Updates are downloaded from GitHub releases."
+          )
+        }
+      >
+        {update && phase.kind === "idle" && <button type="button" className={btnPrimary} onClick={() => void run()}>Install and restart</button>}
+        <button type="button" className={btnRow} disabled={result === "checking"} onClick={() => void check()}>
+          <Icon name="refresh" size={14} className={result === "checking" ? "animate-spin motion-reduce:animate-none" : ""} />
+          {result === "checking" ? "Checking…" : "Check for updates"}
+        </button>
+      </Row>
+      <Row label="What's new" hint="Release notes for every version, on GitHub.">
+        <button type="button" className={btnGhost} onClick={() => void Promise.resolve(openUrl(RELEASES_URL)).catch(() => {})}>
+          <Icon name="sparkles" size={14} />
+          What's new
+        </button>
+      </Row>
+    </Group>
   );
 }

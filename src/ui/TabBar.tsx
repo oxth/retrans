@@ -12,7 +12,8 @@ export function TabBar() {
 
   return (
     <div className="shrink-0 border-b border-line bg-panel">
-      <div className="flex items-end overflow-x-auto" role="tablist" aria-label="Open projects">
+      <div className="flex items-stretch">
+      <div className="flex min-w-0 flex-1 items-end overflow-x-auto" role="tablist" aria-label="Open projects">
         {tabs.map((t) => {
           const active = t.id === activeId;
           const session = active ? activeSession : t.snap?.session;
@@ -59,6 +60,15 @@ export function TabBar() {
         >
           <Icon name="plus" size={15} />
         </button>
+      </div>
+      <button
+        aria-label="Open settings"
+        title={`Settings (${navigator.userAgent.includes("Mac") ? "⌘," : "Ctrl+,"})`}
+        className="flex shrink-0 items-center border-l border-line px-3 text-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
+        onClick={() => useApp.getState().openPrefs()}
+      >
+        <Icon name="settings" size={16} />
+      </button>
       </div>
       {notice && (
         <div className="flex items-center gap-2 border-t border-warn-line bg-warn-soft px-3 py-1.5 text-sm text-warn">

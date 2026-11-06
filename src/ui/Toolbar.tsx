@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RowFilter } from "../core/rows";
 import { btnPrimary, btnSecondary } from "./Dialog";
 import { Icon } from "./Icon";
+import { SOURCE_CHANGED } from "./StatusDot";
 
 export type FilterState = Omit<RowFilter, "locales">;
 
@@ -66,8 +67,13 @@ export function Toolbar(p: ToolbarProps) {
           Missing
           <span className={`rounded-full px-1.5 tabular-nums ${f.missing ? "bg-surface" : "bg-sunken"}`}>{p.missingCount}</span>
         </button>
-        <button className={chip(f.needsReview)} aria-pressed={f.needsReview} onClick={() => p.onFilter({ needsReview: !f.needsReview })}>
-          Needs review
+        <button
+          className={chip(f.needsReview)}
+          aria-pressed={f.needsReview}
+          title="Translations whose base text changed after they were written"
+          onClick={() => p.onFilter({ needsReview: !f.needsReview })}
+        >
+          {SOURCE_CHANGED}
         </button>
         <button className={chip(f.machine)} aria-pressed={f.machine} onClick={() => p.onFilter({ machine: !f.machine })}>
           Machine

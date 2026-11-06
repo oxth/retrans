@@ -26,6 +26,14 @@ const PATHS = {
   check: "M20 6 9 17l-5-5",
   filterX: "M13 13.7 21 4H3l7 8.7V19l3 2v-7.3ZM16 16l5 5M21 16l-5 5",
   clock: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 6v6l4 2",
+  sliders: "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4",
+  message: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z",
+  refresh: "M21 12a9 9 0 0 0-15.7-6L3 8M3 3v5h5M3 12a9 9 0 0 0 15.7 6L21 16M16 16h5v5",
+  swap: "M7 7h13l-4-4M17 17H4l4 4",
+  monitor: "M2 4h20v13H2zM8 21h8M12 17v4",
+  lock: "M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4",
+  info: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 16v-4M12 8h.01",
+  layers: "m12 2 10 5-10 5L2 7l10-5ZM2 17l10 5 10-5M2 12l10 5 10-5",
 } as const;
 
 export type IconName = keyof typeof PATHS;

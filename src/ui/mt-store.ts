@@ -10,7 +10,7 @@ import { tauriFs } from "../platform/tauri-fs";
 
 type Downloads = Record<string, { received: number; total: number; state: DownloadEvent["state"]; message?: string }>;
 
-interface MtState {
+export interface MtState {
   initialized: boolean;
   settings: MtSettings;
   modelsDir: string | null;

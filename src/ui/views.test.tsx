@@ -112,24 +112,24 @@ describe("views", () => {
     expect(within(row).getByLabelText(/Status: Translated, not reviewed yet/)).toBeInTheDocument();
   });
 
-  it("a cell whose base text changed says Needs review and is cleared by Review", async () => {
+  it("a cell whose base text changed says Source changed and is cleared by Review", async () => {
     const s = await open(nested());
     act(() => {
       s.markReviewed("common::title", "th");
       s.setText("common::title", "en", "A brand new title");
     });
     const row = document.querySelector('[data-row="common::title"]') as HTMLElement;
-    await waitFor(() => expect(within(row).getByText("Needs review")).toBeInTheDocument());
+    await waitFor(() => expect(within(row).getByText("Source changed")).toBeInTheDocument());
     expect(s.meta("common::title", "th").needsReview).toBe(true);
     await userEvent.click(within(row).getByRole("button", { name: /Mark reviewed/ }));
     expect(s.meta("common::title", "th")).toMatchObject({ status: "reviewed", needsReview: false });
-    await waitFor(() => expect(within(row).queryByText("Needs review")).toBeNull());
+    await waitFor(() => expect(within(row).queryByText("Source changed")).toBeNull());
   });
 
   it("the sidebar explains the status dots and how to review", async () => {
     await open(nested());
     const legend = screen.getByRole("region", { name: "Status key" });
-    for (const t of ["Missing", "Not reviewed", "Reviewed", "Needs review"]) expect(within(legend).getByText(t)).toBeInTheDocument();
+    for (const t of ["Missing", "Not reviewed", "Reviewed", "Source changed"]) expect(within(legend).getByText(t)).toBeInTheDocument();
     expect(legend).toHaveTextContent(/⌘⇧R/);
   });
 

@@ -438,6 +438,54 @@ export class ProjectSession {
     this.emit();
   }
 
+  /**
+   * Gives every translation Retrans has no review record for (written outside it, or before the
+   * project used Retrans) a record of the base text it stands for now, so a later change to the
+   * base text, made anywhere, shows as "Source changed". Not an undo step. Returns whether any
+   * record was added (they're saved like any other change).
+   */
+  recordBaseFingerprints(): boolean {
+    if (this.stateError) return false; // never touch a state.json we couldn't read
+    const base = this.data.baseLocale;
+    let added = false;
+    for (const id of this.data.keyOrder) {
+      const cells = this.data.values.get(id);
+      const baseValue = cells?.get(base);
+      if (!cells || !isTranslated(baseValue)) continue; // nothing to compare against later
+      const h = hashValue(baseValue);
+      for (const [l, v] of cells) {
+        if (l === base || !isTranslated(v) || this.state.entries[id]?.[l]) continue;
+        (this.state.entries[id] ??= {})[l] = { s: "translated", h };
+        added = true;
+      }
+    }
+    if (added) {
+      this.stateTouched = true;
+      this.emit();
+    }
+    return added;
+  }
+
+  /**
+   * A reload changed some base texts (editor, git pull): translations that stayed the same and
+   * had no review record are pinned to the old base text, so they show "Source changed" (the
+   * same as a base edit made here). A translation updated in the same change is left alone.
+   */
+  private pinChangedBase(before: CellMap): void {
+    const base = this.data.baseLocale;
+    for (const [id, cells] of this.data.values) {
+      const old = before.get(id);
+      const oldBase = old?.get(base);
+      if (!old || !isTranslated(oldBase) || valuesEqual(oldBase, cells.get(base))) continue;
+      const h = hashValue(oldBase);
+      for (const [l, v] of cells) {
+        if (l === base || !isTranslated(v) || this.state.entries[id]?.[l]) continue;
+        if (!valuesEqual(v, old.get(l))) continue;
+        (this.state.entries[id] ??= {})[l] = { s: "translated", h };
+      }
+    }
+  }
+
   markReviewed(id: KeyId, locale: string): void {
     this.requireKey(id);
     this.touch(id);
@@ -446,19 +494,27 @@ export class ProjectSession {
     this.emit();
   }
 
-  addKey(ns: string, key: string, baseText: string, opts?: { plural?: boolean }): KeyId {
+  /**
+   * Adds a key with its base-language text. With `plural`, one key per plural form the base
+   * language has (`key_one`, `key_other`, …), each with its text from `forms` (else `baseText`).
+   */
+  addKey(ns: string, key: string, baseText: string, opts?: { plural?: boolean; forms?: Record<string, string> }): KeyId {
     validateKey(key);
-    if (!baseText) throw new KeyError("invalid", "A new key needs a base-language text");
+    const textFor = (k: string) => {
+      const category = opts?.plural ? k.slice(key.length + 1) : null;
+      return (category && opts?.forms?.[category]) || baseText;
+    };
     if (!this.data.namespaces.includes(ns)) throw new KeyError("invalid", `namespace "${ns}" does not exist`);
     const base = this.data.baseLocale;
     const keys = opts?.plural ? pluralCategories(base).map((c) => `${key}_${c}`) : [key];
+    if (keys.some((k) => !textFor(k))) throw new KeyError("invalid", "A new key needs a base-language text");
     for (const k of keys) {
       validateKey(k);
       checkCollision(this.data.keyOrder, ns, k);
     }
     this.assertWritable(base, ns);
     const ids = keys.map((k) => keyId(ns, k));
-    for (const id of ids) this.put(id, base, { kind: "text", text: baseText });
+    ids.forEach((id, i) => this.put(id, base, { kind: "text", text: textFor(keys[i]) }));
     if (this.wsMeta?.deletedKeys.some((d) => ids.includes(d))) {
       // Added again: no longer a deleted source key.
       this.wsMeta = { ...this.wsMeta, deletedKeys: this.wsMeta.deletedKeys.filter((d) => !ids.includes(d)) };
@@ -751,6 +807,90 @@ export class ProjectSession {
     this.emit();
   }
 
+  /**
+   * Why a namespace (a workspace "group") can't be renamed or deleted here, or null when it can.
+   * Its files must be readable; in a TypeScript workspace a group from the source is a file in the
+   * user's code, so it's changed there; and open conflicts on its keys must be resolved first.
+   */
+  namespaceLockReason(ns: string): string | null {
+    if (this.data.format !== "next-i18next") return "Only next-i18next projects and workspaces have namespaces.";
+    if (!this.data.namespaces.includes(ns)) return `"${ns}" doesn't exist.`;
+    const bad = this.files.find((f) => f.ns === ns && f.readOnly);
+    if (bad) return `${bad.relPath} can't be read. Fix that file first.`;
+    const ids = this.data.keyOrder.filter((id) => parseKeyId(id).ns === ns);
+    if (this.wsMeta?.source && ids.some((id) => this.sourceIds.has(id) || this.roCells.some((r) => r.id === id))) {
+      const dir = this.wsMeta.source.type === "ts" ? this.wsMeta.source.localesDir : null;
+      const where = dir ? `the "${ns}" file in ${dir}` : "a TypeScript source file";
+      return `Comes from ${where}. Rename or delete it in your code: this group's keys then show as removed from the source, and you can delete the group here.`;
+    }
+    if (this.conflicts.some((c) => parseKeyId(c.id).ns === ns)) return "Resolve the conflicts in it first.";
+    return null;
+  }
+
+  /**
+   * Renames a namespace: its keys move to the new name and, on save, each language's file is
+   * written under the new name and the old one deleted. Not an undo step (like adding one).
+   */
+  renameNamespace(from: string, to: string): void {
+    const why = this.namespaceLockReason(from);
+    if (why) throw new Error(why);
+    if (!to || /[\\/]|::/.test(to) || to.startsWith(".")) throw new Error(`"${to}" is not a valid name`);
+    if (to === from) return;
+    if (this.data.namespaces.includes(to)) throw new Error(`"${to}" already exists`);
+    this.external(() => {
+      const pairs = new Map<KeyId, KeyId>();
+      for (const id of this.data.keyOrder) {
+        const { ns, key } = parseKeyId(id);
+        if (ns === from) pairs.set(id, keyId(to, key));
+      }
+      for (const [src, dst] of pairs) {
+        const cells = this.data.values.get(src);
+        this.data.values.delete(src);
+        if (cells) this.data.values.set(dst, cells);
+        renameInState(this.state, src, dst);
+        this.disk.delete(src); // nothing of it is on disk under the new name yet
+      }
+      if (this.wsMeta && pairs.size) this.renameInMeta(pairs);
+      this.dropNamespaceFiles(from);
+      for (const locale of this.data.locales) this.creates.set(this.adapter.filePath(this.opts, locale, to), { locale, ns: to });
+      this.data.namespaces = [...this.data.namespaces.filter((n) => n !== from), to].sort();
+      this.setKeyOrder(this.data.keyOrder.map((k) => pairs.get(k) ?? k));
+      this.stateTouched = true;
+      this.emit();
+    });
+  }
+
+  /**
+   * Deletes a namespace with all its keys; each language's file is deleted on save. A project
+   * keeps at least one. Not an undo step.
+   */
+  deleteNamespace(ns: string): void {
+    const why = this.namespaceLockReason(ns);
+    if (why) throw new Error(why);
+    if (this.data.namespaces.length <= 1) throw new Error("A project needs at least one. Add another before deleting this one.");
+    this.external(() => {
+      const drop = new Set(this.data.keyOrder.filter((id) => parseKeyId(id).ns === ns));
+      for (const id of drop) {
+        this.data.values.delete(id);
+        this.disk.delete(id);
+        delete this.state.entries[id];
+      }
+      if (this.wsMeta && drop.size) this.forgetInMeta(drop);
+      this.dropNamespaceFiles(ns);
+      this.data.namespaces = this.data.namespaces.filter((n) => n !== ns);
+      this.setKeyOrder(this.data.keyOrder.filter((k) => !drop.has(k)));
+      this.stateTouched = true;
+      this.emit();
+    });
+  }
+
+  /** A namespace's files go: loaded ones are deleted on save, ones not created yet are dropped. */
+  private dropNamespaceFiles(ns: string): void {
+    for (const f of this.files) if (f.ns === ns) this.removed.set(f.relPath, f);
+    this.files = this.files.filter((f) => f.ns !== ns);
+    for (const [p, c] of this.creates) if (c.ns === ns) this.creates.delete(p);
+  }
+
   // ---- saving ----------------------------------------------------------------------------
 
   /** Saves are serialized: a call made while another is in flight runs after it. */
@@ -896,6 +1036,7 @@ export class ProjectSession {
     load: Awaited<ReturnType<FormatAdapter["load"]>>, stateText: string | null, metaText: string | null,
   ): Conflict[] {
     const plan = planReload({ data: this.data, disk: this.disk, creates: this.creates, removed: this.removed, load });
+    const before = copyCells(this.data.values);
     for (const p of plan.adopted) this.creates.delete(p);
     for (const f of load.files) if (this.removed.has(f.relPath)) this.removed.set(f.relPath, f);
     this.files = plan.files;
@@ -913,6 +1054,8 @@ export class ProjectSession {
       // Project overrides: adopt the disk's unless changed locally since the last load/save.
       if (projectEqual(this.state.project, baseline.project)) this.state.project = { ...diskState.project };
       this.stateBaseline = serializeState(reconcile(diskState, this.data));
+      // After the merge, so a review record that came with the change (e.g. a teammate's) wins.
+      this.pinChangedBase(before);
     } // else: keep local entries and the last good baseline; merging resumes once it parses again
     this.stateDiskText = stateText;
     this.stateTouched = true;

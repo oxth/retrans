@@ -329,7 +329,7 @@
       </ul>
 
       <!-- A drawing of the app (not a screenshot), so it stays sharp and follows light/dark mode. -->
-      <div class="shot" role="img" aria-label="The Retrans window: a sidebar with per-language progress, and a grid of keys with English, Thai and German translations. Each translation has a status dot, one cell is missing, one needs review, and one is being edited with an AI suggestion.">
+      <div class="shot" role="img" aria-label="The Retrans window: a sidebar with per-language progress, and a grid of keys with English, Thai and German translations. Each translation has a status dot, one cell is missing, one has a source text that changed, and one is being edited with an AI suggestion.">
         <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span class="shot-tab">my-app</span></div>
         <div class="shot-body" aria-hidden="true">
           <div class="shot-side">
@@ -347,7 +347,7 @@
             <div class="shot-tools">
               <span class="search">Search keys or text…</span>
               <span class="chip on"><span class="dot d-m" style="width:7px;height:7px;border-radius:50%;display:inline-block"></span>Missing <span class="n">12</span></span>
-              <span class="chip">Needs review</span>
+              <span class="chip">Source changed</span>
               <span class="chip">Machine</span>
             </div>
             <div class="row">
@@ -362,7 +362,7 @@
               <div class="key">checkout.total<small>common</small></div>
               <div class="cells">
                 <div class="cell"><span class="lc">EN</span><span class="t">Order total: {{amount}}</span></div>
-                <div class="cell"><span class="lc">DE</span><span class="dot d-n"></span><span class="t">Gesamtsumme: {{amount}}</span><span class="needs">Needs review</span></div>
+                <div class="cell"><span class="lc">DE</span><span class="dot d-n"></span><span class="t">Gesamtsumme: {{amount}}</span><span class="needs">Source changed</span></div>
                 <div class="cell editing"><span class="lc">TH</span><span class="t">ยอดรวม: {{amount}}<span class="caret"></span></span></div>
                 <div class="suggest"><span class="ai">AI</span>ยอดรวมคำสั่งซื้อ: {{amount}}<span class="ok">Accept</span></div>
               </div>

@@ -9,6 +9,7 @@ import { zipRead } from "../platform/zip";
 import { getRecent, removeRecent, type RecentProject } from "../platform/prefs";
 import { resolveTsSource } from "../tssource/import";
 import { btnGhost, btnPrimary, Dialog, sectionLabel } from "./Dialog";
+import { AppIcon } from "./AppIcon";
 import { Icon } from "./Icon";
 import { ImportTsDialog } from "./ImportTsDialog";
 import { NewProjectWizard } from "./NewProjectWizard";
@@ -200,20 +201,15 @@ export function StartScreen() {
       <div className="my-auto w-full max-w-2xl">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span
-              aria-hidden="true"
-              className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#4f46e5] to-[#0d9488] text-white"
-            >
-              <Icon name="languages" size={22} />
-            </span>
+            <AppIcon size={44} />
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Retrans</h1>
               <p className="text-sm text-muted">Edit next-i18next and Paraglide translations side by side.</p>
             </div>
           </div>
-          <button className={btnGhost} onClick={openPrefs}>
+          <button className={btnGhost} onClick={() => openPrefs()}>
             <Icon name="settings" size={15} />
-            Preferences
+            Settings
           </button>
         </div>
         <div className="mt-8 grid gap-3 sm:grid-cols-3">
