@@ -23,7 +23,7 @@ vi.mock("../platform/mt", () => ({
 vi.mock("../platform/tauri-fs", () => ({ tauriFs: { exists: vi.fn(async () => true) } }));
 
 import { getMtSettings } from "../platform/prefs";
-import { ProviderSettings } from "./ProviderSettings";
+import { MtSettings } from "./MtSettings";
 import { activeTranslator, useMt } from "./mt-store";
 
 const initial = useMt.getState();
@@ -43,59 +43,113 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+const form = () => render(<MtSettings session={null} />);
 const pickProvider = (label: string) => userEvent.selectOptions(screen.getByLabelText("Provider"), label);
+const save = () => userEvent.click(screen.getByRole("button", { name: "Save" }));
+const settings = () => useMt.getState().settings;
 
-describe("provider settings", () => {
-  it("choosing Claude asks for consent once, naming api.anthropic.com", async () => {
-    render(<ProviderSettings />);
+describe("provider settings (saved with the form's Save)", () => {
+  it("nothing changes until Save; then Claude asks for consent once, naming api.anthropic.com", async () => {
+    form();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     await pickProvider("Claude (Anthropic)");
+    expect(settings().provider).toBe("local");
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+    await save();
     const dlg = screen.getByRole("dialog", { name: "Send text to Claude (Anthropic)?" });
     expect(within(dlg).getByText(/api\.anthropic\.com/)).toBeInTheDocument();
     await userEvent.click(within(dlg).getByRole("button", { name: "Continue" }));
-    expect(useMt.getState().settings.provider).toBe("anthropic");
-    expect(useMt.getState().settings.consent).toContain("anthropic");
+    await waitFor(() => expect(settings().provider).toBe("anthropic"));
+    expect(settings().consent).toContain("anthropic");
+    expect(await screen.findByText("Saved.")).toBeInTheDocument();
     await pickProvider("Built-in (on this computer)");
+    await save();
+    await waitFor(() => expect(settings().provider).toBe("local"));
     await pickProvider("Claude (Anthropic)");
+    await save();
+    await waitFor(() => expect(settings().provider).toBe("anthropic"));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("declining consent keeps the previous provider", async () => {
-    render(<ProviderSettings />);
+  it("declining consent saves nothing and keeps the edits", async () => {
+    form();
     await pickProvider("OpenAI (ChatGPT)");
+    await save();
     await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
-    expect(useMt.getState().settings.provider).toBe("local");
+    expect(settings().provider).toBe("local");
+    expect(screen.getByLabelText("Provider")).toHaveValue("openai");
   });
 
-  it("the key is stored with setSecret and never put in prefs", async () => {
-    useMt.setState({ settings: { ...useMt.getState().settings, provider: "anthropic", consent: ["anthropic"] } });
-    render(<ProviderSettings />);
+  it("Discard puts the form back to the saved settings", async () => {
+    form();
+    await pickProvider("OpenAI (ChatGPT)");
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.getByLabelText("Provider")).toHaveValue("local");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("the key is stored with setSecret on Save and never put in prefs", async () => {
+    useMt.setState({ settings: { ...settings(), provider: "anthropic", consent: ["anthropic"] } });
+    form();
     await userEvent.type(await screen.findByLabelText("API key"), "sk-ant-secret");
-    await userEvent.click(screen.getByRole("button", { name: "Save key" }));
+    expect(secrets.has("anthropic")).toBe(false);
+    await save();
     await waitFor(() => expect(secrets.get("anthropic")).toBe("sk-ant-secret"));
     expect(await screen.findByText(/Saved in (Keychain|Credential Manager|your system keyring)/)).toBeInTheDocument();
+    expect(screen.getByLabelText("API key")).toHaveAttribute("placeholder", "•••••••• (saved)");
     expect(JSON.stringify([...prefs.values()])).not.toContain("sk-ant-secret");
     expect(screen.queryByDisplayValue("sk-ant-secret")).toBeNull();
   });
 
-  it("the model list comes from mt_cloud_models", async () => {
+  it("Remove deletes the saved key on Save", async () => {
     secrets.set("anthropic", "k");
-    useMt.setState({ settings: { ...useMt.getState().settings, provider: "anthropic", consent: ["anthropic"] } });
-    render(<ProviderSettings />);
-    // A text box until the list arrives, then a list of the provider's models.
-    await waitFor(() =>
-      expect(within(screen.getByLabelText("Model")).getAllByRole("option").map((o) => o.textContent)).toEqual(["claude-haiku", "claude-sonnet"]),
-    );
-    await userEvent.selectOptions(screen.getByLabelText("Model"), "claude-sonnet");
-    expect((await getMtSettings()).cloud.anthropic?.model).toBe("claude-sonnet");
+    useMt.setState({ settings: { ...settings(), provider: "anthropic", consent: ["anthropic"] } });
+    form();
+    await userEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    expect(secrets.has("anthropic")).toBe(true);
+    await save();
+    await waitFor(() => expect(secrets.has("anthropic")).toBe(false));
   });
 
-  it("the ACP preset fills the command", async () => {
-    useMt.setState({ settings: { ...useMt.getState().settings, provider: "acp", consent: ["acp"] } });
-    render(<ProviderSettings />);
+  it("the model list comes from mt_cloud_models; the chosen model is saved on Save", async () => {
+    secrets.set("anthropic", "k");
+    useMt.setState({ settings: { ...settings(), provider: "anthropic", consent: ["anthropic"] } });
+    form();
+    await waitFor(() => expect([...screen.getByTestId("model-list").querySelectorAll("option")].map((o) => o.value)).toEqual(["claude-haiku", "claude-sonnet"]));
+    // Nothing chosen yet: the first one is filled in, as an edit to save.
+    expect(screen.getByLabelText("Model")).toHaveValue("claude-haiku");
+    await userEvent.clear(screen.getByLabelText("Model"));
+    await userEvent.type(screen.getByLabelText("Model"), "claude-sonnet");
+    expect((await getMtSettings()).cloud.anthropic?.model).toBeUndefined();
+    await save();
+    await waitFor(async () => expect((await getMtSettings()).cloud.anthropic?.model).toBe("claude-sonnet"));
+  });
+
+  it("Test connection lists the models with the saved key, and waits for a new key to be saved", async () => {
+    secrets.set("anthropic", "k");
+    useMt.setState({ settings: { ...settings(), provider: "anthropic", consent: ["anthropic"], cloud: { anthropic: { model: "claude-haiku" } } } });
+    form();
+    await userEvent.click(await screen.findByRole("button", { name: "Test connection" }));
+    expect(await screen.findByText("Connected. 2 models available.")).toBeInTheDocument();
+    invoke.mockImplementationOnce(async () => {
+      throw "401 Unauthorized";
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(await screen.findByText("Couldn't connect: 401 Unauthorized")).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("API key"), "new");
+    expect(screen.getByRole("button", { name: "Test connection" })).toBeDisabled();
+  });
+
+  it("the ACP preset fills the command, saved on Save", async () => {
+    useMt.setState({ settings: { ...settings(), provider: "acp", consent: ["acp"] } });
+    form();
     await userEvent.selectOptions(screen.getByLabelText("Agent"), "Claude Code");
-    expect(useMt.getState().settings.acp).toEqual({ preset: "claude-code", command: "npx", args: ["-y", "@agentclientprotocol/claude-agent-acp"] });
+    expect(settings().acp).toBeNull();
+    await save();
+    await waitFor(() => expect(settings().acp).toEqual({ preset: "claude-code", command: "npx", args: ["-y", "@agentclientprotocol/claude-agent-acp"] }));
     await userEvent.selectOptions(screen.getByLabelText("Agent"), "Gemini CLI");
-    expect(useMt.getState().settings.acp).toEqual({ preset: "gemini", command: "gemini", args: ["--acp"] });
+    await save();
+    await waitFor(() => expect(settings().acp).toEqual({ preset: "gemini", command: "gemini", args: ["--acp"] }));
   });
 
   it("old prefs without a provider read as local", async () => {
@@ -111,20 +165,23 @@ describe("provider settings", () => {
     expect(activeTranslator({ ...st, settings: { ...settings, consent: ["openai"] } }, "next-i18next", "openai")?.label).toBe("OpenAI (ChatGPT)");
   });
 
-  it("OpenAI-compatible asks when the address is saved, naming its host, and again for a new address", async () => {
-    render(<ProviderSettings />);
+  it("OpenAI-compatible needs an address, asks on Save naming its host, and again for a new address", async () => {
+    form();
     await pickProvider("OpenAI-compatible");
-    expect(screen.queryByRole("dialog")).toBeNull(); // nothing is sent until an address is set
+    await save();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("Enter the API base URL.")).toBeInTheDocument();
     const base = screen.getByLabelText("API base URL");
     await userEvent.type(base, "http://localhost:11434/v1");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await save();
     const dlg = screen.getByRole("dialog", { name: "Send text to OpenAI-compatible?" });
     expect(within(dlg).getByText(/localhost:11434/)).toBeInTheDocument();
     await userEvent.click(within(dlg).getByRole("button", { name: "Continue" }));
-    expect(useMt.getState().settings.consent).toContain("compatible:http://localhost:11434/v1");
+    await waitFor(() => expect(settings().cloud.compatible?.baseUrl).toBe("http://localhost:11434/v1"));
+    expect(settings().consent).toContain("compatible:http://localhost:11434/v1");
     await userEvent.clear(base);
     await userEvent.type(base, "https://api.example.com/v1");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await save();
     expect(screen.getByRole("dialog", { name: "Send text to OpenAI-compatible?" })).toBeInTheDocument();
   });
 
@@ -139,8 +196,8 @@ describe("provider settings", () => {
   });
 
   it("the agent note says what Retrans can and can't control", async () => {
-    useMt.setState({ settings: { ...useMt.getState().settings, provider: "acp", consent: ["acp"] } });
-    render(<ProviderSettings />);
+    useMt.setState({ settings: { ...settings(), provider: "acp", consent: ["acp"] } });
+    form();
     expect(screen.getByText(/its own built-in tools can still read files on this computer/)).toBeInTheDocument();
   });
 });

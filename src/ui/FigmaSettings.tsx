@@ -4,7 +4,8 @@ import type { ProjectSession } from "../core/session";
 import { readFigmaFolder } from "../figma/sync";
 import { joinPath } from "../platform/fs";
 import { FIGMA_DEFAULT_DIR, isSafeLocalesDir } from "../workspace/meta";
-import { btnGhost, inputCls } from "./Dialog";
+import { btnPrimary } from "./Dialog";
+import { btnRow, fieldBase, fieldCls, Group, Row } from "./settings-ui";
 import { FigmaImportDialog } from "./FigmaImportDialog";
 import { saveFigma } from "./figma-meta";
 import { useApp, useSessionVersion } from "./store";
@@ -49,13 +50,13 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
   };
 
   return (
-    <div className="space-y-3">
-      <label className="block">
-        Figma folder
-        <div className="flex gap-2">
-          <input aria-label="Figma folder" className={inputCls} value={dir} onChange={(e) => setDir(e.target.value)} />
+    <>
+      <Group label="Folder" footer={dirNote ? <span role="alert" className="text-danger">{dirNote}</span> : undefined}>
+        <Row label="Figma folder" hint="Where exported Figma variable files are kept, inside the project." htmlFor="figma-dir">
+          <input id="figma-dir" aria-label="Figma folder" className={`${fieldBase} w-52 font-mono`} value={dir} onChange={(e) => setDir(e.target.value)} />
           <button
-            className={btnGhost}
+            type="button"
+            className={btnRow}
             onClick={() => {
               const d = dir.trim().replace(/\/+$/, "");
               if (!d || !isSafeLocalesDir(d)) return setDirNote("The folder must be inside the project.");
@@ -65,52 +66,56 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
           >
             Save folder
           </button>
-        </div>
-      </label>
-      {dirNote && <p role="alert" className="text-danger">{dirNote}</p>}
-      {modes.length > 0 && (
-        <div className="space-y-2">
-          {modes.map((m) => (
-            <label key={m} className="flex items-center gap-2">
-              <span className="w-24 shrink-0">Mode {m}</span>
-              <select
-                aria-label={`Language for ${m}`}
-                className={inputCls}
-                value={mapped[m] ?? ""}
-                onChange={(e) => (e.target.value === NEW ? setAdding({ mode: m, code: "" }) : setMode(m, e.target.value))}
-              >
-                <option value="">(not set)</option>
-                {[...new Set([...session.data.locales, ...(mapped[m] ? [mapped[m]] : [])])].map((l) => (
-                  <option key={l} value={l}>{l}</option>
-                ))}
-                <option value={NEW}>Add new…</option>
-              </select>
-            </label>
-          ))}
-        </div>
-      )}
-      {adding && (
-        <div className="flex items-center gap-2">
-          <input
-            aria-label={`New language code for ${adding.mode}`}
-            className={inputCls}
-            value={adding.code}
-            onChange={(e) => setAdding({ ...adding, code: e.target.value.trim() })}
-          />
-          <button
-            className={btnGhost}
-            disabled={!isValidLocale(adding.code)}
-            onClick={() => {
-              setMode(adding.mode, adding.code);
-              setAdding(null);
-            }}
-          >
-            Add
-          </button>
-        </div>
-      )}
-      <button className={btnGhost} onClick={() => setImporting(true)}>Import Figma files…</button>
+        </Row>
+      </Group>
+      <Group label="Modes" footer="Each Figma mode is one language of this workspace.">
+        {modes.length === 0 && <Row label="No modes found" hint={`Add Figma files to ${currentDir} and they show up here.`} />}
+        {modes.map((m) => (
+          <Row key={m} label={<>Mode <span className="font-mono">{m}</span></>} htmlFor={`figma-mode-${m}`}>
+            <select
+              id={`figma-mode-${m}`}
+              aria-label={`Language for ${m}`}
+              className={fieldCls}
+              value={mapped[m] ?? ""}
+              onChange={(e) => (e.target.value === NEW ? setAdding({ mode: m, code: "" }) : setMode(m, e.target.value))}
+            >
+              <option value="">(not set)</option>
+              {[...new Set([...session.data.locales, ...(mapped[m] ? [mapped[m]] : [])])].map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+              <option value={NEW}>Add new…</option>
+            </select>
+          </Row>
+        ))}
+        {adding && (
+          <Row label={<>New language for <span className="font-mono">{adding.mode}</span></>} hint="A language code, e.g. th or pt-BR." htmlFor="figma-new-code">
+            <input
+              id="figma-new-code"
+              aria-label={`New language code for ${adding.mode}`}
+              className={`${fieldBase} w-36 font-mono`}
+              value={adding.code}
+              onChange={(e) => setAdding({ ...adding, code: e.target.value.trim() })}
+            />
+            <button
+              type="button"
+              className={btnRow}
+              disabled={!isValidLocale(adding.code)}
+              onClick={() => {
+                setMode(adding.mode, adding.code);
+                setAdding(null);
+              }}
+            >
+              Add
+            </button>
+          </Row>
+        )}
+      </Group>
+      <Group label="Import">
+        <Row label="Import Figma files" hint="Bring translations in from Figma variable exports.">
+          <button type="button" className={btnPrimary} onClick={() => setImporting(true)}>Import Figma files…</button>
+        </Row>
+      </Group>
       {importing && <FigmaImportDialog session={session} onClose={() => setImporting(false)} />}
-    </div>
+    </>
   );
 }

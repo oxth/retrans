@@ -52,12 +52,57 @@ export async function setDefaultViewMode(m: "list" | "table"): Promise<void> {
   await s.save();
 }
 
+export type Theme = "system" | "light" | "dark";
+export type UiSize = "small" | "default" | "large" | "larger";
+export interface Appearance {
+  theme: Theme;
+  size: UiSize;
+}
+export const DEFAULT_APPEARANCE: Appearance = { theme: "system", size: "default" };
+const THEMES: Theme[] = ["system", "light", "dark"];
+const SIZES: UiSize[] = ["small", "default", "large", "larger"];
+
+/** Settings → Appearance; anything unknown reads as the default. */
+export function appearanceOf(v: unknown): Appearance {
+  const o = (typeof v === "object" && v !== null ? v : {}) as Record<string, unknown>;
+  return {
+    theme: THEMES.includes(o.theme as Theme) ? (o.theme as Theme) : DEFAULT_APPEARANCE.theme,
+    size: SIZES.includes(o.size as UiSize) ? (o.size as UiSize) : DEFAULT_APPEARANCE.size,
+  };
+}
+
+export async function getAppearance(): Promise<Appearance> {
+  const s = await getStore();
+  return appearanceOf(await s.get("appearance"));
+}
+
+export async function setAppearance(a: Appearance): Promise<void> {
+  const s = await getStore();
+  await s.set("appearance", a);
+  await s.save();
+}
+
 /** The project's saved mode, else the global default. */
 export async function getViewMode(root: string): Promise<"list" | "table"> {
   const s = await getStore();
   const all = (await s.get<Record<string, "list" | "table">>("viewMode")) ?? {};
   if (all[root] === "table" || all[root] === "list") return all[root];
   return getDefaultViewMode();
+}
+
+/** The project's own saved mode, or null when it follows the global default. */
+export async function getOwnViewMode(root: string): Promise<"list" | "table" | null> {
+  const s = await getStore();
+  const all = (await s.get<Record<string, "list" | "table">>("viewMode")) ?? {};
+  return all[root] === "table" || all[root] === "list" ? all[root] : null;
+}
+
+/** Makes the project follow the global default again. */
+export async function clearViewMode(root: string): Promise<void> {
+  const s = await getStore();
+  const { [root]: _dropped, ...rest } = (await s.get<Record<string, "list" | "table">>("viewMode")) ?? {};
+  await s.set("viewMode", rest);
+  await s.save();
 }
 
 export async function setViewMode(root: string, m: "list" | "table"): Promise<void> {

@@ -59,7 +59,7 @@ The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts
 
 - [ ] The window opens and the project loads from the chosen folder.
 - [ ] Tab moves to the next missing cell; fill a missing Thai cell this way and mark it reviewed.
-- [ ] Changing the English text shows the Thai cell as needing review.
+- [ ] Changing the English text shows the Thai cell as **Source changed**, both when edited in the app and when edited in a text editor while the app is open.
 - [ ] Add, rename and delete a key; add the language `ja`; save. `git diff` in the fixture copy shows only the intended lines.
 - [ ] Edit a translation file in a text editor while the app is open: the app picks up the change, and a conflicting unsaved cell shows the conflict dialog.
 - [ ] Closing the window with unsaved edits shows the close prompt.

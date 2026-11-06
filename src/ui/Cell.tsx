@@ -6,7 +6,7 @@ import { isTranslated, type KeyId } from "../core/model";
 import { CellEditor } from "./CellEditor";
 import { useSuggestion } from "./Suggestion";
 import { Icon } from "./Icon";
-import { NEEDS_REVIEW_TEXT, STATUS_TEXT, StatusDot } from "./StatusDot";
+import { NEEDS_REVIEW_TEXT, SOURCE_CHANGED, STATUS_TEXT, StatusDot } from "./StatusDot";
 import { Warnings } from "./Warnings";
 
 /** Stable callbacks owned by AppShell; every cell shares the same object. */
@@ -179,7 +179,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
               className="rounded bg-warn-soft px-1.5 text-[11px] font-medium leading-5 text-warn"
               title="The base text changed after this was translated. Check the translation still fits, then mark it reviewed."
             >
-              Needs review
+              {SOURCE_CHANGED}
             </span>
           )}
           <button

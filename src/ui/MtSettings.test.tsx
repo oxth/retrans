@@ -76,6 +76,9 @@ describe("MtSettings", () => {
     expect(screen.queryByText("TranslateGemma 4B")).toBeNull();
     await userEvent.click(screen.getByRole("checkbox"));
     await waitFor(() => expect(screen.getByText("TranslateGemma 4B")).toBeInTheDocument());
+    expect(useMt.getState().settings.enabled).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(useMt.getState().settings.enabled).toBe(true));
   });
 
   it("shows size, RAM, languages and license before download", async () => {
@@ -155,8 +158,10 @@ describe("MtSettings", () => {
     render(<MtSettings session={session()} />);
     const c = within(card("TranslateGemma 4B"));
     await userEvent.click(c.getByRole("radio", { name: "Use this model" }));
-    await waitFor(() => expect(c.getByRole("radio", { name: "Use this model" })).toBeChecked());
-    expect(useMt.getState().settings.modelId).toBe("translategemma-4b");
+    expect(c.getByRole("radio", { name: "Use this model" })).toBeChecked();
+    expect(useMt.getState().settings.modelId).toBeNull(); // not until Save
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(useMt.getState().settings.modelId).toBe("translategemma-4b"));
     expect(screen.getByText("Space used: 2.49 GB")).toBeInTheDocument();
   });
 
@@ -202,8 +207,11 @@ describe("MtSettings", () => {
     render(<MtSettings session={session()} />);
     await userEvent.selectOptions(screen.getByLabelText("Prompt style"), "translategemma");
     await userEvent.click(screen.getByRole("button", { name: "Choose file…" }));
+    expect(await screen.findByText("/x/my.gguf")).toBeInTheDocument();
+    expect(useMt.getState().settings.custom).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(useMt.getState().settings.custom).toEqual({ path: "/x/my.gguf", template: "translategemma" }));
-    expect(screen.getByText("/x/my.gguf")).toBeInTheDocument();
+    expect(useMt.getState().settings.modelId).toBe("custom");
     useMt.setState({ customMissing: true });
     expect(await screen.findByText("File not found")).toBeInTheDocument();
   });
@@ -235,5 +243,39 @@ describe("MtSettings", () => {
     seed({ settings: { modelId: "qwen3-1.7b" } as never, files: { [file]: { size: 1, complete: true } } });
     render(<MtSettings session={session("paraglide")} />);
     expect(screen.getByRole("textbox", { name: "Text to translate" })).toHaveValue("Welcome back, {name}! You have new messages.");
+  });
+
+  it("test panel: From/To default to the project's languages and are sent to the model", async () => {
+    const file = findModel("qwen3-1.7b")!.file;
+    seed({ settings: { modelId: "qwen3-1.7b" } as never, files: { [file]: { size: 1, complete: true } } });
+    render(<MtSettings session={session()} />);
+    expect(screen.getByRole("combobox", { name: "Source language" })).toHaveValue("en");
+    expect(screen.getByRole("combobox", { name: "Target language" })).toHaveValue("th");
+    expect(screen.getByText("English")).toBeInTheDocument();
+    expect(screen.getByText("Thai")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Swap languages" }));
+    expect(screen.getByRole("combobox", { name: "Source language" })).toHaveValue("th");
+    expect(screen.getByRole("combobox", { name: "Target language" })).toHaveValue("en");
+    generate.mockResolvedValueOnce("Hi [[0]]");
+    await userEvent.click(screen.getByRole("button", { name: "Translate" }));
+    await waitFor(() => expect(generate).toHaveBeenCalled());
+    const prompt = JSON.stringify(generate.mock.calls[generate.mock.calls.length - 1]);
+    expect(prompt).toContain("from Thai (th) to English (en)");
+  });
+
+  it("test panel: the same language twice is blocked, and an unchanged reply is called out", async () => {
+    const file = findModel("qwen3-1.7b")!.file;
+    seed({ settings: { modelId: "qwen3-1.7b" } as never, files: { [file]: { size: 1, complete: true } } });
+    render(<MtSettings session={session()} />);
+    const to = screen.getByRole("combobox", { name: "Target language" });
+    await userEvent.clear(to);
+    await userEvent.type(to, "en");
+    expect(screen.getByText("Pick two different languages: the text would come back unchanged.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Translate" })).toBeDisabled();
+    await userEvent.clear(to);
+    await userEvent.type(to, "th");
+    generate.mockResolvedValueOnce("Welcome back, [[0]]! You have new messages.");
+    await userEvent.click(screen.getByRole("button", { name: "Translate" }));
+    expect(await screen.findByText(/The model returned the text unchanged/)).toBeInTheDocument();
   });
 });

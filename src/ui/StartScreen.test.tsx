@@ -77,7 +77,7 @@ describe("StartScreen", () => {
     expect(dlg).toHaveTextContent(/\d+ keys/);
     expect(useApp.getState().session).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Open" }));
-    expect(await screen.findByRole("button", { name: "Close project" })).toBeInTheDocument();
+    expect(await screen.findByRole("complementary", { name: "Sidebar" })).toBeInTheDocument();
   });
 
   it("asks for the base language when detect returns baseLocale null", async () => {
@@ -93,7 +93,7 @@ describe("StartScreen", () => {
     await userEvent.selectOptions(screen.getByLabelText(/base language/i), "th");
     expect(open).toBeEnabled();
     await userEvent.click(open);
-    await screen.findByRole("button", { name: "Close project" });
+    await screen.findByRole("complementary", { name: "Sidebar" });
     expect(useApp.getState().session!.data.baseLocale).toBe("th");
   });
 
@@ -114,7 +114,7 @@ describe("StartScreen", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: /^th\s*Thai$/ }));
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     await userEvent.click(await screen.findByRole("button", { name: "Create" }));
-    await screen.findByRole("button", { name: "Close project" });
+    await screen.findByRole("complementary", { name: "Sidebar" });
     expect(await fs.exists("/docs/Retrans/My App/.retrans/workspace.json")).toBe(true);
     expect(useApp.getState().session!.data.locales).toEqual(["en", "th"]);
   });
@@ -124,7 +124,7 @@ describe("StartScreen", () => {
     await addRecent({ root: "/project", name: "project", format: "next-i18next" });
     await setup(fs);
     await userEvent.click(await screen.findByRole("button", { name: /^project\// }));
-    await screen.findByRole("button", { name: "Close project" });
+    await screen.findByRole("complementary", { name: "Sidebar" });
     expect(useApp.getState().session).not.toBeNull();
   });
 
@@ -180,7 +180,7 @@ describe("StartScreen", () => {
     await addRecent({ root: "/project", name: "project", format: "next-i18next" });
     await setup(fs);
     await userEvent.click(await screen.findByRole("button", { name: /^project\// }));
-    await screen.findByRole("button", { name: "Close project" });
+    await screen.findByRole("complementary", { name: "Sidebar" });
     expect(screen.queryByText(/Restore unsaved changes/)).toBeNull();
     expect(useApp.getState().session!.value(id, "th")).toEqual({ kind: "text", text: "แก้ไข" });
     expect(useApp.getState().recovery).toBeNull();
@@ -196,7 +196,7 @@ describe("layout", () => {
     fills(root.lastElementChild);
     await userEvent.click(screen.getByRole("button", { name: "Open project" }));
     await userEvent.click(await screen.findByRole("button", { name: "Open" }));
-    await screen.findByRole("button", { name: "Close project" });
+    await screen.findByRole("complementary", { name: "Sidebar" });
     expect(root.firstElementChild).toContainElement(screen.getByRole("tablist")); // the tab bar takes its own row
     fills(root.lastElementChild);
     expect(container.querySelectorAll(".h-screen, .min-h-screen")).toHaveLength(1);
@@ -213,7 +213,7 @@ describe("StartScreen review fixes", () => {
     await addRecent({ root: "/project", name: "project", format: "next-i18next" });
     await setup(fs);
     await userEvent.click(await screen.findByRole("button", { name: /^project\// }));
-    await screen.findByRole("button", { name: "Close project" });
+    await screen.findByRole("complementary", { name: "Sidebar" });
     expect(useApp.getState().session!.data.baseLocale).toBe("th");
   });
 });
@@ -334,7 +334,7 @@ describe("opening a folder of Figma Variables files", () => {
     expect(within(dlg).getByLabelText("Language for TH")).toHaveValue("th");
     await userEvent.selectOptions(within(dlg).getByLabelText("Base language"), "th");
     await userEvent.click(within(dlg).getByRole("button", { name: "Create workspace" }));
-    await screen.findByRole("button", { name: "Close project" });
+    await screen.findByRole("complementary", { name: "Sidebar" });
     const s = useApp.getState().session!;
     expect(s.workspace?.figma).toMatchObject({ dir: ".", modes: { ENG: "en", TH: "th" } });
     await waitFor(() =>
@@ -353,7 +353,7 @@ describe("opening a folder of Figma Variables files", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open project" }));
     const dlg = await screen.findByRole("dialog", { name: "Create a workspace from Figma files" });
     await userEvent.click(within(dlg).getByRole("button", { name: "Create workspace" }));
-    await screen.findByRole("button", { name: "Close project" });
+    await screen.findByRole("complementary", { name: "Sidebar" });
     expect(await detectProject(fs, DL)).not.toBeNull();
   });
 

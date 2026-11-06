@@ -13,7 +13,7 @@ function stepTab(delta: 1 | -1): void {
 }
 
 /**
- * While a dialog (or Preferences) is open, menu items do nothing: their shortcuts would otherwise
+ * While a dialog (or Settings) is open, menu items do nothing: their shortcuts would otherwise
  * act on the project behind it (the native menu takes the key before the page sees it).
  */
 const guarded = (actions: Record<string, () => void>): Record<string, () => void> =>
@@ -24,7 +24,7 @@ const guarded = (actions: Record<string, () => void>): Record<string, () => void
 /** What each menu item does (ids from platform/menu.ts). */
 export const MENU_ACTIONS: Record<string, () => void> = guarded({
   settings: () => app().openPrefs(),
-  "check-updates": () => app().openPrefs(), // the Updates section has Check for updates
+  "check-updates": () => app().openPrefs("about"), // About has Check for updates
   "new-project": () => {
     app().showStart();
     app().requestUi("new-project");

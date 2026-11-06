@@ -2,8 +2,10 @@ import { useState } from "react";
 import { localesSnippet } from "../formats/next-i18next";
 import type { ProjectSession } from "../core/session";
 import { btnGhost, btnPrimary, Dialog, inputCls, btnSecondary, btnDanger } from "./Dialog";
+import { Icon } from "./Icon";
 import { LocalePicker } from "./LocalePicker";
 import { localeLabel } from "./locales";
+import { parseKeyId } from "../core/model";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -89,14 +91,7 @@ export function LanguagesPage({ session, stats }: { session: ProjectSession; sta
       )}
 
       {format === "next-i18next" && (
-        <div className="mt-6">
-          <h2 className="mb-2 text-sm font-semibold">{isWs ? "Groups" : "Namespaces"}</h2>
-          <div className="mb-2 text-xs text-muted">{session.data.namespaces.join(", ")}</div>
-          <div className="flex gap-2">
-            <input aria-label={isWs ? "New group" : "New namespace"} className={inputCls} value={ns} onChange={(e) => { setNs(e.target.value); setError(null); }} />
-            <button className={btnSecondary + " whitespace-nowrap"} disabled={!ns.trim()} onClick={addNs}>{isWs ? "Add group" : "Add namespace"}</button>
-          </div>
-        </div>
+        <GroupsSection session={session} name={ns} onName={(v) => { setNs(v); setError(null); }} onAdd={addNs} onError={setError} />
       )}
       {error && <div role="alert" className="mt-3 text-xs text-danger">{error}</div>}
 
@@ -126,6 +121,228 @@ export function LanguagesPage({ session, stats }: { session: ProjectSession; sta
         </Dialog>
       )}
     </div>
+  );
+}
+
+/**
+ * Groups (workspace) / namespaces (next-i18next): what they are, which exist with how many keys,
+ * and adding one. The same thing under two names: keys split into one file per language each.
+ */
+function GroupsSection({
+  session,
+  name,
+  onName,
+  onAdd,
+  onError,
+}: {
+  session: ProjectSession;
+  name: string;
+  onName: (v: string) => void;
+  onAdd: () => void;
+  onError: (message: string | null) => void;
+}) {
+  const isWs = !!session.workspace;
+  const { namespaces, keyOrder, baseLocale } = session.data;
+  const counts = new Map<string, number>();
+  for (const id of keyOrder) {
+    const g = parseKeyId(id).ns;
+    counts.set(g, (counts.get(g) ?? 0) + 1);
+  }
+  const word = isWs ? "group" : "namespace";
+  const fileOf = (g: string) => `${session.opts.localesPath}/${baseLocale}/${g}.json`;
+  return (
+    <section aria-labelledby="groups-heading" className="mt-8">
+      <h2 id="groups-heading" className="text-sm font-semibold">{isWs ? "Groups" : "Namespaces"}</h2>
+      <p className="mt-1 text-xs leading-5 text-muted">
+        {isWs ? (
+          <>
+            Keys are sorted into groups, like folders. Each group is saved as its own file for every language; for a TypeScript import,
+            each source file is one group. Use the Group filter on the Translations page to work on one at a time.
+          </>
+        ) : (
+          <>
+            Keys are split into namespaces: one JSON file per language each, such as <span className="font-mono">{fileOf(namespaces[0] ?? "common")}</span>. Your
+            app loads a namespace by name, e.g. <span className="font-mono">useTranslation("{namespaces[0] ?? "common"}")</span>. Use the Namespace filter on the
+            Translations page to work on one at a time.
+          </>
+        )}
+      </p>
+      <form
+        className="mt-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim()) onAdd();
+        }}
+      >
+        <label htmlFor="new-group" className="mb-1 block text-xs font-medium text-fg-2">Add a {word}</label>
+        <div className="flex gap-2">
+          <input
+            id="new-group"
+            aria-label={isWs ? "New group" : "New namespace"}
+            className={`${inputCls} font-mono`}
+            placeholder="e.g. checkout"
+            value={name}
+            onChange={(e) => onName(e.target.value)}
+          />
+          <button type="submit" className={btnSecondary + " whitespace-nowrap"} disabled={!name.trim()}>
+            {isWs ? "Add group" : "Add namespace"}
+          </button>
+        </div>
+        <p className="mt-1 text-xs text-muted">
+          Creates an empty {word} file for every language when the project is saved. Then add keys to it with Add key.
+        </p>
+      </form>
+      <ul aria-label={isWs ? "Groups" : "Namespaces"} className="mt-3 divide-y divide-line rounded-md border border-line">
+        {namespaces.map((g) => (
+          <GroupRow
+            key={g}
+            session={session}
+            name={g}
+            keys={counts.get(g) ?? 0}
+            file={isWs ? null : fileOf(g).replace(`/${baseLocale}/`, "/<language>/")}
+            word={word}
+            onError={onError}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** One group: its name, file and key count, with Rename (in place) and Delete (confirmed). */
+function GroupRow({
+  session,
+  name,
+  keys,
+  file,
+  word,
+  onError,
+}: {
+  session: ProjectSession;
+  name: string;
+  keys: number;
+  file: string | null;
+  word: "group" | "namespace";
+  onError: (message: string | null) => void;
+}) {
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const locked = session.namespaceLockReason(name);
+  const isWs = word === "group";
+  const run = (fn: () => void) => {
+    try {
+      fn();
+      onError(null);
+      return true;
+    } catch (e) {
+      onError(msg(e));
+      return false;
+    }
+  };
+  const count = keys === 0 ? "No keys yet" : `${keys} key${keys === 1 ? "" : "s"}`;
+  const action = "rounded px-2 py-1 text-xs";
+
+  if (renaming !== null) {
+    const next = renaming.trim();
+    const save = () => next && next !== name && run(() => session.renameNamespace(name, next)) && setRenaming(null);
+    return (
+      <li className="space-y-2 px-3 py-2.5 text-sm">
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
+          }}
+        >
+          <input
+            autoFocus
+            aria-label={`New name for ${name}`}
+            className={`${inputCls} font-mono`}
+            value={renaming}
+            onChange={(e) => setRenaming(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                setRenaming(null);
+              }
+            }}
+          />
+          <button type="submit" className={btnPrimary} disabled={!next || next === name}>Rename</button>
+          <button type="button" className={btnGhost} onClick={() => setRenaming(null)}>Cancel</button>
+        </form>
+        <p className="text-xs leading-5 text-muted">
+          {isWs ? (
+            <>Its file is renamed for every language when the project saves.</>
+          ) : (
+            <>
+              Its file is renamed for every language when the project saves. Update{" "}
+              <span className="font-mono">useTranslation("{name}")</span> and any <span className="font-mono">{name}:</span> key prefixes
+              in your code to the new name, or those texts stop loading.
+            </>
+          )}
+        </p>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-center gap-3 px-3 py-2 text-sm">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">
+          <span className="font-mono font-semibold">{name}</span>
+          {file && <span className="ml-2 font-mono text-xs text-muted">{file}</span>}
+        </span>
+        {locked && (
+          <span className="mt-0.5 flex items-start gap-1 text-xs leading-5 text-muted">
+            <Icon name="lock" size={12} className="mt-1" />
+            <span>{locked}</span>
+          </span>
+        )}
+      </span>
+      <span className="shrink-0 text-xs tabular-nums text-muted">{count}</span>
+      {!locked && (
+        <span className="flex shrink-0 items-center">
+          <button
+            type="button"
+            aria-label={`Rename ${name}`}
+            className={`${action} text-fg-2 hover:bg-hover hover:text-fg`}
+            onClick={() => setRenaming(name)}
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            aria-label={`Delete ${name}`}
+            className={`${action} text-danger hover:bg-danger-soft`}
+            onClick={() => setDeleting(true)}
+          >
+            Delete
+          </button>
+        </span>
+      )}
+      {deleting && (
+        <Dialog title={`Delete ${word}`} onClose={() => setDeleting(false)}>
+          <p className="text-sm">
+            Delete <span className="font-mono font-semibold">{name}</span>
+            {keys > 0 ? <> and its {count}, with their translations in every language</> : null}? Its file is deleted for every language when the
+            project saves.
+          </p>
+          <p className="mt-2 text-xs text-muted">This can't be undone with ⌘Z / Ctrl+Z. Git, if you use it, still has the files.</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button className={btnGhost} onClick={() => setDeleting(false)}>Cancel</button>
+            <button
+              className={btnDanger}
+              onClick={() => {
+                run(() => session.deleteNamespace(name));
+                setDeleting(false);
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        </Dialog>
+      )}
+    </li>
   );
 }
 

@@ -15,6 +15,7 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 }));
 vi.mock("../platform/watch", () => ({ watchDir: vi.fn() }));
 
+import { keyId } from "../core/model";
 import { journalPath } from "../core/recovery";
 import { ProjectSession } from "../core/session";
 import { detectProject } from "../formats/detect";
@@ -40,6 +41,17 @@ beforeEach(async () => {
 });
 
 describe("store open/close", () => {
+  it("opening records each translation's base text in state.json and stays clean", async () => {
+    const { fs, d, opts } = await prep();
+    useApp.setState({ fs });
+    await useApp.getState().openProject("/project", d, opts);
+    const session = useApp.getState().session!;
+    expect(session.isDirty()).toBe(false);
+    const state = JSON.parse(await fs.readText("/project/.retrans/state.json"));
+    expect(state.entries[keyId("common", "title")].th).toMatchObject({ s: "translated" });
+    expect(session.meta(keyId("common", "title"), "th")).toMatchObject({ status: "translated", needsReview: false });
+  });
+
   it("overlapping opens of one folder make one tab with one session and one watcher", async () => {
     const { fs, d, opts } = await prep();
     useApp.setState({ fs });

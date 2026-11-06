@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
-import { loadFixtureDir } from "../platform/memory-fs";
+import { loadFixtureDir, type MemoryFs } from "../platform/memory-fs";
 import { detectProject } from "../formats/detect";
 import { type CellMap, keyId, type MessageValue } from "./model";
 import { mergeCells } from "./merge";
@@ -235,5 +235,52 @@ describe("ProjectSession.reloadFromDisk", () => {
     await s.reloadFromDisk();
     expect(s.meta(c("title"), "th").status).toBe("reviewed");
     expect(s.meta(c("nav.home"), "th")).toMatchObject({ status: "reviewed", machine: false });
+  });
+});
+
+describe("Source changed (needsReview) for translations never touched in Retrans", () => {
+  const EN = `${R}/${NEXT}/en/common.json`;
+  const THF = `${R}/${NEXT}/th/common.json`;
+  const editJson = async (fs: MemoryFs, path: string, patch: Record<string, unknown>) =>
+    fs.writeTextAtomic(path, TH({ ...JSON.parse(await fs.readText(path)), ...patch }));
+
+  it("a base change from disk (editor, git pull) flags the unchanged translation", async () => {
+    const { fs, s } = await openFx("next-nested");
+    expect(s.meta(c("title"), "th")).toMatchObject({ status: "translated", needsReview: false });
+    await editJson(fs, EN, { title: "Hello there" });
+    await s.reloadFromDisk();
+    expect(s.meta(c("title"), "th").needsReview).toBe(true);
+    // Reviewing clears it, as for a base edit made in Retrans.
+    s.markReviewed(c("title"), "th");
+    expect(s.meta(c("title"), "th")).toMatchObject({ status: "reviewed", needsReview: false });
+  });
+
+  it("a translation updated in the same change is not flagged", async () => {
+    const { fs, s } = await openFx("next-nested");
+    await editJson(fs, EN, { title: "Hello there" });
+    await editJson(fs, THF, { title: "สวัสดีทุกคน" });
+    await s.reloadFromDisk();
+    expect(s.meta(c("title"), "th").needsReview).toBe(false);
+  });
+
+  it("fingerprints recorded on open catch a base change made while Retrans was closed", async () => {
+    const first = await openFx("next-nested");
+    expect(first.s.recordBaseFingerprints()).toBe(true);
+    expect(first.s.recordBaseFingerprints()).toBe(false); // once per translation
+    await first.s.save();
+    expect(first.s.isDirty()).toBe(false);
+    await editJson(first.fs, EN, { title: "Hello there" });
+    const d = (await detectProject(first.fs, R))!;
+    const again = await ProjectSession.open(first.fs, R, d, { baseLocale: "en", localesPath: d.localesPath });
+    expect(again.meta(c("title"), "th").needsReview).toBe(true);
+    expect(again.meta(c("nav.home"), "th").needsReview).toBe(false);
+  });
+
+  it("an unreadable state.json is never touched", async () => {
+    const { fs } = await openFx("next-nested");
+    await fs.writeTextAtomic(`${R}/${STATE_PATH}`, "{ not json");
+    const d = (await detectProject(fs, R))!;
+    const s = await ProjectSession.open(fs, R, d, { baseLocale: "en", localesPath: d.localesPath });
+    expect(s.recordBaseFingerprints()).toBe(false);
   });
 });

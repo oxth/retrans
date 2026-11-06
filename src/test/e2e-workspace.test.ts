@@ -198,3 +198,20 @@ describe("e2e TypeScript workspace", () => {
     expect(sources(fs)).toEqual(after); // Save still never writes the sources
   });
 });
+
+describe("groups in a TypeScript workspace", () => {
+  it("groups from the source are locked (they're files in the code); a group made in Retrans isn't", async () => {
+    const fs = loadFixtureDir(resolve(__dirname, "fixtures", "ts-locales"), ROOT);
+    const imp = await importTsLocales(fs, ROOT, LOCALES, "th");
+    const s = await ProjectSession.fromImport(fs, ROOT, imp, { name: "project", localesDir: LOCALES, baseLocale: "th" });
+    expect(s.namespaceLockReason("common")).toBe('Comes from the "common" file in src/assets/locales. Rename or delete it in your code: this group\'s keys then show as removed from the source, and you can delete the group here.');
+    expect(() => s.renameNamespace("common", "shared")).toThrow(/Comes from/);
+    expect(() => s.deleteNamespace("button")).toThrow(/Comes from/);
+    s.addNamespace("extra");
+    expect(s.namespaceLockReason("extra")).toBeNull();
+    s.renameNamespace("extra", "more");
+    expect(s.data.namespaces).toContain("more");
+    s.deleteNamespace("more");
+    expect(s.data.namespaces).not.toContain("more");
+  });
+});

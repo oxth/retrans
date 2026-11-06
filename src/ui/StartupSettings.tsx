@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getLaunchMode, type LaunchMode, setLaunchMode } from "../platform/prefs";
-import { inputCls } from "./Dialog";
+import { fieldBase, Row } from "./settings-ui";
 
 /** Settings → Startup: what Retrans shows when it opens. */
 export function StartupSettings() {
@@ -16,10 +16,10 @@ export function StartupSettings() {
     };
   }, []);
   return (
-    <label className="block text-sm">
-      When Retrans opens
+    <Row label="When Retrans opens" hint="What you see each time you start the app." htmlFor="launch-mode">
       <select
-        className={inputCls}
+        id="launch-mode"
+        className={`${fieldBase} w-72`}
         value={mode}
         onChange={(e) => {
           const m = e.target.value as LaunchMode;
@@ -30,6 +30,6 @@ export function StartupSettings() {
         <option value="restore">Reopen the projects that were open</option>
         <option value="start">Show the start screen</option>
       </select>
-    </label>
+    </Row>
   );
 }

@@ -11,7 +11,6 @@ import { ExportDialog } from "./ExportDialog";
 import { LanguagesPage } from "./LanguagesPage";
 import { LoadErrors } from "./LoadErrors";
 import { SharePage } from "./SharePage";
-import { SettingsPage } from "./SettingsPage";
 import { type Page, PAGE_LABEL, Sidebar } from "./Sidebar";
 import { btnPrimary, btnSecondary } from "./Dialog";
 import { Icon } from "./Icon";
@@ -29,7 +28,6 @@ export function AppShell() {
   const session = useApp((s) => s.session);
   const error = useApp((s) => s.error);
   const sourceMissing = useApp((s) => s.sourceMissing);
-  const requestClose = useApp((s) => s.requestClose);
   // Page, filters and hidden languages belong to the tab: they survive switching tabs.
   const page = useApp((s) => s.ui.page);
   const filter = useApp((s) => s.ui.filter);
@@ -71,6 +69,8 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Re-read when Settings changes the default view (or makes this project follow it again).
+  const viewPrefsVersion = useApp((s) => s.viewPrefsVersion);
   useEffect(() => {
     if (!root) return;
     let live = true;
@@ -81,7 +81,7 @@ export function AppShell() {
     return () => {
       live = false;
     };
-  }, [root]);
+  }, [root, viewPrefsVersion]);
 
   // Menu requests for this screen (File → Export…, View → List / Table, Import Figma Files…).
   const uiRequest = useApp((s) => s.uiRequest);
@@ -90,7 +90,7 @@ export function AppShell() {
     const { kind } = uiRequest;
     if (kind === "export") setDialog({ kind: "export" });
     else if (kind === "view-list" || kind === "view-table") onViewModeRef.current(kind === "view-list" ? "list" : "table");
-    else if (kind === "import-figma") setUi({ page: "settings" });
+    else if (kind === "import-figma") useApp.getState().openPrefs("figma");
     else return; // a start-screen request
     useApp.getState().clearUiRequest();
   }, [uiRequest, setUi]);
@@ -173,7 +173,7 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-0 flex-1 bg-surface text-fg">
-      <Sidebar session={session} stats={stats} page={page} onPage={setPage} onClose={() => void requestClose("project")} />
+      <Sidebar session={session} stats={stats} page={page} onPage={setPage} />
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
           <h1 className="text-sm font-semibold">{PAGE_LABEL[page]}</h1>
@@ -251,13 +251,7 @@ export function AppShell() {
           </>
         ) : (
           <div className="min-h-0 flex-1 overflow-auto">
-            {page === "languages" ? (
-              <LanguagesPage session={session} stats={stats} />
-            ) : page === "share" ? (
-              <SharePage session={session} />
-            ) : (
-              <SettingsPage session={session} />
-            )}
+            {page === "languages" ? <LanguagesPage session={session} stats={stats} /> : <SharePage session={session} />}
           </div>
         )}
       </main>

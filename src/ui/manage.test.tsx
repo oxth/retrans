@@ -104,6 +104,39 @@ afterEach(() => {
 });
 
 describe("keys", () => {
+  it("Add key: switching Single / Plural keeps what was typed", async () => {
+    await open(nested());
+    await userEvent.click(screen.getByRole("button", { name: "Add key" }));
+    const dlg = screen.getByRole("dialog", { name: "Add key" });
+    const kind = within(within(dlg).getByRole("radiogroup", { name: "Text type" }));
+    await userEvent.type(within(dlg).getByLabelText("Base text"), "Items");
+    await userEvent.click(kind.getByRole("radio", { name: "Plural" }));
+    expect(within(dlg).getByLabelText("Base text, Other form")).toHaveValue("Items");
+    expect(within(dlg).getByLabelText("Base text, One form")).toHaveValue("");
+    await userEvent.type(within(dlg).getByLabelText("Base text, Other form"), "!");
+    await userEvent.click(kind.getByRole("radio", { name: "Single" }));
+    expect(within(dlg).getByLabelText("Base text")).toHaveValue("Items!");
+  });
+
+  it("Add key with Plural asks for each form of the base language and explains how it's used", async () => {
+    const s = await open(nested());
+    await userEvent.click(screen.getByRole("button", { name: "Add key" }));
+    const dlg = screen.getByRole("dialog", { name: "Add key" });
+    await userEvent.type(within(dlg).getByLabelText("Key"), "cart.items");
+    await userEvent.click(within(within(dlg).getByRole("radiogroup", { name: "Text type" })).getByRole("radio", { name: "Plural" }));
+    expect(within(dlg).queryByLabelText("Base text")).toBeNull();
+    expect(dlg).toHaveTextContent("One · 1");
+    expect(dlg).toHaveTextContent("Other · 0, 2, 3, …");
+    expect(dlg).toHaveTextContent('t("cart.items", { count })');
+    await userEvent.type(within(dlg).getByLabelText("Base text, One form"), "{{{{count}} item"); // `{` is doubled for userEvent
+    await userEvent.click(within(dlg).getByRole("button", { name: "Add" }));
+    expect(within(dlg).getByRole("alert")).toHaveTextContent("Fill in every form (One, Other).");
+    await userEvent.type(within(dlg).getByLabelText("Base text, Other form"), "{{{{count}} items");
+    await userEvent.click(within(dlg).getByRole("button", { name: "Add" }));
+    expect(s.value("checkout::cart.items_one", "en")).toEqual({ kind: "text", text: "{{count}} item" }); // the first namespace
+    expect(s.value("checkout::cart.items_other", "en")).toEqual({ kind: "text", text: "{{count}} items" });
+  });
+
   it("add key dialog shows prefix collision error", async () => {
     const s = await open(nested());
     await userEvent.click(screen.getByRole("button", { name: "Add key" }));
@@ -192,12 +225,47 @@ describe("languages", () => {
     expect(s.data.locales).not.toContain("fr");
   });
 
-  it("adds a namespace", async () => {
+  it("namespaces: explained, listed with their key counts and files, and one can be added (Enter works)", async () => {
     const s = await open(nested());
     await userEvent.click(screen.getByRole("button", { name: "Languages" }));
-    await userEvent.type(screen.getByLabelText("New namespace"), "footer");
-    await userEvent.click(screen.getByRole("button", { name: "Add namespace" }));
+    const section = screen.getByRole("region", { name: "Namespaces" });
+    expect(section).toHaveTextContent(/one JSON file per language/);
+    const list = within(section).getByRole("list", { name: "Namespaces" });
+    const common = s.data.keyOrder.filter((id) => id.startsWith("common::")).length;
+    expect(list).toHaveTextContent(`common`);
+    expect(list).toHaveTextContent(`${common} keys`);
+    expect(list).toHaveTextContent("public/locales/<language>/common.json");
+    await userEvent.click(screen.getByRole("button", { name: "Add namespace" })); // empty: disabled, nothing added
+    expect(s.data.namespaces).not.toContain("");
+    await userEvent.type(screen.getByLabelText("New namespace"), "footer{Enter}");
     expect(s.data.namespaces).toContain("footer");
+    expect(within(list).getByText("No keys yet")).toBeInTheDocument();
+  });
+
+  it("a namespace can be renamed in place (with a warning about code) and deleted after confirming", async () => {
+    const s = await open(nested());
+    await userEvent.click(screen.getByRole("button", { name: "Languages" }));
+    await userEvent.click(screen.getByRole("button", { name: "Rename checkout" }));
+    expect(within(screen.getByRole("list", { name: "Namespaces" })).getByText(/useTranslation\("checkout"\)/)).toBeInTheDocument();
+    const box = screen.getByLabelText("New name for checkout");
+    await userEvent.clear(box);
+    await userEvent.type(box, "payment{Enter}");
+    expect(s.data.namespaces).toEqual(["common", "payment"]);
+    expect(s.data.keyOrder).toContain("payment::pay");
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete payment" }));
+    const dlg = screen.getByRole("dialog", { name: "Delete namespace" });
+    expect(dlg).toHaveTextContent(/and its 2 keys/);
+    await userEvent.click(within(dlg).getByRole("button", { name: "Cancel" }));
+    expect(s.data.namespaces).toContain("payment");
+    await userEvent.click(screen.getByRole("button", { name: "Delete payment" }));
+    await userEvent.click(within(screen.getByRole("dialog", { name: "Delete namespace" })).getByRole("button", { name: "Delete" }));
+    expect(s.data.namespaces).toEqual(["common"]);
+    // The last one stays: deleting it explains why.
+    await userEvent.click(screen.getByRole("button", { name: "Delete common" }));
+    await userEvent.click(within(screen.getByRole("dialog", { name: "Delete namespace" })).getByRole("button", { name: "Delete" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/at least one/);
+    expect(s.data.namespaces).toEqual(["common"]);
   });
 });
 
@@ -292,26 +360,26 @@ describe("journal and closing", () => {
   const blockSave = () =>
     act(() => useApp.setState({ conflicts: [{ id: "common::title", locale: "th", mine: { kind: "text", text: "W" } }] }));
 
-  it("Close project right after an edit saves it and closes without asking", async () => {
+  it("closing the project right after an edit saves it and closes without asking", async () => {
     const fs = nested();
     const s = await open(fs);
     act(() => s.setText("common::title", "th", "Z"));
-    await userEvent.click(screen.getByRole("button", { name: "Close project" }));
+    await act(async () => void useApp.getState().requestClose("project"));
     await waitFor(() => expect(useApp.getState().session).toBeNull());
     expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).toBeNull();
     expect(JSON.parse(await fs.readText(TH)).title).toBe("Z");
   });
 
-  it("Close project with changes that can't be saved asks Save / Discard / Cancel", async () => {
+  it("closing the project with changes that can't be saved asks Save / Discard / Cancel", async () => {
     const fs = nested();
     const s = await open(fs);
     act(() => s.setText("common::title", "th", "Z"));
     blockSave();
-    await userEvent.click(screen.getByRole("button", { name: "Close project" }));
+    await act(async () => void useApp.getState().requestClose("project"));
     const dlg = await screen.findByRole("dialog", { name: "Unsaved changes" });
     await userEvent.click(within(dlg).getByRole("button", { name: "Cancel" }));
     expect(useApp.getState().session).toBe(s);
-    await userEvent.click(screen.getByRole("button", { name: "Close project" }));
+    await act(async () => void useApp.getState().requestClose("project"));
     await userEvent.click(within(await screen.findByRole("dialog", { name: "Unsaved changes" })).getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(useApp.getState().session).toBeNull());
     expect(JSON.parse(await fs.readText(TH)).title).toBe("สวัสดี");
@@ -351,21 +419,23 @@ describe("journal and closing", () => {
 
 describe("settings and load errors", () => {
   it("settings: locales path override marks state dirty", async () => {
-    const s = await open(nested());
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const s = await open(nested(), "app");
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
     expect(screen.getByText(/Takes effect when you reopen the project/)).toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText("Locales path"));
     await userEvent.type(screen.getByLabelText("Locales path"), "public/i18n");
-    await userEvent.click(screen.getByRole("button", { name: "Save setting" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save path" }));
     expect(s.state.project.localesPath).toBe("public/i18n");
     expect(s.isDirty()).toBe(true);
   });
 
-  it("settings links to Preferences for app-wide options", async () => {
-    await open(nested());
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
-    expect(screen.getByRole("button", { name: "Preferences…" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("Default view")).toBeNull();
+  it("project Settings opens on the project's section, with app-wide options alongside", async () => {
+    await open(nested(), "app");
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    const dlg = screen.getByRole("dialog", { name: "Settings" });
+    expect(within(dlg).getByLabelText("Locales path")).toBeInTheDocument();
+    expect(within(dlg).queryByRole("radiogroup", { name: "Default view" })).toBeNull();
+    expect(within(dlg).getByRole("button", { name: "Machine translation" })).toBeInTheDocument();
   });
 
   it("load error banner lists the malformed file", async () => {
@@ -416,14 +486,14 @@ describe("review fixes (UI)", () => {
   });
 
   it("#6 settings: saving the detected locales path creates no override; Reset to detected removes one", async () => {
-    const s = await open(nested());
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
-    await userEvent.click(screen.getByRole("button", { name: "Save setting" }));
+    const s = await open(nested(), "app");
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save path" }));
     expect(s.state.project.localesPath).toBeUndefined();
     expect(s.isDirty()).toBe(false);
     await userEvent.clear(screen.getByLabelText("Locales path"));
     await userEvent.type(screen.getByLabelText("Locales path"), "public/i18n");
-    await userEvent.click(screen.getByRole("button", { name: "Save setting" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save path" }));
     expect(s.state.project.localesPath).toBe("public/i18n");
     await userEvent.click(screen.getByRole("button", { name: "Reset to detected" }));
     expect(s.state.project.localesPath).toBeUndefined();

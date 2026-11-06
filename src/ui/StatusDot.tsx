@@ -13,6 +13,8 @@ export const STATUS_TEXT: Record<Status, string> = {
   reviewed: "Reviewed",
 };
 export const NEEDS_REVIEW_TEXT = "the base text changed after this was translated";
+/** Short name for that state: the base (source) text changed, so the translation may be out of date. */
+export const SOURCE_CHANGED = "Source changed";
 
 export interface StatusDotProps {
   status: Status;
