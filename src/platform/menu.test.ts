@@ -52,6 +52,23 @@ describe("menuSpec", () => {
     expect(item(spec, "redo").enabled).toBe(true);
   });
 
+  it("What's New sits under Check for Updates on macOS and in Help on Windows", () => {
+    const mac = menuSpec("macos", ctx)[0].items;
+    const i = mac.findIndex((x) => "id" in x && x.id === "check-updates");
+    expect(mac[i + 1]).toEqual({ id: "whats-new", text: "What's New in Retrans" });
+    const help = menuSpec("windows", ctx).find((m) => m.text === "Help")!.items;
+    expect(help).toContainEqual({ id: "whats-new", text: "What's New in Retrans" });
+  });
+
+  it("Help has Report a Bug… on both platforms", () => {
+    for (const platform of ["macos", "windows"] as const) {
+      const help = menuSpec(platform, ctx).find((m) => m.text === "Help")!.items;
+      expect(help).toContainEqual({ id: "report-bug", text: "Report a Bug…" });
+      expect(help).toContainEqual({ id: "request-feature", text: "Request a Feature…" });
+      expect(help).toContainEqual({ id: "show-log", text: "Show Log File", accelerator: "CmdOrCtrl+Shift+L" });
+    }
+  });
+
   it("every action id has a handler", () => {
     for (const platform of ["macos", "windows"] as const) {
       for (const i of items(menuSpec(platform, ctx))) {

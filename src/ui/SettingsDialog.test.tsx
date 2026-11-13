@@ -62,7 +62,7 @@ const title = () => screen.getByRole("heading", { level: 2 });
 describe("Settings window", () => {
   it("opens from the start screen and closes with the close button", async () => {
     await setupApp(loadFixtureDir(FIX + "next-nested"));
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Close settings" }));
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
@@ -70,7 +70,7 @@ describe("Settings window", () => {
 
   it("with no project open, shows only app sections", async () => {
     await setupApp(loadFixtureDir(FIX + "next-nested"));
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
     await screen.findByRole("dialog", { name: "Settings" });
     expect(title()).toHaveTextContent("General"); // the first app section
     await userEvent.click(nav().getByRole("button", { name: "Appearance" }));
@@ -105,7 +105,7 @@ describe("Settings window", () => {
 
   it("Escape closes Settings", async () => {
     await setupApp(loadFixtureDir(FIX + "next-nested"));
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
@@ -113,7 +113,7 @@ describe("Settings window", () => {
 
   it("Machine translation works with no project open", async () => {
     await setupApp(loadFixtureDir(FIX + "next-nested"));
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
     await userEvent.click(nav().getByRole("button", { name: "Machine translation" }));
     const checkbox = screen.getByRole("checkbox", { name: "Enable machine translation" });
     await userEvent.click(checkbox);
@@ -122,7 +122,7 @@ describe("Settings window", () => {
 
   it("leaving Machine translation with unsaved changes asks first", async () => {
     await setupApp(loadFixtureDir(FIX + "next-nested"));
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
     await userEvent.click(nav().getByRole("button", { name: "Machine translation" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Enable machine translation" }));
     await userEvent.click(nav().getByRole("button", { name: "About" }));
@@ -160,7 +160,7 @@ describe("Settings window", () => {
 
   it("Appearance: theme and interface size apply at once and are saved", async () => {
     await setupApp(loadFixtureDir(FIX + "next-nested"));
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
     await userEvent.click(nav().getByRole("button", { name: "Appearance" }));
     expect(title()).toHaveTextContent("Appearance");
     const theme = within(screen.getByRole("radiogroup", { name: "Theme" }));
@@ -185,5 +185,7 @@ describe("Settings window", () => {
     expect(screen.getByRole("button", { name: "Check for updates" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "What's new" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Check for updates automatically" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "What's new" }));
+    expect(screen.getByRole("dialog", { name: "What's new" })).toBeInTheDocument();
   });
 });

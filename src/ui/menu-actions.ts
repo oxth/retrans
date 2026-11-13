@@ -1,4 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { reportBug, requestFeature, showLogFile } from "./bug-report";
 import { runFind, runRedo, runUndo } from "./edit-commands";
 import { useApp } from "./store";
 
@@ -25,6 +26,9 @@ const guarded = (actions: Record<string, () => void>): Record<string, () => void
 export const MENU_ACTIONS: Record<string, () => void> = guarded({
   settings: () => app().openPrefs(),
   "check-updates": () => app().openPrefs("about"), // About has Check for updates
+  "whats-new": () => app().openWhatsNew(),
+  "report-bug": () => void reportBug().catch((e) => console.warn("Report a bug failed", e)),
+  "request-feature": () => void requestFeature().catch((e) => console.warn("Request a feature failed", e)),
   "new-project": () => {
     app().showStart();
     app().requestUi("new-project");
@@ -49,3 +53,6 @@ export const MENU_ACTIONS: Record<string, () => void> = guarded({
   "prev-tab": () => stepTab(-1),
   github: () => void openUrl("https://github.com/oxth/retrans").catch(() => {}),
 });
+
+// Not guarded: it doesn't touch the project, so it works with Settings or a dialog open too.
+MENU_ACTIONS["show-log"] = () => void showLogFile().catch((e) => console.warn("Showing the log failed", e));

@@ -67,6 +67,12 @@ export type SettingsSection = "project" | "translation" | "figma" | "appearance"
 export interface AppState {
   fs: Fs;
   prefsOpen: boolean;
+  /** The What's new window (menu, Settings → About). */
+  whatsNewOpen: boolean;
+  /** The version What's new opens on (null: the installed one). */
+  whatsNewVersion: string | null;
+  /** Set on the first launch after an update: the "Updated to …" toast. */
+  updatedTo: string | null;
   /** The Settings section to show when Settings opens (null: the first one that applies). */
   prefsSection: SettingsSection | null;
   /** Bumped when view preferences change in Settings, so open projects re-read their view. */
@@ -101,6 +107,8 @@ export interface AppState {
   openPrefs(section?: SettingsSection): void;
   viewPrefsChanged(): void;
   closePrefs(): void;
+  openWhatsNew(version?: string): void;
+  closeWhatsNew(): void;
   switchTab(id: string): void;
   /** The "+" button: keeps every tab and shows the start screen. */
   showStart(): void;
@@ -339,6 +347,9 @@ export const useApp = create<AppState>((set, get) => {
   return {
   fs: tauriFs,
   prefsOpen: false,
+  whatsNewOpen: false,
+  whatsNewVersion: null,
+  updatedTo: null,
   prefsSection: null,
   viewPrefsVersion: 0,
   tabs: [],
@@ -357,6 +368,14 @@ export const useApp = create<AppState>((set, get) => {
 
   closePrefs() {
     set({ prefsOpen: false });
+  },
+
+  openWhatsNew(version) {
+    set({ whatsNewOpen: true, whatsNewVersion: version ?? null });
+  },
+
+  closeWhatsNew() {
+    set({ whatsNewOpen: false });
   },
 
   switchTab(id) {

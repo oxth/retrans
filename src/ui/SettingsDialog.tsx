@@ -14,6 +14,7 @@ import {
   type Theme,
 } from "../platform/prefs";
 import { applyAppearance } from "./appearance";
+import { reportBug, showLogFile } from "./bug-report";
 import { btnDanger, btnGhost, btnPrimary, Dialog, inputCls, sectionLabel } from "./Dialog";
 import { FigmaSettings } from "./FigmaSettings";
 import { AppIcon } from "./AppIcon";
@@ -44,7 +45,7 @@ const SECTIONS: SectionDef[] = [
   { id: "appearance", label: "Appearance", hint: "Theme, interface size and layout", icon: "monitor", keywords: "theme dark light mode system size zoom font text scale default view list table" },
   { id: "mt", label: "Machine translation", hint: "Who translates: a built-in model, a cloud API or an AI agent", icon: "sparkles", keywords: "model provider api key openai anthropic claude agent gguf download" },
   { id: "instructions", label: "AI instructions", hint: "Rules sent with every translation, for all projects", icon: "message", keywords: "prompt instructions tone style" },
-  { id: "about", label: "About", hint: "Version and software updates", icon: "info", keywords: "about version update install release what's new changelog" },
+  { id: "about", label: "About", hint: "Version and software updates", icon: "info", keywords: "about version update install release what's new changelog bug report problem log issue" },
 ];
 
 /** Which sections apply: project ones only with a project open, Figma only for workspaces. */
@@ -485,6 +486,20 @@ function About({ version }: { version: string | null }) {
         </div>
       </div>
       <UpdateSettings />
+      <Group label="Problems" footer="The log has no translation text or API keys. Your home folder is written as ~.">
+        <Row label="Report a bug" hint="Opens a bug report on GitHub with your version filled in, and shows the log file to attach.">
+          <button type="button" className={btnRow} onClick={() => void reportBug().catch((e) => console.warn("Report a bug failed", e))}>
+            <Icon name="alert" size={14} />
+            Report a bug…
+          </button>
+        </Row>
+        <Row label="Log file" hint={`What Retrans recorded: warnings, errors and when it started. Shortcut: ${navigator.userAgent.includes("Mac") ? "⌘⇧L" : "Ctrl+Shift+L"}.`}>
+          <button type="button" className={btnRow} onClick={() => void showLogFile().catch((e) => console.warn("Showing the log failed", e))}>
+            <Icon name="folder" size={14} />
+            Show log file
+          </button>
+        </Row>
+      </Group>
     </>
   );
 }

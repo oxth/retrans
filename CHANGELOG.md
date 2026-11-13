@@ -6,8 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### What's new
+
+- **What's New in Retrans.** See what changed in every version, right in the app: open it from the Retrans menu (Help on Windows) or from **Settings → About**. The version you have is marked **Installed**. After an update, a note in the corner says which version you're on, with a link to its notes.
+
+- **Report a Bug.** Help → Report a Bug… (or Settings → About) opens a bug report on GitHub with your version and system filled in, and shows Retrans's log file so you can attach it. **Help → Show Log File** (⌘⇧L / Ctrl+Shift+L) opens the log any time. Ideas go to **Help → Request a Feature…**. The log records warnings, errors and when Retrans started; it has no translation text or API keys, and your home folder is written as `~`.
+
 ### Improvements
 
+- **Tabs in the title bar** on macOS, next to the window buttons, so projects get more room. Drag the empty part of the bar to move the window, or double-click it to zoom. The start screen shows as a **New Tab**, and Settings is always the gear at the end of the bar.
+- **Search recent projects** on the start screen, by name or folder.
 - **Resizable table columns.** Drag the right edge of a column header in the table view to make it wider or narrower, or double-click it to reset. Retrans remembers the widths.
 - **About Retrans** on macOS now shows the version and build, a short description, links and the copyright.
 - In a narrow table column, the text of a translation now wraps around its warning, **Source changed** and **Review** marks and uses the full width below them.

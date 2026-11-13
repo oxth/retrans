@@ -187,6 +187,20 @@ export async function setMtSettings(v: MtSettings): Promise<void> {
   await s.save();
 }
 
+/**
+ * Records the version this launch runs and returns the one before it: null on a first launch,
+ * "" for an existing user from before versions were recorded (they have recent projects).
+ */
+export async function recordLaunchedVersion(version: string): Promise<string | null> {
+  const s = await getStore();
+  const last = (await s.get<string>("lastVersion")) ?? ((await getRecent()).length ? "" : null);
+  if (last !== version) {
+    await s.set("lastVersion", version);
+    await s.save();
+  }
+  return last;
+}
+
 export async function getAutoCheckUpdates(): Promise<boolean> {
   const s = await getStore();
   return (await s.get<boolean>("autoCheckUpdates")) !== false;

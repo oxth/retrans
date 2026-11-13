@@ -57,8 +57,26 @@ describe("TabBar", () => {
     render(<TabBar />);
     await userEvent.click(screen.getByRole("button", { name: "Open another project" }));
     expect(useApp.getState().activeId).toBeNull();
-    expect(screen.getAllByRole("tab")).toHaveLength(2);
-    expect(screen.queryByRole("tab", { selected: true })).toBeNull();
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
+    expect(screen.getByRole("tab", { selected: true })).toHaveTextContent("New Tab");
+  });
+
+  it("closing New Tab goes back to the last project", async () => {
+    await twoProjects();
+    render(<TabBar />);
+    await userEvent.click(screen.getByRole("button", { name: "Open another project" }));
+    await userEvent.click(screen.getByRole("button", { name: "Close New Tab" }));
+    const { tabs, activeId } = useApp.getState();
+    expect(activeId).toBe(tabs[tabs.length - 1].id);
+    expect(screen.queryByText("New Tab")).toBeNull();
+  });
+
+  it("with no project open, New Tab is the only tab and can't be closed", async () => {
+    await useApp.getState().closeAllTabs();
+    render(<TabBar />);
+    expect(screen.getByRole("tab", { selected: true })).toHaveTextContent("New Tab");
+    expect(screen.queryByRole("button", { name: "Close New Tab" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open settings" })).toBeInTheDocument();
   });
 
   it("clicking a tab switches to it", async () => {

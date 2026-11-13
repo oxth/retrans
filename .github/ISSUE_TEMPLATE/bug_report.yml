@@ -28,7 +28,7 @@ body:
     id: version
     attributes:
       label: Retrans version
-      placeholder: "0.3.0 — shown in Preferences / About"
+      placeholder: "0.5.1 — shown in Settings → About"
     validations:
       required: true
   - type: dropdown
@@ -37,13 +37,15 @@ body:
       label: Operating system
       options:
         - macOS (Apple Silicon)
-        - Windows 10
-        - Windows 11
+        - macOS (Intel)
+        - Windows
+        - Linux
         - Other
     validations:
       required: true
   - type: dropdown
-    id: format
+    # Not "format": GitHub (Rails) reads ?format= as the response type, so prefilling it gives HTTP 406.
+    id: project-format
     attributes:
       label: Project format
       options:
@@ -72,6 +74,6 @@ body:
     id: logs
     attributes:
       label: Screenshots or logs
-      description: Please remove API keys and private text before pasting.
+      description: Help → Report a Bug shows Retrans's log file (retrans.log); drag it here. It has no translation text or API keys, but check screenshots and anything you paste.
     validations:
       required: false

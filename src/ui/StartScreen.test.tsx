@@ -128,6 +128,31 @@ describe("StartScreen", () => {
     expect(useApp.getState().session).not.toBeNull();
   });
 
+  it("recent projects can be searched by name or folder", async () => {
+    await addRecent({ root: "/work/axons-cms", name: "axons-cms", format: "next-i18next" });
+    await addRecent({ root: "/work/payment-service", name: "payment-service", format: "next-i18next" });
+    await setup(loadFixtureDir(FIX + "next-nested"));
+    const search = await screen.findByRole("searchbox", { name: "Search recent projects" });
+    await userEvent.type(search, "PAY");
+    expect(screen.getByRole("button", { name: /^payment-service\// })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^axons-cms\// })).toBeNull();
+    await userEvent.clear(search);
+    await userEvent.type(search, "work cms");
+    expect(screen.getByRole("button", { name: /^axons-cms\// })).toBeInTheDocument();
+    await userEvent.type(search, "zzz");
+    expect(screen.getByText(/No recent project matches/)).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(search).toHaveValue("");
+    expect(screen.getAllByRole("button", { name: /\/work\// })).toHaveLength(2);
+  });
+
+  it("has no Settings button of its own: the tab bar's gear is there", async () => {
+    await setup(loadFixtureDir(FIX + "next-nested"));
+    await screen.findByRole("button", { name: "Open project" });
+    expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open settings" })).toBeInTheDocument();
+  });
+
   it("a recent project can be removed from the list without touching its files", async () => {
     const fs = loadFixtureDir(FIX + "next-nested");
     const before = JSON.stringify(fs.snapshot());

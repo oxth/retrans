@@ -31,9 +31,41 @@ fn should_hold_exit(code: Option<i32>) -> bool {
     code.is_none() && UNSAVED.load(Ordering::SeqCst)
 }
 
+/// OS and CPU architecture for bug reports ("macos", "aarch64"); the webview can't tell Apple Silicon from Intel.
+#[tauri::command]
+fn system_info() -> (String, String) {
+    (std::env::consts::OS.into(), std::env::consts::ARCH.into())
+}
+
+/// `retrans.log` in the OS log folder (on macOS ~/Library/Logs/com.retrans.app), for bug reports:
+/// the frontend's warnings and errors and Rust's own. 2 MB, with the three previous files kept.
+fn log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
+    tauri_plugin_log::Builder::new()
+        .clear_targets()
+        .target(Target::new(TargetKind::Stdout))
+        .target(Target::new(TargetKind::LogDir { file_name: Some("retrans".into()) }))
+        .level(log::LevelFilter::Info)
+        .max_file_size(2_000_000)
+        .rotation_strategy(RotationStrategy::KeepSome(3))
+        .timezone_strategy(TimezoneStrategy::UseLocal)
+        .build()
+}
+
+/// A Rust panic goes to the log before the default hook prints it.
+fn log_panics() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("panic: {info}");
+        default_hook(info);
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    log_panics();
     tauri::Builder::default()
+        .plugin(log_plugin())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -86,7 +118,8 @@ pub fn run() {
             secrets::secret_set,
             secrets::secret_has,
             secrets::secret_delete,
-            set_unsaved
+            set_unsaved,
+            system_info
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

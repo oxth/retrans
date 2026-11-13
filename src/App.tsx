@@ -12,6 +12,9 @@ import { MENU_ACTIONS } from "./ui/menu-actions";
 import { launch, startTabPersistence } from "./ui/restore";
 import { UnsavedPrompt } from "./ui/UnsavedPrompt";
 import { SettingsDialog } from "./ui/SettingsDialog";
+import { startLogging } from "./ui/bug-report";
+import { UpdateToast, useAnnounceUpdate } from "./ui/UpdateToast";
+import { WhatsNew } from "./ui/WhatsNew";
 
 /**
  * Routes every way of quitting through one prompt listing the tabs with unsaved changes: the
@@ -48,6 +51,8 @@ function useQuitGuard() {
 
 export default function App() {
   useQuitGuard();
+  useAnnounceUpdate();
+  useEffect(() => startLogging(), []);
   useEffect(() => {
     void useMt.getState().init();
     // The native menu (File, Edit, View…; Settings… ⌘, / Ctrl+,), its items enabled per screen.
@@ -78,13 +83,14 @@ export default function App() {
   }, []);
   const session = useApp((s) => s.session);
   const activeId = useApp((s) => s.activeId);
-  const hasTabs = useApp((s) => s.tabs.length > 0);
   const prefsOpen = useApp((s) => s.prefsOpen);
+  const whatsNewOpen = useApp((s) => s.whatsNewOpen);
   // One window-high column: the update banner and tab bar take their rows and the page fills the rest.
   return (
     <div className="flex h-screen flex-col">
       <UpdateBanner />
-      {hasTabs && <TabBar />}
+      {/* Always shown: it has Settings, and on macOS it is the title bar (the traffic lights sit on it). */}
+      <TabBar />
       {session ? (
         <>
           {/* Keyed by tab: dialogs and the cell being edited don't follow you to another tab. */}
@@ -94,6 +100,8 @@ export default function App() {
         <StartScreen />
       )}
       {prefsOpen && <SettingsDialog />}
+      {whatsNewOpen && <WhatsNew />}
+      <UpdateToast />
       {/* Here, not in a tab: quitting from the start screen can still list other tabs. */}
       <UnsavedPrompt />
     </div>

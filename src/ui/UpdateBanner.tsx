@@ -2,11 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getAutoCheckUpdates, setAutoCheckUpdates } from "../platform/prefs";
 import { checkForUpdate, type AvailableUpdate } from "../platform/updates";
 import { btnGhost, btnPrimary } from "./Dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { Icon } from "./Icon";
-
-/** Release notes (the updater downloads from the same releases). */
-export const RELEASES_URL = "https://github.com/oxth/retrans/releases";
 import { btnRow, Group, Row, Switch } from "./settings-ui";
 import { useApp } from "./store";
 
@@ -139,8 +135,8 @@ export function UpdateSettings() {
           {result === "checking" ? "Checking…" : "Check for updates"}
         </button>
       </Row>
-      <Row label="What's new" hint="Release notes for every version, on GitHub.">
-        <button type="button" className={btnGhost} onClick={() => void Promise.resolve(openUrl(RELEASES_URL)).catch(() => {})}>
+      <Row label="What's new" hint="Release notes for every version.">
+        <button type="button" className={btnGhost} onClick={() => useApp.getState().openWhatsNew()}>
           <Icon name="sparkles" size={14} />
           What's new
         </button>

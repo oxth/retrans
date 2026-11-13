@@ -8,7 +8,7 @@ import { joinPath } from "../platform/fs";
 import { zipRead } from "../platform/zip";
 import { getRecent, removeRecent, type RecentProject } from "../platform/prefs";
 import { resolveTsSource } from "../tssource/import";
-import { btnGhost, btnPrimary, Dialog, sectionLabel } from "./Dialog";
+import { btnGhost, btnPrimary, Dialog, inputCls, sectionLabel } from "./Dialog";
 import { AppIcon } from "./AppIcon";
 import { Icon } from "./Icon";
 import { ImportTsDialog } from "./ImportTsDialog";
@@ -18,8 +18,9 @@ import { savedBaseLocale, useApp } from "./store";
 import { FigmaWorkspaceDialog, figmaModesIn } from "./FigmaWorkspaceDialog";
 
 export function StartScreen() {
-  const { fs, openProject, openPrefs } = useApp();
+  const { fs, openProject } = useApp();
   const [recent, setRecent] = useState<RecentProject[]>([]);
+  const [query, setQuery] = useState("");
   const [pending, setPending] = useState<{ root: string; detected: DetectResult; savedBase?: string | null } | null>(null);
   const [wizard, setWizard] = useState(false);
   /** TypeScript locale modules found where no project was: offered for import. */
@@ -196,21 +197,20 @@ export function StartScreen() {
     }
   };
 
+  // Matches every word of the search, in the name or the folder path, ignoring case.
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = recent.filter((r) => words.every((w) => `${r.name} ${r.root}`.toLowerCase().includes(w)));
+
   return (
     <main className="flex min-h-0 flex-1 justify-center overflow-auto bg-panel p-8 text-fg">
       <div className="my-auto w-full max-w-2xl">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <AppIcon size={44} />
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">Retrans</h1>
-              <p className="text-sm text-muted">Edit next-i18next and Paraglide translations side by side.</p>
-            </div>
+        {/* Settings is the gear in the tab bar, shown on this screen too. */}
+        <div className="flex items-center gap-3">
+          <AppIcon size={44} />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Retrans</h1>
+            <p className="text-sm text-muted">Edit next-i18next and Paraglide translations side by side.</p>
           </div>
-          <button className={btnGhost} onClick={() => openPrefs()}>
-            <Icon name="settings" size={15} />
-            Settings
-          </button>
         </div>
         <div className="mt-8 grid gap-3 sm:grid-cols-3">
           {(
@@ -243,12 +243,31 @@ export function StartScreen() {
         )}
         {recent.length > 0 && (
           <section className="mt-10">
-            <h2 className={`${sectionLabel} flex items-center gap-1.5`}>
-              <Icon name="clock" size={13} />
-              Recent projects
-            </h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className={`${sectionLabel} flex items-center gap-1.5`}>
+                <Icon name="clock" size={13} />
+                Recent projects
+              </h2>
+              <label className="relative w-56">
+                <Icon name="search" size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+                <input
+                  type="search"
+                  aria-label="Search recent projects"
+                  placeholder="Search by name or folder"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Escape" && query && (e.stopPropagation(), setQuery(""))}
+                  className={`${inputCls} py-1 pl-8 text-xs`}
+                />
+              </label>
+            </div>
+            {shown.length === 0 ? (
+              <p className="mt-2 rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-muted">
+                No recent project matches “{query.trim()}”.
+              </p>
+            ) : (
             <ul className="mt-2 divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
-              {recent.map((r) => {
+              {shown.map((r) => {
                 const isGone = gone.has(r.root);
                 return (
                   <li key={r.root} className="group/item relative">
@@ -274,6 +293,7 @@ export function StartScreen() {
                 );
               })}
             </ul>
+            )}
           </section>
         )}
       </div>

@@ -57,7 +57,12 @@ export function menuSpec(platform: Platform, ctx: MenuCtx): Array<{ text: string
   ];
   const help: MenuItemSpec[] = [
     { id: "github", text: "Retrans on GitHub" },
-    ...(platform === "windows" ? [{ id: "check-updates", text: "Check for Updates…" }, { predefined: "About", text: "About Retrans" } as MenuItemSpec] : []),
+    { id: "report-bug", text: "Report a Bug…" },
+    { id: "request-feature", text: "Request a Feature…" },
+    { id: "show-log", text: "Show Log File", accelerator: "CmdOrCtrl+Shift+L" },
+    ...(platform === "windows"
+      ? [{ id: "check-updates", text: "Check for Updates…" }, { id: "whats-new", text: "What's New in Retrans" }, { predefined: "About", text: "About Retrans" } as MenuItemSpec]
+      : []),
   ];
   if (platform === "windows") {
     return [{ text: "File", items: file }, { text: "Edit", items: edit }, { text: "View", items: view }, { text: "Help", items: help }];
@@ -67,6 +72,7 @@ export function menuSpec(platform: Platform, ctx: MenuCtx): Array<{ text: string
     sep,
     settings,
     { id: "check-updates", text: "Check for Updates…" },
+    { id: "whats-new", text: "What's New in Retrans" },
     sep,
     { predefined: "Hide" },
     { predefined: "HideOthers" },
