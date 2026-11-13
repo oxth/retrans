@@ -11,7 +11,7 @@ import type { ProjectSession } from "../core/session";
 import { type BatchResult, missingItems } from "./batch";
 import { buildBatchPrompt, parseBatchReply, type BatchString } from "./cloud-prompt";
 import { protect, restore } from "./protect";
-import { type ActiveModel, type MtEngine, nextReqId, translateText, type TranslateResult } from "./translate";
+import { type ActiveModel, finishText, type ManyResult, type MtEngine, nextReqId, prepareText, translateText, type TranslateResult } from "./translate";
 
 export interface TranslateJob {
   id: KeyId;
@@ -45,9 +45,13 @@ export interface AcpConfig {
   args: string[];
 }
 
-export const BATCH_STRINGS = 20;
-/** Strings × target languages per request: keeps replies well under the models' output limits. */
-export const BATCH_CELLS = 60;
+/**
+ * Strings per request. Bigger batches mean fewer requests (10,000 strings: 200, not 500) and the
+ * shared instructions sent less often; a cut-off reply only fails the strings it didn't reach.
+ */
+export const BATCH_STRINGS = 50;
+/** Strings × target languages per request: ~3–5k output tokens, well under the models' limits. */
+export const BATCH_CELLS = 150;
 export const INCOMPLETE = "The model's reply was incomplete.";
 const TOO_LONG = "Text is too long to translate";
 
@@ -61,27 +65,83 @@ export const PROVIDER_LABELS = {
 
 const message = (e: unknown) => (e instanceof Error ? e.message : typeof e === "string" ? e : String(e));
 
-/** The built-in model, one string at a time (today's translateText). */
+/** Built-in model: how many strings are decoded together (measured on TranslateGemma 4B: ~1.8× faster at 8, no gain at 16). */
+export const LOCAL_GROUP = 8;
+
+/**
+ * The built-in model. Each distinct text is translated once per language (the prompt has nothing
+ * else in it, and decoding is greedy, so repeats get the same result), and texts of similar length
+ * are decoded LOCAL_GROUP at a time when the engine can; otherwise one at a time.
+ */
 export function localTranslator(engine: MtEngine, model: ActiveModel, format: Format): Translator {
   return {
     label: PROVIDER_LABELS.local,
     remote: false,
     async translate(jobs, ctx, onResult, signal) {
       const base = ctx.session.data.baseLocale;
+      // Jobs with the same language and text share one translation.
+      const same = new Map<string, TranslateJob[]>();
       for (const job of jobs) {
+        const k = `${job.locale}\0${job.source}`;
+        same.set(k, [...(same.get(k) ?? []), job]);
+      }
+      const unique = [...same.values()].map((group) => group[0]);
+      const report = (job: TranslateJob, r: TranslateResult) => {
+        for (const j of same.get(`${job.locale}\0${job.source}`)!) onResult(j, r);
+      };
+
+      if (!engine.generateMany) {
+        for (const job of unique) {
+          if (signal.aborted) return;
+          const id = nextReqId();
+          const cancel = () => void engine.cancel(id).catch(() => {});
+          signal.addEventListener("abort", cancel, { once: true });
+          let r: TranslateResult;
+          try {
+            r = await translateText(engine, model, format, base, job.locale, job.source, id, ctx.instructions(job.locale));
+          } catch (e) {
+            r = { ok: false, reason: "error", message: message(e) };
+          } finally {
+            signal.removeEventListener("abort", cancel);
+          }
+          report(job, signal.aborted ? { ok: false, reason: "cancelled" } : r);
+        }
+        return;
+      }
+
+      // Similar lengths together: a group runs until its longest text is done.
+      const ordered = [...unique].sort((a, b) => a.source.length - b.source.length);
+      for (let i = 0; i < ordered.length; i += LOCAL_GROUP) {
         if (signal.aborted) return;
+        const group = ordered.slice(i, i + LOCAL_GROUP);
+        const prepared = group.map((job) => prepareText(model, format, base, job.locale, job.source, ctx.instructions(job.locale)));
         const id = nextReqId();
         const cancel = () => void engine.cancel(id).catch(() => {});
         signal.addEventListener("abort", cancel, { once: true });
-        let r: TranslateResult;
+        let out: ManyResult[];
         try {
-          r = await translateText(engine, model, format, base, job.locale, job.source, id, ctx.instructions(job.locale));
+          out = await engine.generateMany({
+            reqId: id,
+            modelPath: model.path,
+            prompts: prepared.map((p) => ({ prompt: p.prompt, maxTokens: p.maxTokens })),
+            // Same template for the whole group, so the same start token and stops.
+            addBos: prepared[0].addBos,
+            stop: prepared[0].stop,
+          });
         } catch (e) {
-          r = { ok: false, reason: "error", message: message(e) };
+          const m = message(e);
+          const r: TranslateResult = m === "cancelled" || signal.aborted ? { ok: false, reason: "cancelled" } : { ok: false, reason: "error", message: m };
+          for (const job of group) report(job, r);
+          if (r.reason === "cancelled") return;
+          continue;
         } finally {
           signal.removeEventListener("abort", cancel);
         }
-        onResult(job, signal.aborted ? { ok: false, reason: "cancelled" } : r);
+        group.forEach((job, k) => {
+          const o = out[k];
+          if (signal.aborted) report(job, { ok: false, reason: "cancelled" });
+          else report(job, o?.ok ? finishText(o.text, prepared[k].guard) : { ok: false, reason: "error", message: o?.message ?? INCOMPLETE });
+        });
       }
     },
   };

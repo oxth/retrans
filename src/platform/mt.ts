@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { CatalogModel } from "../mt/catalog";
-import type { GenerateRequest, MtEngine } from "../mt/translate";
+import type { GenerateRequest, ManyRequest, ManyResult, MtEngine } from "../mt/translate";
 
 export interface ModelFile { file: string; size: number; complete: boolean }
 export interface DownloadEvent {
@@ -32,6 +32,17 @@ export const tauriEngine: MtEngine = {
       maxTokens: r.maxTokens,
       stop: r.stop,
     }),
+  // Rust's Result<String, String> per prompt arrives as { Ok } or { Err }.
+  generateMany: async (r: ManyRequest): Promise<ManyResult[]> => {
+    const out = await call<Array<{ Ok: string } | { Err: string }>>("mt_generate_many", {
+      reqId: r.reqId,
+      modelPath: r.modelPath,
+      prompts: r.prompts,
+      addBos: r.addBos,
+      stop: r.stop,
+    });
+    return out.map((x) => ("Ok" in x ? { ok: true, text: x.Ok } : { ok: false, message: x.Err }));
+  },
   cancel: (reqId) => call<void>("mt_cancel", { reqId }),
 };
 

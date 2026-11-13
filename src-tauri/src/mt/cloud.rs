@@ -170,6 +170,8 @@ async fn send_ok(
         let body = res.text().await.map_err(|e| format!("{label}: {e}"))?;
         match status {
             401 | 403 => return Err("The API key was rejected.".into()),
+            // Out of credit is a 429 too, but waiting can't fix it: stop at once, in the provider's words.
+            429 if out_of_credit(&body) => return Err(format!("{label}: {}", error_message(&body))),
             429 | 500..=599 if attempt < RETRIES => {
                 let wait = if retry_after.is_some() {
                     retry_wait(retry_after, attempt)
@@ -179,13 +181,21 @@ async fn send_ok(
                 tokio::time::sleep(wait).await;
                 attempt += 1;
             }
-            // Out of credit is a 429 too: show the provider's own words when it gives some.
+            // Still rate limited: a big run (thousands of strings) is usually over a per-minute
+            // limit, so wait about a minute and carry on instead of stopping. Cancel still stops it.
+            429 if attempt < RETRIES + PATIENT_RETRIES => {
+                let wait = retry_after.map_or_else(|| backoff(attempt), |d| d.min(PATIENT_WAIT));
+                log::warn!("{label}: rate limited; waiting {}s before trying again", wait.as_secs());
+                tokio::time::sleep(wait).await;
+                attempt += 1;
+            }
             429 => {
                 let m = error_message(&body);
+                let gave_up = "Rate limited: the provider kept refusing for several minutes. Try again later.";
                 return Err(if m.trim().is_empty() || m.trim() == "{}" {
-                    "Rate limited — try again in a minute.".into()
+                    gave_up.into()
                 } else {
-                    format!("Rate limited — try again in a minute. {label}: {m}")
+                    format!("{gave_up} {label}: {m}")
                 });
             }
             _ => return Err(format!("{label}: {}", error_message(&body))),
@@ -195,14 +205,35 @@ async fn send_ok(
 
 /// The longest a provider's Retry-After may make a run wait.
 const MAX_WAIT: Duration = Duration::from_secs(30);
+/// After the quick retries, a run that's only rate limited waits this long and tries again…
+const PATIENT_WAIT: Duration = Duration::from_secs(60);
+/// …this many times (about five minutes) before giving up.
+const PATIENT_RETRIES: u32 = 5;
+
+/// A 429 that means "out of credit / over quota", not "slow down": retrying won't help.
+fn out_of_credit(body: &str) -> bool {
+    let v: Value = serde_json::from_str(body).unwrap_or(Value::Null);
+    if v.pointer("/error/code").and_then(Value::as_str) == Some("insufficient_quota")
+        || v.pointer("/error/type").and_then(Value::as_str) == Some("insufficient_quota")
+    {
+        return true;
+    }
+    let m = error_message(body).to_lowercase();
+    ["quota", "credit", "billing"].iter().any(|w| m.contains(w))
+}
 
 /// How long to wait before retry `attempt`: the provider's Retry-After (capped), else 1, 2, 4 s.
 fn retry_wait(retry_after: Option<Duration>, attempt: u32) -> Duration {
     retry_after.map_or_else(|| default_backoff(attempt), |d| d.min(MAX_WAIT))
 }
 
+/// 1, 2, 4 s for the quick retries, then PATIENT_WAIT.
 fn default_backoff(attempt: u32) -> Duration {
-    Duration::from_secs(1 << attempt)
+    if attempt < RETRIES {
+        Duration::from_secs(1 << attempt)
+    } else {
+        PATIENT_WAIT
+    }
 }
 
 /// How long a streamed reply may go quiet before giving up.
@@ -656,8 +687,10 @@ mod tests {
 
     #[tokio::test]
     async fn rate_limited_after_retries() {
-        let replies = (0..4).map(|_| Reply(429, "", "{}".into(), 0)).collect();
-        let (base, _) = serve(replies);
+        // The quick retries, the patient ones, then giving up.
+        let n = (1 + RETRIES + PATIENT_RETRIES) as usize;
+        let replies = (0..n).map(|_| Reply(429, "", "{}".into(), 0)).collect();
+        let (base, seen) = serve(replies);
         let ep =
             endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
         assert_eq!(
@@ -671,8 +704,30 @@ mod tests {
                 &mut |_| {}
             )
             .await,
-            Err("Rate limited — try again in a minute.".into())
+            Err("Rate limited: the provider kept refusing for several minutes. Try again later.".into())
         );
+        assert_eq!(seen.lock().unwrap().len(), n);
+    }
+
+    #[tokio::test]
+    async fn a_long_rate_limit_is_waited_out() {
+        // More 429s than the quick retries cover: the run waits and then succeeds.
+        let mut replies: Vec<Reply> = (0..RETRIES + 2).map(|_| Reply(429, "", "{}".into(), 0)).collect();
+        replies.push(Reply(200, "", r#"{"choices":[{"message":{"content":"done"}}]}"#.into(), 0));
+        let (base, seen) = serve(replies);
+        let ep = endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
+        assert_eq!(
+            chat(&reqwest::Client::new(), &ep, "m", "s", "u", NO_WAIT, &mut |_| {}).await,
+            Ok("done".into())
+        );
+        assert_eq!(seen.lock().unwrap().len(), RETRIES as usize + 3);
+    }
+
+    #[test]
+    fn waits_a_minute_after_the_quick_retries() {
+        assert_eq!(default_backoff(0), Duration::from_secs(1));
+        assert_eq!(default_backoff(RETRIES - 1), Duration::from_secs(4));
+        assert_eq!(default_backoff(RETRIES), PATIENT_WAIT);
     }
 
     #[tokio::test]
@@ -789,7 +844,7 @@ mod tests {
                 )
             })
             .collect();
-        let (base, _) = serve(replies);
+        let (base, seen) = serve(replies);
         let ep =
             endpoint_with(&store_with(&[("openai", "k")]), "openai", None, Some(&base)).unwrap();
         let err = chat(
@@ -804,6 +859,15 @@ mod tests {
         .await
         .unwrap_err();
         assert!(err.contains("You exceeded your current quota"), "{err}");
+        assert_eq!(seen.lock().unwrap().len(), 1, "out of credit stops at once: no retries");
+    }
+
+    #[test]
+    fn tells_out_of_credit_from_slow_down() {
+        assert!(out_of_credit(r#"{"error":{"code":"insufficient_quota","message":"x"}}"#));
+        assert!(out_of_credit(r#"{"error":{"message":"Your credit balance is too low"}}"#));
+        assert!(!out_of_credit(r#"{"error":{"message":"Rate limit reached for requests per minute"}}"#));
+        assert!(!out_of_credit("{}"));
     }
 
     #[test]

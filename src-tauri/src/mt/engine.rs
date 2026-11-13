@@ -41,6 +41,17 @@ pub fn truncate_at_stop(text: &str, stop: &[String]) -> Option<String> {
         .map(|i| text[..i].to_string())
 }
 
+/// The context for a prompt and its token budget, rounded up to 256 and at most `N_CTX`.
+pub fn context_size(prompt_tokens: usize, budget: u32) -> u32 {
+    let need = prompt_tokens as u32 + budget + 16;
+    (need.div_ceil(256) * 256).min(N_CTX)
+}
+
+/// Threads for llama.cpp's CPU work: every core the OS offers.
+fn cpu_threads() -> i32 {
+    std::thread::available_parallelism().map_or(4, |n| n.get() as i32)
+}
+
 /// How many tokens may be generated after a prompt of `prompt_tokens` in a context of `n_ctx`.
 pub fn token_budget(prompt_tokens: usize, n_ctx: u32, max_tokens: u32) -> Result<u32, String> {
     if prompt_tokens + 16 > n_ctx as usize {
@@ -172,6 +183,22 @@ pub struct GenerateRequest {
     pub stop: Vec<String>,
 }
 
+/// Several prompts for one model, decoded together by `mt_generate_many`.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManyPrompt {
+    pub prompt: String,
+    pub max_tokens: u32,
+}
+
+pub struct ManyRequest {
+    pub req_id: u64,
+    pub model_path: String,
+    pub prompts: Vec<ManyPrompt>,
+    pub add_bos: bool,
+    pub stop: Vec<String>,
+}
+
 #[derive(Default)]
 pub struct Engine {
     /// Held for the whole of a generation, so only one request runs at a time.
@@ -225,8 +252,9 @@ impl Engine {
         result
     }
 
-    fn generate_locked(&self, slot: &mut Option<Loaded>, req: &GenerateRequest) -> Result<String, String> {
-        let want = canonical(Path::new(&req.model_path));
+    /// The model at `path`, loading it (and freeing any other) first.
+    fn ensure_loaded<'a>(&self, slot: &'a mut Option<Loaded>, path: &str) -> Result<&'a LlamaModel, String> {
+        let want = canonical(Path::new(path));
         if slot.as_ref().is_none_or(|l| l.path != want) {
             self.set_slot(slot, None); // free the old model before loading the new one
             let model = load_model(&want)?;
@@ -234,7 +262,11 @@ impl Engine {
             register_exit_hook();
             self.set_slot(slot, Some(Loaded { path: want, model, last_used: Instant::now() }));
         }
-        let model = &slot.as_ref().expect("model loaded above").model;
+        Ok(&slot.as_ref().expect("model loaded above").model)
+    }
+
+    fn generate_locked(&self, slot: &mut Option<Loaded>, req: &GenerateRequest) -> Result<String, String> {
+        let model = self.ensure_loaded(slot, &req.model_path)?;
         if self.is_cancelled(req.req_id) {
             return Err(CANCELLED.into());
         }
@@ -245,14 +277,21 @@ impl Engine {
         }
         let budget = token_budget(tokens.len(), N_CTX, req.max_tokens)?;
 
+        // A context just big enough for this prompt and its reply: a 4096-token one per string is
+        // mostly unused memory to allocate and clear. All cores for the CPU path (llama.cpp's own
+        // default is 4); the GPU path doesn't use them.
+        let n_ctx = context_size(tokens.len(), budget);
+        let threads = cpu_threads();
         let ctx_params = LlamaContextParams::default()
-            .with_n_ctx(NonZeroU32::new(N_CTX))
-            .with_n_batch(N_CTX);
+            .with_n_ctx(NonZeroU32::new(n_ctx))
+            .with_n_batch(n_ctx)
+            .with_n_threads(threads)
+            .with_n_threads_batch(threads);
         let mut ctx = model
             .new_context(backend()?, ctx_params)
             .map_err(|e| format!("Couldn't start the model: {e}"))?;
 
-        let mut batch = LlamaBatch::new(N_CTX as usize, 1);
+        let mut batch = LlamaBatch::new(n_ctx as usize, 1);
         let last = tokens.len() - 1;
         for (i, &t) in tokens.iter().enumerate() {
             batch.add(t, i as i32, &[0], i == last).map_err(|e| e.to_string())?;
@@ -282,6 +321,129 @@ impl Engine {
         }
         utf8.finish(&mut out);
         Ok(truncate_at_stop(&out, &req.stop).unwrap_or(out))
+    }
+
+    /// Blocking: several prompts decoded together, one sequence each, in one context. On a GPU a step
+    /// for several sequences costs about as much as for one, so this is much faster than one at a
+    /// time. Each prompt gets its own result (an over-long one fails alone); a cancel fails them all.
+    pub fn generate_many(&self, req: &ManyRequest) -> Result<Vec<Result<String, String>>, String> {
+        if self.is_cancelled(req.req_id) {
+            let _ = self.cancel.compare_exchange(req.req_id, NO_REQ, Ordering::SeqCst, Ordering::SeqCst);
+            return Err(CANCELLED.into());
+        }
+        let mut guard = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
+        self.running.store(req.req_id, Ordering::SeqCst);
+        let result = self.generate_many_locked(&mut guard, req);
+        self.running.store(NO_REQ, Ordering::SeqCst);
+        self.cancel.store(NO_REQ, Ordering::SeqCst);
+        if let Some(loaded) = guard.as_mut() {
+            loaded.last_used = Instant::now();
+        }
+        result
+    }
+
+    fn generate_many_locked(&self, slot: &mut Option<Loaded>, req: &ManyRequest) -> Result<Vec<Result<String, String>>, String> {
+        let model = self.ensure_loaded(slot, &req.model_path)?;
+        if self.is_cancelled(req.req_id) {
+            return Err(CANCELLED.into());
+        }
+        let mut results: Vec<Result<String, String>> = vec![Err(CANCELLED.into()); req.prompts.len()];
+        // The prompts that can run: tokenized, with their budget. The others fail on their own.
+        struct Seq {
+            at: usize,
+            tokens: Vec<LlamaToken>,
+            budget: u32,
+            out: String,
+            utf8: Utf8Stream,
+            pos: i32,
+            /// Index in the current batch of this sequence's last token (where its logits are).
+            logit: i32,
+            done: bool,
+        }
+        let mut seqs = Vec::new();
+        for (at, p) in req.prompts.iter().enumerate() {
+            let tokens = tokenize(model, &p.prompt, req.add_bos);
+            if tokens.is_empty() {
+                results[at] = Err("Nothing to translate".into());
+                continue;
+            }
+            match token_budget(tokens.len(), N_CTX, p.max_tokens) {
+                Ok(budget) => seqs.push(Seq { at, tokens, budget, out: String::new(), utf8: Utf8Stream::default(), pos: 0, logit: 0, done: false }),
+                Err(e) => results[at] = Err(e),
+            }
+        }
+        if seqs.is_empty() {
+            return Ok(results);
+        }
+        // One shared (unified) cache for all sequences, sized to what they need together.
+        let n_ctx: u32 = seqs.iter().map(|q| context_size(q.tokens.len(), q.budget)).sum();
+        let prompt_tokens: usize = seqs.iter().map(|q| q.tokens.len()).sum();
+        let threads = cpu_threads();
+        let ctx_params = LlamaContextParams::default()
+            .with_n_ctx(NonZeroU32::new(n_ctx))
+            .with_n_batch(prompt_tokens.max(seqs.len()) as u32)
+            .with_n_seq_max(seqs.len() as u32)
+            .with_kv_unified(true)
+            .with_n_threads(threads)
+            .with_n_threads_batch(threads);
+        let mut ctx = model
+            .new_context(backend()?, ctx_params)
+            .map_err(|e| format!("Couldn't start the model: {e}"))?;
+
+        // All prompts in one batch, each in its own sequence; logits only for each one's last token.
+        let mut batch = LlamaBatch::new(prompt_tokens.max(seqs.len()), seqs.len() as i32);
+        for (s, q) in seqs.iter_mut().enumerate() {
+            let last = q.tokens.len() - 1;
+            for (i, &t) in q.tokens.iter().enumerate() {
+                batch.add(t, i as i32, &[s as i32], i == last).map_err(|e| e.to_string())?;
+            }
+            q.pos = q.tokens.len() as i32;
+            q.logit = batch.n_tokens() - 1;
+        }
+        ctx.decode(&mut batch).map_err(|e| e.to_string())?;
+
+        let vocab = model.vocab();
+        let mut sampler = LlamaSampler::greedy();
+        loop {
+            if self.is_cancelled(req.req_id) {
+                return Err(CANCELLED.into());
+            }
+            // Next token for every running sequence; finished ones drop out of the batch.
+            let mut next = Vec::new();
+            for (s, q) in seqs.iter_mut().enumerate() {
+                if q.done {
+                    continue;
+                }
+                let token = sampler.sample(&ctx, q.logit);
+                let generated = (q.pos - q.tokens.len() as i32) as u32;
+                if vocab.is_eog(token) || generated >= q.budget {
+                    q.done = true;
+                    continue;
+                }
+                q.utf8.push(&vocab.token_to_piece(token, true, None), &mut q.out);
+                if truncate_at_stop(&q.out, &req.stop).is_some() {
+                    q.done = true;
+                    continue;
+                }
+                next.push((s, token));
+            }
+            if next.is_empty() {
+                break;
+            }
+            batch.clear();
+            for &(s, token) in &next {
+                let q = &mut seqs[s];
+                batch.add(token, q.pos, &[s as i32], true).map_err(|e| e.to_string())?;
+                q.pos += 1;
+                q.logit = batch.n_tokens() - 1;
+            }
+            ctx.decode(&mut batch).map_err(|e| e.to_string())?;
+        }
+        for mut q in seqs {
+            q.utf8.finish(&mut q.out);
+            results[q.at] = Ok(truncate_at_stop(&q.out, &req.stop).unwrap_or(q.out));
+        }
+        Ok(results)
     }
 
     /// Asks the in-flight generation (if any) to stop, so a following lock is quick.
@@ -366,6 +528,23 @@ extern "C" fn unload_before_exit() {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+/// Several prompts at once (see `Engine::generate_many`): one result per prompt, in order.
+#[tauri::command]
+pub async fn mt_generate_many(
+    engine: State<'_, Arc<Engine>>,
+    req_id: u64,
+    model_path: String,
+    prompts: Vec<ManyPrompt>,
+    add_bos: bool,
+    stop: Vec<String>,
+) -> Result<Vec<Result<String, String>>, String> {
+    let engine = Arc::clone(&engine);
+    let req = ManyRequest { req_id, model_path, prompts, add_bos, stop };
+    tauri::async_runtime::spawn_blocking(move || engine.generate_many(&req))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Starts the background thread that unloads an idle model.
@@ -589,5 +768,82 @@ Welcome back<end_of_turn>\n<start_of_turn>model\n";
             .expect("generates");
         assert!(!out.trim().is_empty());
         assert!(out.chars().any(|c| ('\u{0E00}'..='\u{0E7F}').contains(&c)), "no Thai in {out:?}");
+    }
+
+    /// Speed of the built-in model on typical UI strings (prints ms per string; nothing asserted):
+    /// RETRANS_TEST_MODEL=/path/translategemma-4b-it-Q4_K_M.gguf cargo test bench_ui_strings -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn bench_ui_strings() {
+        let path = std::env::var("RETRANS_TEST_MODEL").expect("set RETRANS_TEST_MODEL");
+        let texts = [
+            "Save", "Cancel", "Delete account", "Welcome back, {{name}}!", "Sign in with Google",
+            "Your password must be at least 8 characters long.", "Settings", "Log out",
+            "Are you sure you want to delete this project? This can't be undone.", "Search…",
+            "No results found", "Upload a file", "Profile updated", "Something went wrong. Please try again.",
+            "Terms of Service", "Privacy Policy", "Next", "Back", "Invite your team", "You have {{count}} new messages",
+        ];
+        let prompt = |t: &str| {
+            format!(
+                "<start_of_turn>user\nYou are a professional English (en) to Thai (th) translator. Your goal is to \
+accurately convey the meaning and nuances of the original English text while adhering to Thai grammar, vocabulary, \
+and cultural sensitivities.\nProduce only the Thai translation, without any additional explanations or commentary. \
+Please translate the following English text into Thai:\n\n\n{t}<end_of_turn>\n<start_of_turn>model\n"
+            )
+        };
+        let engine = Engine::default();
+        let run = |id: u64, t: &str| {
+            engine
+                .generate(&GenerateRequest {
+                    req_id: id,
+                    model_path: path.clone(),
+                    prompt: prompt(t),
+                    add_bos: true,
+                    max_tokens: (64 + t.len() * 4).min(1024) as u32,
+                    stop: vec!["<end_of_turn>".into()],
+                })
+                .expect("generates")
+        };
+        run(1, "Hello"); // load the model first: not part of the timing
+        let started = Instant::now();
+        for (i, t) in texts.iter().enumerate() {
+            run(i as u64 + 2, t);
+        }
+        let ms = started.elapsed().as_millis();
+        println!("BENCH {} strings in {ms} ms = {} ms/string", texts.len(), ms / texts.len() as u128);
+
+        // The same strings decoded together, `group` at a time: speed, and whether the text matches.
+        let one_by_one: Vec<String> = texts.iter().enumerate().map(|(i, t)| run(100 + i as u64, t)).collect();
+        // Similar lengths together: a group runs until its longest string is done.
+        let mut order: Vec<usize> = (0..texts.len()).collect();
+        order.sort_by_key(|&i| texts[i].len());
+        for group in [8usize, 16] {
+            let started = Instant::now();
+            let mut together = vec![String::new(); texts.len()];
+            for (g, idx) in order.chunks(group).enumerate() {
+                let chunk: Vec<&str> = idx.iter().map(|&i| texts[i]).collect();
+                let out = engine
+                    .generate_many(&ManyRequest {
+                        req_id: 1000 + g as u64,
+                        model_path: path.clone(),
+                        prompts: chunk
+                            .iter()
+                            .map(|t| ManyPrompt { prompt: prompt(t), max_tokens: (64 + t.len() * 4).min(1024) as u32 })
+                            .collect(),
+                        add_bos: true,
+                        stop: vec!["<end_of_turn>".into()],
+                    })
+                    .expect("generates");
+                for (&i, r) in idx.iter().zip(out) {
+                    together[i] = r.expect("each generates");
+                }
+            }
+            let ms = started.elapsed().as_millis();
+            let same = together.iter().zip(&one_by_one).filter(|(a, b)| a == b).count();
+            println!("BENCH together x{group}: {ms} ms = {} ms/string; {same}/{} identical", ms / texts.len() as u128, texts.len());
+            for (a, b) in together.iter().zip(&one_by_one).filter(|(a, b)| a != b) {
+                println!("  differs: {b:?} vs {a:?}");
+            }
+        }
     }
 }

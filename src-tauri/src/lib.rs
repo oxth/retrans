@@ -107,6 +107,7 @@ pub fn run() {
             mt::download::mt_download_cancel,
             mt::download::mt_model_delete,
             mt::engine::mt_generate,
+            mt::engine::mt_generate_many,
             mt::engine::mt_cancel,
             mt::engine::mt_unload,
             mt::acp::mt_acp_prompt,

@@ -13,8 +13,8 @@ vi.mock("@tauri-apps/api/event", () => ({
 import { ProjectSession } from "../core/session";
 import { detectProject } from "../formats/detect";
 import { MemoryFs } from "../platform/memory-fs";
-import type { MtEngine } from "./translate";
-import { acpTranslator, cloudTranslator, localTranslator, translateMissingMulti } from "./translator";
+import type { ManyRequest, MtEngine } from "./translate";
+import { acpTranslator, BATCH_CELLS, cloudTranslator, LOCAL_GROUP, localTranslator, translateMissingMulti } from "./translator";
 
 const R = "/p";
 const j = (o: unknown) => JSON.stringify(o, null, 2) + "\n";
@@ -55,16 +55,65 @@ describe("translators", () => {
     expect(invoke.mock.calls.filter(([cmd]) => String(cmd).startsWith("mt_cloud") || String(cmd).startsWith("mt_acp"))).toEqual([]);
   });
 
-  it("cloud translator batches 45 strings × 2 languages into 3 requests", async () => {
-    const s = await project(45);
+  it("built-in model: each distinct text once per language, decoded together in groups of 8", async () => {
+    const words = ["Save", "Cancel", "Delete this project now", "OK", "Settings"];
+    const s = await project(20, (i) => words[i % words.length]); // 20 keys, 5 distinct texts
+    let n = 0;
+    const generateMany = vi.fn(async (r: ManyRequest) => r.prompts.map(() => ({ ok: true as const, text: `t${n++}` })));
+    const engine: MtEngine = { generate: vi.fn(async () => "x"), generateMany, cancel: vi.fn(async () => {}) };
+    const t = localTranslator(engine, { path: "/m.gguf", template: "qwen3" }, "next-i18next");
+    const r = await translateMissingMulti(s, ["th", "ja"], "all", t, () => {}, new AbortController().signal);
+    // 5 texts × 2 languages = 10 translations, not 40: two calls of at most LOCAL_GROUP.
+    expect(generateMany.mock.calls.map(([q]) => q.prompts.length)).toEqual([LOCAL_GROUP, 2]);
+    expect(engine.generate).not.toHaveBeenCalled();
+    expect(r.th.translated).toBe(20);
+    expect(r.ja.translated).toBe(20);
+    // Keys with the same text got the same translation.
+    expect(s.value("common::k0", "th")).toEqual(s.value("common::k5", "th"));
+    expect(s.value("common::k0", "th")).not.toEqual(s.value("common::k1", "th"));
+    // Shortest first: a group runs until its longest text is done.
+    const lengths = generateMany.mock.calls[0][0].prompts.map((p) => p.maxTokens);
+    expect([...lengths].sort((a, b) => a - b)).toEqual(lengths);
+  });
+
+  it("built-in model: one string that's too long fails alone; the run goes on", async () => {
+    const s = await project(3);
+    const generateMany = vi.fn(async (r: ManyRequest) =>
+      r.prompts.map((_, i) => (i === 1 ? { ok: false as const, message: "Text is too long to translate" } : { ok: true as const, text: "ok" })),
+    );
+    const t = localTranslator({ generate: vi.fn(), generateMany, cancel: vi.fn(async () => {}) }, { path: "/m.gguf", template: "qwen3" }, "next-i18next");
+    const r = await translateMissingMulti(s, ["th"], "all", t, () => {}, new AbortController().signal);
+    expect(r.th.translated).toBe(2);
+    expect(r.th.failed).toHaveLength(1);
+    expect(r.th.failed[0].message).toBe("Text is too long to translate");
+  });
+
+  it("built-in model: cancelling stops after the group in flight", async () => {
+    const s = await project(30);
+    const ctl = new AbortController();
+    const cancel = vi.fn(async () => {});
+    const generateMany = vi.fn(async (_: ManyRequest) => {
+      ctl.abort(); // the user cancels while the first group runs
+      throw new Error("cancelled");
+    });
+    const t = localTranslator({ generate: vi.fn(), generateMany, cancel }, { path: "/m.gguf", template: "qwen3" }, "next-i18next");
+    const r = await translateMissingMulti(s, ["th"], "all", t, () => {}, ctl.signal);
+    expect(generateMany).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalled();
+    expect(r.th.translated).toBe(0);
+    expect(r.th.cancelled).toBe(true);
+  });
+
+  it("cloud translator batches 120 strings × 2 languages into 3 requests (50 + 50 + 20)", async () => {
+    const s = await project(120);
     invoke.mockImplementation(async (cmd: string, args: { req: { user: string } }) => {
       if (cmd === "mt_cloud_chat") return echoReply(args.req.user);
     });
     const t = cloudTranslator({ provider: "openai", model: "gpt-x" }, "next-i18next");
     const r = await translateMissingMulti(s, ["th", "ja"], "all", t, () => {}, new AbortController().signal);
     expect(invoke.mock.calls.filter(([c]) => c === "mt_cloud_chat")).toHaveLength(3);
-    expect(r.th.translated).toBe(45);
-    expect(r.ja.translated).toBe(45);
+    expect(r.th.translated).toBe(120);
+    expect(r.ja.translated).toBe(120);
     expect(s.value("common::k3", "ja")).toEqual({ kind: "text", text: "ja:Hello 3" });
     const req = invoke.mock.calls[0][1].req;
     expect(req).toMatchObject({ provider: "openai", model: "gpt-x" });
@@ -146,9 +195,9 @@ describe("translators", () => {
 });
 
 describe("review fixes", () => {
-  it("a request never carries more than 60 cells", async () => {
+  it("a request never carries more than BATCH_CELLS cells", async () => {
     const fs = new MemoryFs({
-      [`${R}/public/locales/en/common.json`]: j(Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`k${i}`, `Hi ${i}`]))),
+      [`${R}/public/locales/en/common.json`]: j(Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`k${i}`, `Hi ${i}`]))),
       ...Object.fromEntries(["th", "ja", "de", "fr", "es"].map((l) => [`${R}/public/locales/${l}/common.json`, j({})])),
     });
     const d = (await detectProject(fs, R))!;
@@ -158,10 +207,10 @@ describe("review fixes", () => {
     const calls = invoke.mock.calls.filter(([c]) => c === "mt_cloud_chat");
     for (const [, a] of calls) {
       const u = JSON.parse(a.req.user);
-      expect(u.strings.length * u.targets.length).toBeLessThanOrEqual(60);
+      expect(u.strings.length * u.targets.length).toBeLessThanOrEqual(BATCH_CELLS);
     }
-    expect(calls.length).toBe(2);
-    expect(Object.values(r).every((x) => x.translated === 20)).toBe(true);
+    expect(calls.length).toBe(2); // 40 strings × 5 languages = 200 cells: 150 + 50
+    expect(Object.values(r).every((x) => x.translated === 40)).toBe(true);
   });
 
   it("a streamed reply writes each translation as soon as its entry is complete", async () => {
