@@ -33,37 +33,78 @@ function InstallStatus({ phase }: { phase: Phase }) {
   return null;
 }
 
-/** Checks once per launch (when enabled) and shows a banner only if an update exists. */
-export function UpdateBanner() {
-  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
-  const [dismissed, setDismissed] = useState(false);
-  const started = useRef(false);
+/** The update toasts' card (this one and "Updated to…"); App stacks them in the bottom-right corner. */
+export const TOAST_CLS = "pointer-events-auto flex w-80 items-start gap-3 rounded-lg border border-line bg-surface p-3 text-sm text-fg shadow-pop";
+
+/** How often an open Retrans looks for an update. */
+export const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
+/** Coming back to the window (after sleep, from another app) looks again if the last look is this old. */
+export const RECHECK_AFTER_MS = 60 * 60 * 1000;
+
+/**
+ * Looks for an update at launch, every few hours while open, and when the window comes back after a
+ * while (when automatic checks are on), and shows a toast only if there is one. A toast, not a bar:
+ * it can appear mid-session, and a bar would push the page down while you edit. It stays until
+ * Install or Later; "Later" hides that version for this run, a newer one shows again.
+ */
+export function UpdateAvailableToast() {
+  const update = useApp((s) => s.update);
+  const [dismissed, setDismissed] = useState<string | null>(null);
   const { phase, run } = useInstall(update);
+  // Refs, not effect locals: they survive React's dev double-mount, so that doesn't check twice.
+  const busy = useRef(false);
+  const lastCheck = useRef(0);
+  const installing = useRef(false);
+  installing.current = phase.kind === "installing";
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    void (async () => {
+    let live = true;
+    const look = async () => {
+      if (busy.current || installing.current) return;
+      busy.current = true;
+      lastCheck.current = Date.now();
       try {
-        if (!(await getAutoCheckUpdates())) return;
-        setUpdate(await checkForUpdate());
+        if (!(await getAutoCheckUpdates())) return; // read each time: turning it off applies at once
+        const found = await checkForUpdate();
+        // Same version: keep the object, so an install in progress isn't reset.
+        if (live && found && useApp.getState().update?.version !== found.version) useApp.setState({ update: found });
       } catch (e) {
         console.warn("Update check failed", e);
+      } finally {
+        busy.current = false;
       }
-    })();
+    };
+    const onBack = () => {
+      if (document.visibilityState !== "hidden" && Date.now() - lastCheck.current >= RECHECK_AFTER_MS) void look();
+    };
+    void look();
+    const timer = setInterval(() => void look(), CHECK_EVERY_MS);
+    window.addEventListener("focus", onBack);
+    document.addEventListener("visibilitychange", onBack);
+    return () => {
+      live = false;
+      clearInterval(timer);
+      window.removeEventListener("focus", onBack);
+      document.removeEventListener("visibilitychange", onBack);
+    };
   }, []);
 
-  if (!update || dismissed) return null;
+  if (!update || dismissed === update.version) return null;
   return (
-    <div role="status" className="flex shrink-0 items-center justify-between gap-3 border-b border-brand-line bg-brand-soft px-4 py-2 text-sm">
-      <span>Retrans {update.version} is available.</span>
-      <div className="flex items-center gap-2">
-        <InstallStatus phase={phase} />
+    <div role="status" className={TOAST_CLS}>
+      <Icon name="refresh" size={16} className="mt-0.5 text-brand" />
+      <div className="min-w-0 flex-1">
+        <div className="font-medium">Retrans {update.version} is available.</div>
+        {phase.kind !== "idle" && (
+          <div className={`mt-0.5 text-xs ${phase.kind === "failed" ? "text-danger" : "text-muted"}`}>
+            <InstallStatus phase={phase} />
+          </div>
+        )}
         {phase.kind !== "installing" && (
-          <>
-            <button className={btnPrimary} onClick={() => void run()}>Install and restart</button>
-            <button className={btnGhost} onClick={() => setDismissed(true)}>Later</button>
-          </>
+          <div className="mt-2.5 flex gap-2">
+            <button className={`${btnPrimary} px-2.5 py-1 text-xs`} onClick={() => void run()}>Install and restart</button>
+            <button className={`${btnGhost} px-2.5 py-1 text-xs`} onClick={() => setDismissed(update.version)}>Later</button>
+          </div>
         )}
       </div>
     </div>
@@ -73,8 +114,14 @@ export function UpdateBanner() {
 export function UpdateSettings() {
   const [auto, setAuto] = useState(true);
   const [result, setResult] = useState<"idle" | "checking" | "current" | "error">("idle");
-  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
+  // Shared with the toast: an update found automatically shows here at once, ready to install.
+  const update = useApp((s) => s.update);
   const { phase, run } = useInstall(update);
+
+  // Seeing it here is what the gear's dot asks for.
+  useEffect(() => {
+    if (update) useApp.setState({ updateSeen: update.version });
+  }, [update]);
 
   useEffect(() => {
     let live = true;
@@ -89,10 +136,9 @@ export function UpdateSettings() {
 
   const check = async () => {
     setResult("checking");
-    setUpdate(null);
     try {
       const u = await checkForUpdate();
-      setUpdate(u);
+      if (u?.version !== useApp.getState().update?.version) useApp.setState({ update: u });
       setResult(u ? "idle" : "current");
     } catch (e) {
       console.warn("Update check failed", e);
@@ -102,7 +148,7 @@ export function UpdateSettings() {
 
   return (
     <Group label="Updates">
-      <Row label="Check automatically" hint="Look for a new version each time Retrans starts.">
+      <Row label="Check automatically" hint="Look for a new version when Retrans starts and every few hours while it is open.">
         <Switch
           label="Check for updates automatically"
           checked={auto}

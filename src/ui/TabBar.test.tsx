@@ -117,4 +117,17 @@ describe("TabBar", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
     expect(useApp.getState().prefsOpen).toBe(true);
   });
+
+  it("dots the Settings gear while an update hasn't been looked at, and opens About", async () => {
+    await useApp.getState().closeAllTabs();
+    act(() => useApp.setState({ update: { version: "9.9.9", install: async () => {} }, updateSeen: null, prefsOpen: false }));
+    render(<TabBar />);
+    expect(screen.getByTestId("update-dot")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Open settings (update available)" }));
+    expect(useApp.getState()).toMatchObject({ prefsOpen: true, prefsSection: "about" });
+    act(() => useApp.setState({ updateSeen: "9.9.9", prefsOpen: false }));
+    expect(screen.queryByTestId("update-dot")).toBeNull();
+    expect(screen.getByRole("button", { name: "Open settings" })).toBeInTheDocument();
+    act(() => useApp.setState({ update: null, updateSeen: null }));
+  });
 });

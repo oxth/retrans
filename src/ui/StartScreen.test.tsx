@@ -213,7 +213,7 @@ describe("StartScreen", () => {
 });
 
 describe("layout", () => {
-  it("the app is one window-high column: the update banner can't push it past the window", async () => {
+  it("the app is one window-high column: nothing pushes it past the window", async () => {
     const { container } = await setup(loadFixtureDir(FIX + "next-nested"));
     const root = container.firstElementChild as HTMLElement;
     expect(root.className).toMatch(/\bh-screen\b.*\bflex-col\b|\bflex-col\b.*\bh-screen\b/);

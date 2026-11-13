@@ -5,7 +5,7 @@ import { StartScreen } from "./ui/StartScreen";
 import { AppShell } from "./ui/AppShell";
 import { startAutosave, startUnsavedSync, useApp } from "./ui/store";
 import { useMt } from "./ui/mt-store";
-import { UpdateBanner } from "./ui/UpdateBanner";
+import { UpdateAvailableToast } from "./ui/UpdateAvailableToast";
 import { TabBar } from "./ui/TabBar";
 import { installMenu } from "./platform/menu";
 import { MENU_ACTIONS } from "./ui/menu-actions";
@@ -85,12 +85,16 @@ export default function App() {
   const activeId = useApp((s) => s.activeId);
   const prefsOpen = useApp((s) => s.prefsOpen);
   const whatsNewOpen = useApp((s) => s.whatsNewOpen);
-  // One window-high column: the update banner and tab bar take their rows and the page fills the rest.
+  // One window-high column: the tab bar takes its row and the page fills the rest.
   return (
     <div className="flex h-screen flex-col">
-      <UpdateBanner />
       {/* Always shown: it has Settings, and on macOS it is the title bar (the traffic lights sit on it). */}
       <TabBar />
+      {/* Update news, bottom-right over the page (nothing moves); both at once stack. Fixed, so its place here doesn't matter. */}
+      <div className="pointer-events-none fixed bottom-4 right-4 z-30 flex flex-col items-end gap-2">
+        <UpdateToast />
+        <UpdateAvailableToast />
+      </div>
       {session ? (
         <>
           {/* Keyed by tab: dialogs and the cell being edited don't follow you to another tab. */}
@@ -101,7 +105,6 @@ export default function App() {
       )}
       {prefsOpen && <SettingsDialog />}
       {whatsNewOpen && <WhatsNew />}
-      <UpdateToast />
       {/* Here, not in a tab: quitting from the start screen can still list other tabs. */}
       <UnsavedPrompt />
     </div>

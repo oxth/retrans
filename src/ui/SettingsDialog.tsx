@@ -24,8 +24,8 @@ import { useMt } from "./mt-store";
 import { ProjectMtSettings } from "./ProjectMtSettings";
 import { btnRow, fieldBase, Group, Row, Segmented, UnsavedContext } from "./settings-ui";
 import { StartupSettings } from "./StartupSettings";
-import { type SettingsSection, useApp } from "./store";
-import { UpdateSettings } from "./UpdateBanner";
+import { type SettingsSection, updateUnseen, useApp } from "./store";
+import { UpdateSettings } from "./UpdateAvailableToast";
 
 interface SectionDef {
   id: SettingsSection;
@@ -70,6 +70,7 @@ export function SettingsDialog() {
   const sections = available(session);
   const [current, setCurrent] = useState<SettingsSection>(() => (sections.some((s) => s.id === asked) ? asked! : sections[0].id));
   const [query, setQuery] = useState("");
+  const updateDot = useApp(updateUnseen);
   const [version, setVersion] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   // A section with unsaved edits (Machine translation): leaving it asks first.
@@ -135,6 +136,9 @@ export function SettingsDialog() {
       >
         <Icon name={s.icon} size={15} className={on ? "text-brand" : "text-muted"} />
         <span className="truncate">{s.label}</span>
+        {s.id === "about" && updateDot && (
+          <span aria-label="Update available" className="ml-auto h-2 w-2 shrink-0 rounded-full bg-brand" />
+        )}
       </button>
     );
   };

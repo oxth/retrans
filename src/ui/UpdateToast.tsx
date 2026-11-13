@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { recordLaunchedVersion } from "../platform/prefs";
 import { shouldAnnounceUpdate } from "./changelog";
 import { Icon } from "./Icon";
+import { TOAST_CLS } from "./UpdateAvailableToast";
 import { useApp } from "./store";
 
 /** On launch: remembers this version and, if it's newer than last launch's, sets the toast. */
@@ -29,7 +30,7 @@ export function UpdateToast() {
   if (!version || whatsNewOpen) return null;
   const dismiss = () => useApp.setState({ updatedTo: null });
   return (
-    <div role="status" className="fixed bottom-4 right-4 z-30 flex w-80 items-start gap-3 rounded-lg border border-line bg-surface p-3 text-sm text-fg shadow-pop">
+    <div role="status" className={TOAST_CLS}>
       <Icon name="sparkles" size={16} className="mt-0.5 text-brand" />
       <div className="min-w-0 flex-1">
         <div className="font-medium">Updated to Retrans {version}</div>

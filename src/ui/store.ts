@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { AvailableUpdate } from "../platform/updates";
 import { invoke } from "@tauri-apps/api/core";
 import { exit } from "@tauri-apps/plugin-process";
 import { appDataDir } from "@tauri-apps/api/path";
@@ -59,6 +60,9 @@ export interface Tab {
 }
 
 /** A project folder path without trailing slashes: two spellings of one folder are one tab. */
+/** Whether to dot the Settings gear (and About): an update exists that the user hasn't looked at yet. */
+export const updateUnseen = (s: Pick<AppState, "update" | "updateSeen">): boolean => !!s.update && s.updateSeen !== s.update.version;
+
 export const normRoot = (root: string) => root.replace(/[\\/]+$/, "") || root;
 
 /** Sections of the Settings window: the first three belong to the open project. */
@@ -73,6 +77,10 @@ export interface AppState {
   whatsNewVersion: string | null;
   /** Set on the first launch after an update: the "Updated to …" toast. */
   updatedTo: string | null;
+  /** A newer version found by an update check (automatic or Settings → About); null when none. */
+  update: AvailableUpdate | null;
+  /** The update version whose details were seen in Settings → About: the gear's dot then goes. */
+  updateSeen: string | null;
   /** The Settings section to show when Settings opens (null: the first one that applies). */
   prefsSection: SettingsSection | null;
   /** Bumped when view preferences change in Settings, so open projects re-read their view. */
@@ -350,6 +358,8 @@ export const useApp = create<AppState>((set, get) => {
   whatsNewOpen: false,
   whatsNewVersion: null,
   updatedTo: null,
+  update: null,
+  updateSeen: null,
   prefsSection: null,
   viewPrefsVersion: 0,
   tabs: [],

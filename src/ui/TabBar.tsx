@@ -2,7 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import { currentPlatform } from "../platform/menu";
 import { Icon } from "./Icon";
-import { useApp } from "./store";
+import { updateUnseen, useApp } from "./store";
 
 /**
  * macOS draws the window's traffic lights over this bar (titleBarStyle Overlay in tauri.conf.json),
@@ -42,6 +42,7 @@ export function TabBar() {
   const notice = useApp((s) => s.notice);
   const { switchTab, showStart, closeTab } = useApp.getState();
   const fullscreen = useFullscreen();
+  const updateDot = useApp(updateUnseen);
   // Empty parts of the bar move the window (and double-click zooms it), like a native title bar.
   const drag = inTitleBar ? { "data-tauri-drag-region": "" } : {};
 
@@ -111,12 +112,14 @@ export function TabBar() {
           </button>
         </div>
         <button
-          aria-label="Open settings"
-          title={`Settings (${navigator.userAgent.includes("Mac") ? "⌘," : "Ctrl+,"})`}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
-          onClick={() => useApp.getState().openPrefs()}
+          aria-label={updateDot ? "Open settings (update available)" : "Open settings"}
+          title={`${updateDot ? "A new version is available. " : ""}Settings (${navigator.userAgent.includes("Mac") ? "⌘," : "Ctrl+,"})`}
+          className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
+          // With an update waiting, go straight to About, where it can be installed.
+          onClick={() => useApp.getState().openPrefs(updateDot ? "about" : undefined)}
         >
           <Icon name="settings" size={16} />
+          {updateDot && <span aria-hidden="true" data-testid="update-dot" className="absolute right-1 top-1 h-2 w-2 rounded-full bg-brand ring-2 ring-panel" />}
         </button>
       </div>
       {notice && (
