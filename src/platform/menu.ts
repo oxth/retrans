@@ -2,7 +2,10 @@
  * The app menu (spec: Preferences, menus, shortcuts). macOS gets its standard app menu with
  * Settings… ⌘,; Windows gets a menu bar in the window with File → Settings… Ctrl+,.
  */
-import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
+import { getVersion } from "@tauri-apps/api/app";
+import { Image } from "@tauri-apps/api/image";
+import { type AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
+import devIconUrl from "../../src-tauri/icons/64x64.png";
 
 type Predefined = "Separator" | "Cut" | "Copy" | "Paste" | "SelectAll" | "Hide" | "HideOthers" | "ShowAll" | "Minimize" | "Maximize" | "Quit" | "About";
 
@@ -82,6 +85,39 @@ export function menuSpec(platform: Platform, ctx: MenuCtx): Array<{ text: string
   ];
 }
 
+/**
+ * The native About window: "Version 0.5.1 (abc1234)". macOS shows `version` as-is and
+ * `shortVersion` in parentheses, plus the credits and copyright; Windows appends `shortVersion`
+ * the same way and shows comments, website, authors and license instead.
+ */
+export function aboutMetadata(appVersion: string, commit: string): AboutMetadata {
+  return {
+    name: "Retrans",
+    version: `Version ${appVersion}`,
+    ...(commit ? { shortVersion: commit } : {}),
+    credits: "A translation editor for next-i18next, Paraglide, TypeScript and Figma\noxth.github.io/retrans · github.com/oxth/retrans",
+    comments: "A translation editor for next-i18next, Paraglide, TypeScript and Figma",
+    copyright: `© ${new Date().getFullYear()} oxth`,
+    authors: ["oxth"],
+    license: "MIT",
+    website: "https://oxth.github.io/retrans/",
+    websiteLabel: "oxth.github.io/retrans",
+  };
+}
+
+/** The 64×64 app icon as an Image: macOS shows it at one point per pixel, the size of a standard About icon. */
+async function devIcon(): Promise<Image> {
+  const img = document.createElement("img");
+  img.src = devIconUrl;
+  await img.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(img, 0, 0);
+  return Image.new(new Uint8Array(ctx.getImageData(0, 0, canvas.width, canvas.height).data.buffer), canvas.width, canvas.height);
+}
+
 export const currentPlatform = (): Platform => (/Mac|iPhone|iPad/.test(navigator.userAgent) ? "macos" : "windows");
 
 /**
@@ -92,6 +128,12 @@ export async function installMenu(onAction: (id: string) => void, ctx: MenuCtx):
   const platform = currentPlatform();
   const byId = new Map<string, MenuItem>();
   const submenus: Submenu[] = [];
+  const about = aboutMetadata(await getVersion().catch(() => ""), typeof __COMMIT__ === "string" ? __COMMIT__ : "");
+  // The .app bundle's own icon is used when none is given. `tauri dev` runs without a bundle, so it would be a folder.
+  if (import.meta.env.DEV) {
+    const icon = await devIcon().catch(() => null);
+    if (icon) about.icon = icon;
+  }
   for (const m of menuSpec(platform, ctx)) {
     const items = [];
     for (const spec of m.items) {
@@ -103,7 +145,7 @@ export async function installMenu(onAction: (id: string) => void, ctx: MenuCtx):
         byId.set(spec.id, it);
         items.push(it);
       } else if (spec.predefined === "About") {
-        items.push(await PredefinedMenuItem.new({ item: { About: { name: "Retrans" } }, text: spec.text }));
+        items.push(await PredefinedMenuItem.new({ item: { About: about }, text: spec.text }));
       } else {
         items.push(await PredefinedMenuItem.new({ item: spec.predefined, text: spec.text }));
       }

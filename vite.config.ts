@@ -3,11 +3,22 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 // @ts-expect-error type error without @types/node package
 import process from "node:process";
+import { execSync } from "node:child_process";
 const host = process.env.TAURI_DEV_HOST;
+
+/** Short commit hash of the build, shown in About ("Version 0.5.1 (abc1234)"); empty outside a git checkout. */
+function commitHash(): string {
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    return "";
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
+  define: { __COMMIT__: JSON.stringify(commitHash()) },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

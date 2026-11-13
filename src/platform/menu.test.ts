@@ -5,7 +5,7 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 }));
 
 import { MENU_ACTIONS } from "../ui/menu-actions";
-import { type MenuItemSpec, menuSpec } from "./menu";
+import { aboutMetadata, type MenuItemSpec, menuSpec } from "./menu";
 
 const ctx = { hasProject: true, canUndo: true, canRedo: true };
 const items = (spec: ReturnType<typeof menuSpec>) => spec.flatMap((m) => m.items);
@@ -58,5 +58,20 @@ describe("menuSpec", () => {
         if ("id" in i) expect(MENU_ACTIONS[i.id], i.id).toBeTypeOf("function");
       }
     }
+  });
+});
+
+describe("aboutMetadata", () => {
+  it("shows the version with the build's commit, a description and the copyright", () => {
+    const a = aboutMetadata("0.5.1", "80f92ae");
+    expect(a).toMatchObject({ name: "Retrans", version: "Version 0.5.1", shortVersion: "80f92ae", license: "MIT" });
+    expect(a.credits).toContain("oxth.github.io/retrans");
+    expect(a.copyright).toMatch(/^© \d{4} oxth$/);
+  });
+
+  it("leaves out the commit when it is unknown", () => {
+    const a = aboutMetadata("0.5.1", "");
+    expect(a.version).toBe("Version 0.5.1");
+    expect(a).not.toHaveProperty("shortVersion");
   });
 });
