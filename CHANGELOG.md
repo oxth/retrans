@@ -4,6 +4,14 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Improvements
+
+- **Resizable table columns.** Drag the right edge of a column header in the table view to make it wider or narrower, or double-click it to reset. Retrans remembers the widths.
+- **About Retrans** on macOS now shows the version and build, a short description, links and the copyright.
+- In a narrow table column, the text of a translation now wraps around its warning, **Source changed** and **Review** marks and uses the full width below them.
+
 ## [0.5.1] - 2026-11-13
 
 ### Fixes
