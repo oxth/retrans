@@ -149,10 +149,11 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
   }
   const meta = session.meta(id, locale);
   const reviewable = !isBase && (meta.status !== "reviewed" || meta.needsReview);
+  const warnings = session.warnings(id, locale);
   const statusLabel = `${STATUS_TEXT[meta.status]}${meta.needsReview ? `; ${NEEDS_REVIEW_TEXT}` : ""}`;
   return (
     <div
-      className="group/cell flex cursor-text flex-wrap items-start gap-2 rounded-md border border-transparent px-1.5 py-1 hover:border-line hover:bg-hover"
+      className="group/cell flex cursor-text items-start gap-2 rounded-md border border-transparent px-1.5 py-1 hover:border-line hover:bg-hover"
       data-cell="value"
       ref={el}
       data-locale={locale}
@@ -166,41 +167,48 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
           <StatusDot status={meta.status} needsReview={meta.needsReview} machine={meta.machine} />
         </span>
       )}
-      {v.kind === "text" ? (
-        <span className="min-w-24 flex-1 whitespace-pre-wrap break-words">{v.text}</span>
-      ) : (
-        <span className="min-w-24 flex-1 italic text-muted">complex message</span>
-      )}
-      <Warnings warnings={session.warnings(id, locale)} />
-      {reviewable && (
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {meta.needsReview && (
-            <span
-              className="rounded bg-warn-soft px-1.5 text-[11px] font-medium leading-5 text-warn"
-              title="The base text changed after this was translated. Check the translation still fits, then mark it reviewed."
-            >
-              {SOURCE_CHANGED}
-            </span>
-          )}
-          <button
-            type="button"
-            aria-label={`Mark reviewed (${statusLabel})`}
-            title="Mark reviewed (⌘⇧R / Ctrl+Shift+R)"
-            className={`inline-flex items-center gap-1 rounded-md px-1.5 text-xs font-medium leading-5 ${
-              meta.needsReview
-                ? "border border-warn-line bg-surface text-fg hover:bg-ok-soft hover:text-ok"
-                : "text-muted hover:bg-ok-soft hover:text-ok group-hover/cell:text-fg-2"
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              actions.review(id, locale);
-            }}
-          >
-            <Icon name="check" size={13} />
-            Review
-          </button>
-        </span>
-      )}
+      {/* The marks float top-right so the text wraps around them and uses the full width below, even in a narrow table column. */}
+      <div className="min-w-0 flex-1">
+        {(reviewable || warnings.length > 0) && (
+          <span className="float-right ml-2 flex items-center gap-1.5">
+            <Warnings warnings={warnings} />
+            {reviewable && (
+              <>
+                {meta.needsReview && (
+                  <span
+                    className="rounded bg-warn-soft px-1.5 text-[11px] font-medium leading-5 text-warn"
+                    title="The base text changed after this was translated. Check the translation still fits, then mark it reviewed."
+                  >
+                    {SOURCE_CHANGED}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  aria-label={`Mark reviewed (${statusLabel})`}
+                  title="Mark reviewed (⌘⇧R / Ctrl+Shift+R)"
+                  className={`inline-flex items-center gap-1 rounded-md px-1.5 text-xs font-medium leading-5 ${
+                    meta.needsReview
+                      ? "border border-warn-line bg-surface text-fg hover:bg-ok-soft hover:text-ok"
+                      : "text-muted hover:bg-ok-soft hover:text-ok group-hover/cell:text-fg-2"
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    actions.review(id, locale);
+                  }}
+                >
+                  <Icon name="check" size={13} />
+                  Review
+                </button>
+              </>
+            )}
+          </span>
+        )}
+        {v.kind === "text" ? (
+          <span className="whitespace-pre-wrap break-words">{v.text}</span>
+        ) : (
+          <span className="italic text-muted">complex message</span>
+        )}
+      </div>
     </div>
   );
 });
