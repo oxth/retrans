@@ -574,6 +574,8 @@ mod tests {
     async fn a_silent_agent_times_out_instead_of_hanging() {
         let Some((node, args)) = fake() else { return };
         let env = vec![("FAKE_ACP_SILENT".to_string(), "1".to_string())];
+        // The login shell's PATH is read once per process (up to 3 s, slow on CI): not what's timed here.
+        login_path().await;
         let started = std::time::Instant::now();
         let err = Agent::start_within(&node, &args, &env, Duration::from_millis(400))
             .await
@@ -594,6 +596,7 @@ mod tests {
             s2.notify_one();
         });
         let env = vec![("FAKE_ACP_SILENT".to_string(), "1".to_string())];
+        login_path().await; // read once per process; not what's timed here
         let started = std::time::Instant::now();
         let out = agents.prompt_with(&node, &args, &env, "x", stop).await;
         assert_eq!(out, Err("cancelled".into()));
