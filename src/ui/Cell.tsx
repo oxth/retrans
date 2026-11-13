@@ -152,7 +152,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
   const statusLabel = `${STATUS_TEXT[meta.status]}${meta.needsReview ? `; ${NEEDS_REVIEW_TEXT}` : ""}`;
   return (
     <div
-      className="group/cell flex cursor-text items-start gap-2 rounded-md border border-transparent px-1.5 py-1 hover:border-line hover:bg-hover"
+      className="group/cell flex cursor-text flex-wrap items-start gap-2 rounded-md border border-transparent px-1.5 py-1 hover:border-line hover:bg-hover"
       data-cell="value"
       ref={el}
       data-locale={locale}
@@ -167,9 +167,9 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
         </span>
       )}
       {v.kind === "text" ? (
-        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{v.text}</span>
+        <span className="min-w-24 flex-1 whitespace-pre-wrap break-words">{v.text}</span>
       ) : (
-        <span className="flex-1 italic text-muted">complex message</span>
+        <span className="min-w-24 flex-1 italic text-muted">complex message</span>
       )}
       <Warnings warnings={session.warnings(id, locale)} />
       {reviewable && (

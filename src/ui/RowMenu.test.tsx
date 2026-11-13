@@ -24,6 +24,26 @@ describe("RowMenu", () => {
     expect(menu.style.position).toBe("fixed");
   });
 
+  it("flips above the button when there is no room below it (last row)", () => {
+    setup();
+    const btn = screen.getByRole("button", { name: "Actions for aa" });
+    const rect = (top: number, left: number, width: number, height: number) =>
+      ({ top, left, width, height, bottom: top + height, right: left + width, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+    btn.getBoundingClientRect = () => rect(window.innerHeight - 30, 100, 20, 20);
+    const orig = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      return this.getAttribute("role") === "menu"
+        ? rect(parseFloat(this.style.top), parseFloat(this.style.left), 150, 80)
+        : orig.call(this);
+    };
+    try {
+      fireEvent.click(btn);
+      expect(screen.getByRole("menu").style.top).toBe(`${window.innerHeight - 30 - 4 - 80}px`);
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = orig;
+    }
+  });
+
   it("closes when clicking anywhere else, even if the button never had focus", async () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Actions for aa" })); // a click that doesn't focus (macOS WebKit)

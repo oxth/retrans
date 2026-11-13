@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "./Icon";
 
@@ -45,6 +45,16 @@ export function RowMenu({ name, onRename, onDelete, onKeep, onCodeKey, onLink }:
     const r = button.current!.getBoundingClientRect();
     setPos({ top: r.bottom + 4, left: r.left });
   };
+  // Opens below the button; flips above it (and shifts left) when it would run off the window.
+  useLayoutEffect(() => {
+    if (!pos || !menu.current || !button.current) return;
+    const m = menu.current.getBoundingClientRect();
+    const b = button.current.getBoundingClientRect();
+    let { top, left } = pos;
+    if (m.bottom > window.innerHeight - 4 && b.top - 4 - m.height >= 4) top = b.top - 4 - m.height;
+    if (m.right > window.innerWidth - 4) left = Math.max(4, window.innerWidth - 4 - m.width);
+    if (top !== pos.top || left !== pos.left) setPos({ top, left });
+  }, [pos]);
   const run = (action: () => void) => () => {
     close();
     action();
