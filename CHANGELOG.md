@@ -4,6 +4,15 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Improvements
+
+- **Faster Translate missing with the built-in model.** It translates several strings at once and each repeated text (like "Save" or "Cancel") only once per language: about **1.8× faster** on TranslateGemma 4B, with the same translations.
+- **Fewer requests to cloud AI.** Translate missing sends up to 50 strings per request instead of 20, so 10,000 missing strings take about 200 requests instead of 500, and still one at a time. If the provider's rate limit is hit, Retrans now waits a minute and carries on (for up to about five minutes) instead of stopping; running out of credit still stops right away.
+
+- **Updates while Retrans stays open.** Retrans now also looks for a new version every few hours, and when you come back to the window after a while, not only when it starts. A new version shows as a note in the corner instead of a bar across the top, so nothing on the page moves; **Later** hides that version until Retrans restarts. Until you've looked at it, a dot on the Settings gear reminds you; clicking the gear opens **About**, where the update is ready to install.
+
 ## [0.6.0] - 2026-11-13
 
 ### What's new
