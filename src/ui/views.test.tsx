@@ -72,6 +72,21 @@ describe("views", () => {
     await waitFor(() => expect((prefs.get("viewMode") as Record<string, string>)["/project"]).toBe("list"));
   });
 
+  it("table columns resize from the header, are remembered, and reset on double-click", async () => {
+    localStorage.clear();
+    await open(nested());
+    await userEvent.click(screen.getByRole("button", { name: "table" }));
+    const handle = screen.getByRole("separator", { name: "Resize Key column" });
+    expect(handle).toHaveAttribute("aria-valuenow", "220");
+    handle.focus();
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    expect(handle).toHaveAttribute("aria-valuenow", "252");
+    expect(JSON.parse(localStorage.getItem("retrans.tableWidths")!)).toEqual({ key: 252 });
+    await userEvent.dblClick(handle);
+    expect(handle).toHaveAttribute("aria-valuenow", "220");
+    expect(JSON.parse(localStorage.getItem("retrans.tableWidths")!)).toEqual({});
+  });
+
   it("missing chip count equals rows with missing cells and filters on click", async () => {
     await open(nested());
     // th missing: nav.about, items_other, lit.a.b, only_en, checkout pay + total (items_one is not used in th)
