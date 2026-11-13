@@ -1,6 +1,6 @@
 [package]
 name = "retrans"
-version = "0.5.1"
+version = "0.6.0"
 description = "Desktop app for editing next-i18next, Paraglide, TypeScript and Figma translations"
 authors = ["oxth"]
 license = "MIT"

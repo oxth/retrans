@@ -4,12 +4,11 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] - 2026-11-13
 
 ### What's new
 
 - **What's New in Retrans.** See what changed in every version, right in the app: open it from the Retrans menu (Help on Windows) or from **Settings → About**. The version you have is marked **Installed**. After an update, a note in the corner says which version you're on, with a link to its notes.
-
 - **Report a Bug.** Help → Report a Bug… (or Settings → About) opens a bug report on GitHub with your version and system filled in, and shows Retrans's log file so you can attach it. **Help → Show Log File** (⌘⇧L / Ctrl+Shift+L) opens the log any time. Ideas go to **Help → Request a Feature…**. The log records warnings, errors and when Retrans started; it has no translation text or API keys, and your home folder is written as `~`.
 
 ### Improvements
@@ -146,6 +145,7 @@ First release.
 - **Crash recovery.** Unsaved edits are kept and offered back after a crash.
 - **Automatic updates** on macOS (Apple Silicon) and Windows.
 
+[0.6.0]: https://github.com/oxth/retrans/releases/tag/v0.6.0
 [0.5.1]: https://github.com/oxth/retrans/releases/tag/v0.5.1
 [0.5.0]: https://github.com/oxth/retrans/releases/tag/v0.5.0
 [0.4.1]: https://github.com/oxth/retrans/releases/tag/v0.4.1
