@@ -4,6 +4,13 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-11-13
+
+### Fixes
+
+- In the table view, a translation marked **Source changed** no longer squeezes its text into a narrow column one letter per line. The chip and the **Review** button move to their own line when there isn't room ([#1](https://github.com/oxth/retrans/issues/1)).
+- The **⋯** menu on a key now opens above the button when there isn't room below it, so it can be read on the last rows of a long list ([#2](https://github.com/oxth/retrans/issues/2)).
+
 ## [0.5.0] - 2026-11-06
 
 ### What's new
@@ -123,6 +130,7 @@ First release.
 - **Crash recovery.** Unsaved edits are kept and offered back after a crash.
 - **Automatic updates** on macOS (Apple Silicon) and Windows.
 
+[0.5.1]: https://github.com/oxth/retrans/releases/tag/v0.5.1
 [0.5.0]: https://github.com/oxth/retrans/releases/tag/v0.5.0
 [0.4.1]: https://github.com/oxth/retrans/releases/tag/v0.4.1
 [0.4.0]: https://github.com/oxth/retrans/releases/tag/v0.4.0
