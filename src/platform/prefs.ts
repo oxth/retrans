@@ -201,6 +201,18 @@ export async function recordLaunchedVersion(version: string): Promise<string | n
   return last;
 }
 
+/** Whether the Getting started tour was closed once (finished or skipped): it then no longer opens by itself. */
+export async function getWelcomeSeen(): Promise<boolean> {
+  const s = await getStore();
+  return (await s.get<boolean>("welcomeSeen")) === true;
+}
+
+export async function setWelcomeSeen(): Promise<void> {
+  const s = await getStore();
+  await s.set("welcomeSeen", true);
+  await s.save();
+}
+
 export async function getAutoCheckUpdates(): Promise<boolean> {
   const s = await getStore();
   return (await s.get<boolean>("autoCheckUpdates")) !== false;

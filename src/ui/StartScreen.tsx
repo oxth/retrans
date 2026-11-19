@@ -211,6 +211,11 @@ export function StartScreen() {
             <h1 className="text-2xl font-bold tracking-tight">Retrans</h1>
             <p className="text-sm text-muted">Edit next-i18next and Paraglide translations side by side.</p>
           </div>
+          <button type="button" onClick={() => useApp.getState().openWelcome()}
+            className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted hover:bg-hover hover:text-fg">
+            <Icon name="info" size={15} />
+            New here? Take the tour
+          </button>
         </div>
         <div className="mt-8 grid gap-3 sm:grid-cols-3">
           {(

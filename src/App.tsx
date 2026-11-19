@@ -15,6 +15,7 @@ import { SettingsDialog } from "./ui/SettingsDialog";
 import { startLogging } from "./ui/bug-report";
 import { UpdateToast, useAnnounceUpdate } from "./ui/UpdateToast";
 import { WhatsNew } from "./ui/WhatsNew";
+import { Welcome } from "./ui/Welcome";
 
 /**
  * Routes every way of quitting through one prompt listing the tabs with unsaved changes: the
@@ -85,6 +86,7 @@ export default function App() {
   const activeId = useApp((s) => s.activeId);
   const prefsOpen = useApp((s) => s.prefsOpen);
   const whatsNewOpen = useApp((s) => s.whatsNewOpen);
+  const welcomeOpen = useApp((s) => s.welcomeOpen);
   // One window-high column: the tab bar takes its row and the page fills the rest.
   return (
     <div className="flex h-screen flex-col">
@@ -105,6 +107,7 @@ export default function App() {
       )}
       {prefsOpen && <SettingsDialog />}
       {whatsNewOpen && <WhatsNew />}
+      {welcomeOpen && <Welcome />}
       {/* Here, not in a tab: quitting from the start screen can still list other tabs. */}
       <UnsavedPrompt />
     </div>

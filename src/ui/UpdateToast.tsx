@@ -1,12 +1,15 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect } from "react";
-import { recordLaunchedVersion } from "../platform/prefs";
+import { getWelcomeSeen, recordLaunchedVersion } from "../platform/prefs";
 import { shouldAnnounceUpdate } from "./changelog";
 import { Icon } from "./Icon";
 import { TOAST_CLS } from "./UpdateAvailableToast";
 import { useApp } from "./store";
 
-/** On launch: remembers this version and, if it's newer than last launch's, sets the toast. */
+/**
+ * On launch: remembers this version and, if it's newer than last launch's, sets the toast. Until
+ * the Getting started tour has been closed once, it opens instead (new users and updaters alike).
+ */
 export function useAnnounceUpdate(): void {
   useEffect(() => {
     let live = true;
@@ -14,7 +17,10 @@ export function useAnnounceUpdate(): void {
       .then(getVersion)
       .then(async (v) => {
         const previous = await recordLaunchedVersion(v);
-        if (live && shouldAnnounceUpdate(previous, v)) useApp.setState({ updatedTo: v });
+        const welcomeSeen = await getWelcomeSeen();
+        if (!live) return;
+        if (!welcomeSeen) useApp.getState().openWelcome();
+        else if (shouldAnnounceUpdate(previous, v)) useApp.setState({ updatedTo: v });
       })
       .catch(() => {}); // not running inside Tauri (tests, browser)
     return () => {

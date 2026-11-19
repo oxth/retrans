@@ -4,6 +4,12 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### What's new
+
+- **Getting started tour.** The first time you open Retrans, a short tour shows how it works: opening a project, what the status dots mean, AI translation, and saving. It also opens once after updating, for anyone who hasn't seen it. Take it again any time from **Help → Getting Started** or **New here? Take the tour** on the start screen.
+
 ## [0.6.1] - 2026-11-13
 
 ### Improvements

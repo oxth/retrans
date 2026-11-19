@@ -27,6 +27,7 @@ export const MENU_ACTIONS: Record<string, () => void> = guarded({
   settings: () => app().openPrefs(),
   "check-updates": () => app().openPrefs("about"), // About has Check for updates
   "whats-new": () => app().openWhatsNew(),
+  welcome: () => app().openWelcome(),
   "report-bug": () => void reportBug().catch((e) => console.warn("Report a bug failed", e)),
   "request-feature": () => void requestFeature().catch((e) => console.warn("Request a feature failed", e)),
   "new-project": () => {

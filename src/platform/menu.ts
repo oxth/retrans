@@ -56,6 +56,8 @@ export function menuSpec(platform: Platform, ctx: MenuCtx): Array<{ text: string
     { id: "prev-tab", text: "Previous Tab", accelerator: "Ctrl+Shift+Tab", enabled: p },
   ];
   const help: MenuItemSpec[] = [
+    { id: "welcome", text: "Getting Started" },
+    sep,
     { id: "github", text: "Retrans on GitHub" },
     { id: "report-bug", text: "Report a Bug…" },
     { id: "request-feature", text: "Request a Feature…" },

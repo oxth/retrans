@@ -21,7 +21,8 @@ import { UpdateToast, useAnnounceUpdate } from "./UpdateToast";
 
 beforeEach(() => {
   prefs.clear();
-  useApp.setState({ updatedTo: null, whatsNewOpen: false, whatsNewVersion: null });
+  prefs.set("welcomeSeen", true); // the tour is covered by its own tests below
+  useApp.setState({ updatedTo: null, whatsNewOpen: false, whatsNewVersion: null, welcomeOpen: false });
 });
 afterEach(cleanup);
 
@@ -69,6 +70,34 @@ describe("UpdateToast", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Updated to Retrans 0.5.1");
     await userEvent.click(screen.getByRole("button", { name: "See what's new" }));
     expect(useApp.getState()).toMatchObject({ whatsNewOpen: true, whatsNewVersion: "0.5.1", updatedTo: null });
+  });
+
+  it("the very first launch opens Getting started", async () => {
+    prefs.delete("welcomeSeen");
+    version.current = "0.5.1";
+    render(<Harness />);
+    await waitFor(() => expect(useApp.getState().welcomeOpen).toBe(true));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("an update opens Getting started instead of the toast until the tour was closed once", async () => {
+    prefs.delete("welcomeSeen");
+    prefs.set("lastVersion", "0.5.0");
+    version.current = "0.5.1";
+    render(<Harness />);
+    await waitFor(() => expect(useApp.getState().welcomeOpen).toBe(true));
+    expect(screen.queryByRole("status")).toBeNull();
+    act(() => useApp.getState().closeWelcome());
+    await waitFor(() => expect(prefs.get("welcomeSeen")).toBe(true));
+  });
+
+  it("no tour once it was closed, even on an update", async () => {
+    prefs.set("welcomeSeen", true);
+    prefs.set("lastVersion", "0.5.0");
+    version.current = "0.5.1";
+    render(<Harness />);
+    expect(await screen.findByRole("status")).toHaveTextContent("Updated to Retrans 0.5.1");
+    expect(useApp.getState().welcomeOpen).toBe(false);
   });
 
   it("does not appear on an ordinary restart", async () => {
