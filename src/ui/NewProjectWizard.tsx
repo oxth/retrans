@@ -4,6 +4,7 @@ import { documentDir } from "@tauri-apps/api/path";
 import { open as pickFolder } from "@tauri-apps/plugin-dialog";
 import { detectProject } from "../formats/detect";
 import { destHasFiles } from "../package/extract";
+import { addCreatedFolder } from "../platform/prefs";
 import { createWorkspace } from "../workspace/store";
 import { LocalePicker } from "./LocalePicker";
 import { useApp } from "./store";
@@ -54,6 +55,7 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
         return;
       }
       await createWorkspace(fs, folder, { name: name.trim(), baseLocale: base[0], locales: targets });
+      await addCreatedFolder(folder).catch(() => {});
       const d = await detectProject(fs, folder);
       if (!d) throw new Error("Could not open the new project.");
       await openProject(folder, d, { baseLocale: d.baseLocale ?? base[0], localesPath: d.localesPath });

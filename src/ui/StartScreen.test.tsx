@@ -16,6 +16,12 @@ vi.mock("../platform/zip", () => ({
     return zip.entries;
   }),
 }));
+const trashed = vi.hoisted(() => [] as string[]);
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}), revealItemInDir: vi.fn(async () => {}) }));
+vi.mock("../platform/tauri-fs", async (orig) => ({
+  ...(await orig<typeof import("../platform/tauri-fs")>()),
+  trashProject: vi.fn(async (path: string) => void trashed.push(path)),
+}));
 vi.mock("@tauri-apps/api/path", () => ({ appDataDir: vi.fn(async () => "/appdata"), documentDir: vi.fn(async () => "/docs") }));
 vi.mock("@tauri-apps/plugin-store", () => ({
   load: vi.fn(async () => ({
@@ -48,6 +54,7 @@ import { ProjectSession } from "../core/session";
 import { detectProject } from "../formats/detect";
 import { MemoryFs, loadFixtureDir } from "../platform/memory-fs";
 import { addRecent, getRecent } from "../platform/prefs";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useApp } from "./store";
 
 const FIX = resolve(__dirname, "../test/fixtures") + "/";
@@ -62,6 +69,7 @@ afterEach(cleanup);
 
 beforeEach(() => {
   prefs.clear();
+  trashed.length = 0;
   pick.value = "/project";
   pick.queue = [];
 });
@@ -189,10 +197,57 @@ describe("StartScreen", () => {
     await addRecent({ root: "/project", name: "project", format: "next-i18next" });
     await setup(fs);
     await userEvent.click(await screen.findByRole("button", { name: "Remove project from recent projects" }));
+    // A folder Retrans didn't make: only off the list, with a way to find the folder.
+    const dlg = await screen.findByRole("dialog", { name: "Remove “project”?" });
+    expect(dlg).toHaveTextContent("aren't touched");
+    expect(within(dlg).queryByRole("radio")).toBeNull();
+    await userEvent.click(within(dlg).getByRole("button", { name: /^Show (in Finder|in Explorer|folder)$/ }));
+    expect(revealItemInDir).toHaveBeenCalledWith("/project");
+    await userEvent.click(within(dlg).getByRole("button", { name: "Remove from recent" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: /^project\// })).toBeNull());
     expect(screen.getByRole("button", { name: /^other\// })).toBeInTheDocument();
     expect((await getRecent()).map((r) => r.root)).toEqual(["/other"]);
     expect(JSON.stringify(fs.snapshot())).toBe(before);
+  });
+
+  it("a folder Retrans made can also go to the Trash, but not while it's open in a tab", async () => {
+    const fs = new MemoryFs();
+    await setup(fs);
+    await userEvent.click(screen.getByRole("button", { name: /Try a sample project/ }));
+    await userEvent.click(within(await screen.findByRole("dialog", { name: "Tour" })).getByRole("button", { name: "Skip" }));
+    useApp.getState().showStart(); // the "+" button: the sample stays open in its tab
+
+    const root = "/docs/Retrans/Sample project";
+    await userEvent.click(await screen.findByRole("button", { name: "Remove Sample project from recent projects" }));
+    let dlg = await screen.findByRole("dialog", { name: "Remove “Sample project”?" });
+    expect(within(dlg).getByRole("radio", { name: /Remove from recent projects/ })).toBeChecked();
+    expect(within(dlg).getByRole("radio", { name: /Also move the folder/ })).toBeDisabled();
+    expect(dlg).toHaveTextContent("close the tab first");
+    await userEvent.click(within(dlg).getByRole("button", { name: "Cancel" }));
+
+    await useApp.getState().closeTab(useApp.getState().tabs[0].id);
+    await userEvent.click(await screen.findByRole("button", { name: "Remove Sample project from recent projects" }));
+    dlg = await screen.findByRole("dialog", { name: "Remove “Sample project”?" });
+    expect(dlg).toHaveTextContent(root);
+    await userEvent.click(within(dlg).getByRole("radio", { name: /Also move the folder/ }));
+    await userEvent.click(within(dlg).getByRole("button", { name: /^Move to / }));
+    await waitFor(() => expect(trashed).toEqual([root]));
+    expect(screen.queryByRole("button", { name: /^Sample project\// })).toBeNull();
+    expect(await getRecent()).toEqual([]);
+    expect(prefs.get("createdFolders")).toEqual([]);
+  });
+
+  it("removing from recent leaves a folder Retrans made where it is", async () => {
+    await setup(new MemoryFs());
+    await userEvent.click(screen.getByRole("button", { name: /Try a sample project/ }));
+    await userEvent.click(within(await screen.findByRole("dialog", { name: "Tour" })).getByRole("button", { name: "Skip" }));
+    await useApp.getState().closeTab(useApp.getState().tabs[0].id);
+    await userEvent.click(await screen.findByRole("button", { name: "Remove Sample project from recent projects" }));
+    const dlg = await screen.findByRole("dialog", { name: "Remove “Sample project”?" });
+    await userEvent.click(within(dlg).getByRole("button", { name: "Remove from recent" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^Sample project\// })).toBeNull());
+    expect(trashed).toEqual([]);
+    expect(await useApp.getState().fs.exists("/docs/Retrans/Sample project/.retrans/workspace.json")).toBe(true);
   });
 
   it("a recent project whose folder is gone is marked and asks to be removed when clicked", async () => {

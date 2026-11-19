@@ -21,3 +21,9 @@ export const tauriFs: Fs = {
   remove: (path) => call("remove_path", { path }),
   mkdirp: (path) => call("mkdirp", { path }),
 };
+
+/**
+ * Moves a project folder to the system Trash (Recycle Bin); it can be restored from there. Rust
+ * refuses any folder without a `.retrans` folder in it.
+ */
+export const trashProject = (path: string): Promise<void> => call("trash_project", { path });

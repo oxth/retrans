@@ -95,6 +95,7 @@ pub fn run() {
             fs_cmds::path_exists,
             fs_cmds::list_files,
             fs_cmds::remove_path,
+            fs_cmds::trash_project,
             fs_cmds::mkdirp,
             watch::watch_dir,
             watch::unwatch_dir,

@@ -37,6 +37,7 @@ tauri-plugin-window-state = "2"
 keyring = "4"
 tauri-plugin-log = "2"
 log = "0.4"
+trash = "5.4.0"
 
 # Apple Silicon: llama.cpp runs on the GPU through Metal.
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]

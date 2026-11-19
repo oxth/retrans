@@ -34,6 +34,31 @@ export async function addRecent(e: RecentProject): Promise<void> {
   await s.save();
 }
 
+const folderKey = (root: string) => root.replace(/\\/g, "/").replace(/\/+$/, "");
+
+/**
+ * Remembers a folder Retrans made itself (New project, the sample project, an extracted
+ * translator package): only those are offered for the Trash when removed from recent projects.
+ */
+export async function addCreatedFolder(root: string): Promise<void> {
+  const s = await getStore();
+  const all = (await s.get<string[]>("createdFolders")) ?? [];
+  if (all.includes(folderKey(root))) return;
+  await s.set("createdFolders", [...all, folderKey(root)]);
+  await s.save();
+}
+
+export async function isCreatedFolder(root: string): Promise<boolean> {
+  const s = await getStore();
+  return ((await s.get<string[]>("createdFolders")) ?? []).includes(folderKey(root));
+}
+
+export async function removeCreatedFolder(root: string): Promise<void> {
+  const s = await getStore();
+  await s.set("createdFolders", ((await s.get<string[]>("createdFolders")) ?? []).filter((r) => r !== folderKey(root)));
+  await s.save();
+}
+
 /** Takes a project off the recent list. Its folder and files are not touched. */
 export async function removeRecent(root: string): Promise<void> {
   const s = await getStore();

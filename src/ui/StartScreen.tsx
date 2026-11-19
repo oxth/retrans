@@ -1,23 +1,32 @@
 import { useEffect, useRef, useState } from "react";
 import { documentDir } from "@tauri-apps/api/path";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { DetectResult } from "../formats/adapter";
 import { detectProject } from "../formats/detect";
 import { destHasFiles, extractPackage, safeEntryPath } from "../package/extract";
 import { MANIFEST_PATH, parseManifest } from "../package/manifest";
 import { joinPath } from "../platform/fs";
 import { zipRead } from "../platform/zip";
-import { getProjectTourSeen, getRecent, removeRecent, type RecentProject } from "../platform/prefs";
+import {
+  addCreatedFolder, getProjectTourSeen, getRecent, isCreatedFolder, removeCreatedFolder, removeRecent, type RecentProject,
+} from "../platform/prefs";
+import { trashProject } from "../platform/tauri-fs";
 import { resolveTsSource } from "../tssource/import";
 import { createSampleProject, SAMPLE_NAME } from "../workspace/sample";
-import { btnGhost, btnPrimary, Dialog, inputCls, sectionLabel } from "./Dialog";
+import { btnDanger, btnGhost, btnPrimary, btnSecondary, Dialog, inputCls, sectionLabel } from "./Dialog";
 import { AppIcon } from "./AppIcon";
 import { Icon } from "./Icon";
 import { ImportTsDialog } from "./ImportTsDialog";
 import { NewProjectWizard } from "./NewProjectWizard";
 import { OpenProjectDialog } from "./OpenProjectDialog";
-import { savedBaseLocale, useApp } from "./store";
+import { normRoot, savedBaseLocale, useApp } from "./store";
 import { FigmaWorkspaceDialog, figmaModesIn } from "./FigmaWorkspaceDialog";
+
+const platform = typeof navigator === "undefined" ? "" : navigator.userAgent;
+/** What the system calls its bin, and the button that shows a folder in the file manager. */
+const TRASH = /Windows/i.test(platform) ? "Recycle Bin" : "Trash";
+const SHOW_FOLDER = /Mac/i.test(platform) ? "Show in Finder" : /Windows/i.test(platform) ? "Show in Explorer" : "Show folder";
 
 export function StartScreen() {
   const { fs, openProject } = useApp();
@@ -37,6 +46,12 @@ export function StartScreen() {
   const [gone, setGone] = useState<Set<string>>(new Set());
   /** A missing recent project the user clicked: asked whether to take it off the list. */
   const [missing, setMissing] = useState<RecentProject | null>(null);
+  /**
+   * A recent project whose ✕ was clicked. `trashable`: a folder Retrans made itself, still there,
+   * so moving it to the Trash is offered too; `inTab`: open in a tab, so it can't go yet.
+   */
+  const [removing, setRemoving] = useState<{ r: RecentProject; trashable: boolean; inTab: boolean } | null>(null);
+  const [alsoTrash, setAlsoTrash] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -59,6 +74,28 @@ export function StartScreen() {
       setRecent((list) => list.filter((x) => x.root !== r.root));
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const askRemove = async (r: RecentProject) => {
+    const trashable = !gone.has(r.root) && (await isCreatedFolder(r.root).catch(() => false));
+    const inTab = useApp.getState().tabs.some((t) => normRoot(t.root) === normRoot(r.root));
+    setAlsoTrash(false);
+    setRemoving({ r, trashable, inTab });
+  };
+
+  /** Takes it off the list and, when chosen, moves its folder to the Trash. */
+  const remove = async () => {
+    const { r } = removing!;
+    const trash = alsoTrash;
+    setRemoving(null);
+    if (!trash) return void forget(r);
+    try {
+      await trashProject(r.root);
+      await removeCreatedFolder(r.root).catch(() => {});
+      await forget(r);
+    } catch (e) {
+      setMessage(`Couldn't move it to the ${TRASH}: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -160,6 +197,7 @@ export function StartScreen() {
         throw new Error("Choose an empty folder.");
       }
       await extractPackage(fs, entries, root);
+      await addCreatedFolder(root).catch(() => {});
       await openPackageFolder(root);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
@@ -185,6 +223,7 @@ export function StartScreen() {
       if (!d) {
         if (await destHasFiles(fs, root)) throw new Error(`${root} already has other files in it.`);
         await createSampleProject(fs, root);
+        await addCreatedFolder(root).catch(() => {});
         d = await detectProject(fs, root);
         if (!d) throw new Error("Could not open the sample project.");
       }
@@ -316,8 +355,8 @@ export function StartScreen() {
                     </button>
                     <button
                       aria-label={`Remove ${r.name} from recent projects`}
-                      title="Remove from recent projects (the folder is not touched)"
-                      onClick={() => void forget(r)}
+                      title="Remove from recent projects"
+                      onClick={() => void askRemove(r)}
                       className={`absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted hover:bg-sunken hover:text-fg focus-visible:opacity-100 ${
                         isGone ? "" : "opacity-0 group-hover/item:opacity-100"
                       }`}
@@ -351,6 +390,51 @@ export function StartScreen() {
             >
               Remove from recent
             </button>
+          </div>
+        </Dialog>
+      )}
+      {removing && (
+        <Dialog title={`Remove “${removing.r.name}”?`} onClose={() => setRemoving(null)}>
+          {removing.trashable ? (
+            <fieldset className="space-y-2">
+              <legend className="sr-only">What to remove</legend>
+              <label className="flex cursor-pointer gap-2.5 rounded-lg border border-line p-3 has-[:checked]:border-brand has-[:checked]:bg-brand-soft">
+                <input type="radio" name="remove" className="mt-1" checked={!alsoTrash} onChange={() => setAlsoTrash(false)} />
+                <span>
+                  <span className="block text-sm font-medium">Remove from recent projects</span>
+                  <span className="block text-xs text-muted">The folder stays where it is.</span>
+                </span>
+              </label>
+              <label className={`flex gap-2.5 rounded-lg border border-line p-3 has-[:checked]:border-danger-line has-[:checked]:bg-danger-soft ${removing.inTab ? "opacity-60" : "cursor-pointer"}`}>
+                <input type="radio" name="remove" className="mt-1" checked={alsoTrash} disabled={removing.inTab} onChange={() => setAlsoTrash(true)} />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">Also move the folder to the {TRASH}</span>
+                  <span className="mt-0.5 block break-all font-mono text-xs text-muted">{removing.r.root}</span>
+                  <span className="mt-0.5 block text-xs text-muted">
+                    {removing.inTab ? "It's open in a tab: close the tab first." : `Retrans made this folder. You can restore it from the ${TRASH}.`}
+                  </span>
+                </span>
+              </label>
+            </fieldset>
+          ) : (
+            <>
+              <p className="text-sm">Remove it from recent projects? The folder and its files aren't touched.</p>
+              <p className="mt-2 break-all rounded-md bg-panel px-2 py-1.5 font-mono text-xs text-muted">{removing.r.root}</p>
+            </>
+          )}
+          <div className="mt-5 flex items-center gap-2">
+            {!removing.trashable && !gone.has(removing.r.root) && (
+              <button className={btnSecondary} onClick={() => void Promise.resolve(revealItemInDir(removing.r.root)).catch(() => {})}>
+                <Icon name="folder" size={15} />
+                {SHOW_FOLDER}
+              </button>
+            )}
+            <div className="ml-auto flex gap-2">
+              <button className={btnGhost} onClick={() => setRemoving(null)}>Cancel</button>
+              <button className={alsoTrash ? btnDanger : btnPrimary} onClick={() => void remove()}>
+                {alsoTrash ? `Move to ${TRASH}` : "Remove from recent"}
+              </button>
+            </div>
           </div>
         </Dialog>
       )}

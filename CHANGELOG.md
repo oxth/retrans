@@ -4,6 +4,12 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Improvements
+
+- **Removing a recent project asks first.** The ✕ on a recent project now asks what to do. For a folder Retrans made itself (the sample project, a **New project**, an opened translator package), you can also move the folder to the Trash (Recycle Bin on Windows), where it can be restored. Any other folder, such as your app's own repository, is only taken off the list, with a button to show it in Finder or Explorer. Retrans never deletes files outright.
+
 ## [0.7.0] - 2026-11-19
 
 ### What's new

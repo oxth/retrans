@@ -93,6 +93,20 @@ pub fn remove_path(path: String) -> Result<()> {
     Ok(fs::remove_file(p)?)
 }
 
+/// Moves a project folder Retrans made to the system Trash (Recycle Bin), never deleting it
+/// outright. Only a folder with a `.retrans` folder in it: anything else is refused, whatever asks.
+pub fn trash_project_impl(p: &Path) -> Result<()> {
+    if !p.join(".retrans").is_dir() {
+        return Err(FsError { code: "Io", message: format!("not a Retrans project folder: {}", p.display()) });
+    }
+    trash::delete(p).map_err(|e| FsError { code: "Io", message: e.to_string() })
+}
+
+#[tauri::command]
+pub fn trash_project(path: String) -> Result<()> {
+    trash_project_impl(Path::new(&path))
+}
+
 #[tauri::command]
 pub fn mkdirp(path: String) -> Result<()> {
     Ok(fs::create_dir_all(path)?)
@@ -126,6 +140,17 @@ mod tests {
         assert!(file.exists());
         remove_path(file.to_string_lossy().into_owned()).unwrap();
         assert!(!file.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn trash_project_refuses_a_folder_that_isnt_a_retrans_project() {
+        let dir = std::env::temp_dir().join(format!("retrans-trash-{}", std::process::id()));
+        let file = dir.join("src").join("app.ts");
+        write_atomic(&file, "x").unwrap();
+        let err = trash_project_impl(&dir).unwrap_err();
+        assert!(err.message.contains("not a Retrans project folder"));
+        assert!(file.exists());
         let _ = fs::remove_dir_all(&dir);
     }
 }
