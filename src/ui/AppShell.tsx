@@ -199,6 +199,7 @@ export function AppShell() {
             )}
             <button
               className={dirty ? btnPrimary : btnSecondary}
+              data-tour="save"
               disabled={!dirty}
               title="Save (⌘S / Ctrl+S)"
               onClick={() => void useApp.getState().save()}

@@ -8,7 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### What's new
 
-- **Getting started tour.** The first time you open Retrans, a short tour shows how it works: opening a project, what the status dots mean, AI translation, and saving. It also opens once after updating, for anyone who hasn't seen it. Take it again any time from **Help → Getting Started** or **New here? Take the tour** on the start screen.
+- **Getting started.** The first time you open Retrans (or after updating, if you haven't seen it), a short welcome explains what Retrans does and where to start. Open it again from **Help → Getting Started** or **New here? Take the tour** on the start screen.
+- **Sample project.** No translations at hand? **Try a sample project** on the start screen opens a small app in English, French and Japanese, with a few gaps to fill. It lives in `Documents/Retrans/Sample project`, and opening it again picks up where you left off.
+- **Tour of the screen.** A step-by-step tour points out each part of a project: missing cells, **Review**, the filters, **Translate missing…**, the sidebar and Save. It starts by itself the first time you open the sample project; **Help → Tour of This Screen** starts it on any project.
 
 ## [0.6.1] - 2026-11-13
 

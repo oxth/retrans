@@ -36,7 +36,7 @@ export function Sidebar({
         <Icon name="folder" size={16} className="text-brand" />
         <div className="min-w-0 truncate text-sm font-semibold" title={session.data.root}>{name}</div>
       </div>
-      <nav className="space-y-0.5 p-2">
+      <nav className="space-y-0.5 p-2" data-tour="pages">
         {NAV.map((n) => (
           <button key={n.page} className={item(page === n.page)} aria-current={page === n.page ? "page" : undefined} onClick={() => onPage(n.page)}>
             <Icon name={n.icon} size={16} className={page === n.page ? "text-brand" : "text-muted"} />

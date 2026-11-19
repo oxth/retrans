@@ -60,10 +60,13 @@ describe("menuSpec", () => {
     expect(help).toContainEqual({ id: "whats-new", text: "What's New in Retrans" });
   });
 
-  it("Help starts with Getting Started on both platforms", () => {
+  it("Help starts with Getting Started and the tour of a project on both platforms", () => {
     for (const platform of ["macos", "windows"] as const) {
       const help = menuSpec(platform, ctx).find((m) => m.text === "Help")!.items;
       expect(help[0]).toEqual({ id: "welcome", text: "Getting Started" });
+      expect(help[1]).toEqual({ id: "project-tour", text: "Tour of This Screen", enabled: true });
+      const start = menuSpec(platform, { ...ctx, hasProject: false }).find((m) => m.text === "Help")!.items;
+      expect(start[1]).toMatchObject({ id: "project-tour", enabled: false }); // nothing to tour on the start screen
     }
   });
 

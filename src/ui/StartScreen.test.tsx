@@ -119,6 +119,35 @@ describe("StartScreen", () => {
     expect(useApp.getState().session!.data.locales).toEqual(["en", "th"]);
   });
 
+  it("Try a sample project makes it in Documents/Retrans, opens it and starts the tour once", async () => {
+    const fs = new MemoryFs();
+    await setup(fs);
+    await userEvent.click(screen.getByRole("button", { name: /Try a sample project/ }));
+    await screen.findByRole("complementary", { name: "Sidebar" });
+    expect(await fs.exists("/docs/Retrans/Sample project/.retrans/workspace.json")).toBe(true);
+    expect(useApp.getState().session!.data.locales).toEqual(["en", "fr", "ja"]);
+
+    // The tour starts by itself (ProjectTour.test.tsx walks its stops); closing it is remembered.
+    const tour = await screen.findByRole("dialog", { name: "Tour" });
+    await userEvent.click(within(tour).getByRole("button", { name: "Skip" }));
+    expect(screen.queryByRole("dialog", { name: "Tour" })).toBeNull();
+    await waitFor(() => expect(prefs.get("projectTourSeen")).toBe(true));
+
+    // Opened again: the same folder, as it was, and no tour.
+    await useApp.getState().closeProject();
+    await userEvent.click(await screen.findByRole("button", { name: /Try a sample project/ }));
+    await screen.findByRole("complementary", { name: "Sidebar" });
+    expect(screen.queryByRole("dialog", { name: "Tour" })).toBeNull();
+  });
+
+  it("the sample project isn't made over a folder with other files", async () => {
+    const fs = new MemoryFs({ "/docs/Retrans/Sample project/notes.txt": "mine" });
+    await setup(fs);
+    await userEvent.click(screen.getByRole("button", { name: /Try a sample project/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("already has other files in it");
+    expect(await fs.readText("/docs/Retrans/Sample project/notes.txt")).toBe("mine");
+  });
+
   it("recent projects list opens on click", async () => {
     const fs = loadFixtureDir(FIX + "next-nested");
     await addRecent({ root: "/project", name: "project", format: "next-i18next" });

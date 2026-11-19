@@ -138,7 +138,7 @@ export function Toolbar(p: ToolbarProps) {
           ))}
         </div>
         {p.onTranslateMissing && (
-          <button className={btnSecondary} onClick={p.onTranslateMissing}>
+          <button className={btnSecondary} data-tour="translate" onClick={p.onTranslateMissing}>
             <Icon name="sparkles" size={15} className="text-brand" />
             Translate missing…
           </button>

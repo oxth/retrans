@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { documentDir } from "@tauri-apps/api/path";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import type { DetectResult } from "../formats/adapter";
 import { detectProject } from "../formats/detect";
@@ -6,8 +7,9 @@ import { destHasFiles, extractPackage, safeEntryPath } from "../package/extract"
 import { MANIFEST_PATH, parseManifest } from "../package/manifest";
 import { joinPath } from "../platform/fs";
 import { zipRead } from "../platform/zip";
-import { getRecent, removeRecent, type RecentProject } from "../platform/prefs";
+import { getProjectTourSeen, getRecent, removeRecent, type RecentProject } from "../platform/prefs";
 import { resolveTsSource } from "../tssource/import";
+import { createSampleProject, SAMPLE_NAME } from "../workspace/sample";
 import { btnGhost, btnPrimary, Dialog, inputCls, sectionLabel } from "./Dialog";
 import { AppIcon } from "./AppIcon";
 import { Icon } from "./Icon";
@@ -65,6 +67,7 @@ export function StartScreen() {
   useEffect(() => {
     if (uiRequest?.kind === "new-project") setWizard(true);
     else if (uiRequest?.kind === "open-project") void chooseFolderRef.current();
+    else if (uiRequest?.kind === "open-sample") void openSampleRef.current();
     else return;
     useApp.getState().clearUiRequest();
   }, [uiRequest]);
@@ -173,6 +176,28 @@ export function StartScreen() {
     }
   };
 
+  /** Makes the sample project in Documents/Retrans and opens it; one made before is reopened as it is. */
+  const openSample = async () => {
+    setMessage(null);
+    try {
+      const root = `${(await documentDir()).replace(/\\/g, "/").replace(/\/+$/, "")}/Retrans/${SAMPLE_NAME}`;
+      let d = await detectProject(fs, root);
+      if (!d) {
+        if (await destHasFiles(fs, root)) throw new Error(`${root} already has other files in it.`);
+        await createSampleProject(fs, root);
+        d = await detectProject(fs, root);
+        if (!d) throw new Error("Could not open the sample project.");
+      }
+      await openProject(root, d, { baseLocale: d.baseLocale ?? "en", localesPath: d.localesPath });
+      if (!(await getProjectTourSeen().catch(() => true))) useApp.getState().openProjectTour();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const openSampleRef = useRef(openSample);
+  openSampleRef.current = openSample;
+
   const openRecent = async (r: RecentProject) => {
     setMessage(null);
     // Checked again on click: the folder may have gone since the list was drawn.
@@ -240,6 +265,11 @@ export function StartScreen() {
             </button>
           ))}
         </div>
+        <button type="button" onClick={() => void openSample()}
+          className="mt-3 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-sm text-muted hover:text-fg">
+          <Icon name="sparkles" size={15} className="text-brand" />
+          No translations at hand? <span className="font-medium text-brand-ink underline decoration-brand-line underline-offset-2">Try a sample project</span>
+        </button>
         {message && (
           <p role="alert" className="mt-4 flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger">
             <Icon name="alert" size={15} />

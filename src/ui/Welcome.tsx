@@ -1,15 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AppIcon } from "./AppIcon";
-import { btnGhost, btnPrimary, btnSecondary } from "./Dialog";
+import { btnGhost, btnPrimary } from "./Dialog";
 import { Icon, type IconName } from "./Icon";
-import { SOURCE_CHANGED, STATUS_TEXT, StatusDot } from "./StatusDot";
 import { useApp } from "./store";
-
-const mod = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform) ? "⌘" : "Ctrl+";
-
-function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="rounded border border-line-strong bg-sunken px-1.5 py-px font-mono text-[11px] text-fg">{children}</kbd>;
-}
 
 /** One line of a step: an icon, a bold lead-in, then the explanation. */
 function Point({ icon, title, children }: { icon: IconName; title: string; children: ReactNode }) {
@@ -32,18 +25,18 @@ interface Step {
 const STEPS: Step[] = [
   {
     title: "Welcome to Retrans",
-    lead: "Edit every translation of your app in one place. This short tour shows the basics; it takes about a minute.",
+    lead: "Edit every translation of your app in one place. Two quick screens, then we'll show you around.",
     body: (
       <ul className="divide-y divide-line">
         <Point icon="folder" title="Open">your project's translation files.</Point>
         <Point icon="search" title="Find">what's missing in each language.</Point>
         <Point icon="sparkles" title="Fill">the gaps yourself, or let AI draft them.</Point>
-        <Point icon="check" title="Review and save.">Only the values you changed are written.</Point>
+        <Point icon="check" title="Review and save.">Only the values you changed are written, so git diffs stay small.</Point>
       </ul>
     ),
   },
   {
-    title: "Start with a project",
+    title: "Bring your translations",
     lead: "The start screen has three ways in.",
     body: (
       <ul className="divide-y divide-line">
@@ -57,68 +50,41 @@ const STEPS: Step[] = [
     ),
   },
   {
-    title: "See what's missing",
-    lead: "Every key is a row and every language sits side by side. A dot shows where each translation stands.",
-    body: (
-      <>
-        <ul className="divide-y divide-line rounded-lg border border-line bg-panel px-4">
-          {(
-            [
-              ["untranslated", false, STATUS_TEXT.untranslated],
-              ["translated", false, STATUS_TEXT.translated],
-              ["reviewed", false, STATUS_TEXT.reviewed],
-              ["translated", true, `${SOURCE_CHANGED}: the base text changed, so check the translation`],
-            ] as const
-          ).map(([status, needsReview, text]) => (
-            <li key={text} className="flex items-center gap-3 py-2 text-sm text-fg-2">
-              <StatusDot status={status} needsReview={needsReview} machine={false} />
-              {text}
-            </li>
-          ))}
-        </ul>
-        <ul className="mt-3 divide-y divide-line">
-          <Point icon="rows" title="Click a cell to edit it.">
-            Press <Kbd>Tab</Kbd> to jump to the next missing one.
-          </Point>
-          <Point icon="check" title="Click a dot to mark it reviewed.">Review status is shared with your team through git.</Point>
-          <Point icon="list" title="List or table:">switch views in the toolbar, or from the View menu.</Point>
-        </ul>
-      </>
-    ),
-  },
-  {
-    title: "Let AI fill the gaps",
-    lead: "AI translation is off until you turn it on in Settings → Machine translation.",
-    body: (
-      <ul className="divide-y divide-line">
-        <Point icon="lock" title="Built-in model:">runs on your computer, so your text never leaves it. A one-time download.</Point>
-        <Point icon="sparkles" title="Cloud or agent:">
-          OpenAI, Claude, any OpenAI-compatible API, or an AI agent you already use. Retrans asks before sending anything.
-        </Point>
-        <Point icon="languages" title="Translate missing…">
-          in the toolbar fills every empty cell, in all your languages at once. AI drafts are tagged{" "}
-          <span className="rounded bg-brand-soft px-1 text-[10px] font-semibold leading-4 text-brand-ink">AI</span> until someone reviews them.
-        </Point>
-      </ul>
-    ),
-  },
-  {
-    title: "Your work is safe",
-    lead: "You're ready to go. A few things worth knowing:",
-    body: (
-      <ul className="divide-y divide-line">
-        <Point icon="save" title="Saved automatically.">
-          Edits are written a moment after you stop typing, or right away with <Kbd>{mod}S</Kbd>. Only changed values are touched, so git diffs stay small.
-        </Point>
-        <Point icon="refresh" title="Undo anything">
-          with <Kbd>{mod}Z</Kbd>, even a whole AI translation run.
-        </Point>
-        <Point icon="share" title="Working with a translator?">Send them a package from the Import / Export page and import their work back.</Point>
-        <Point icon="info" title="See this again">any time from Help → Getting Started.</Point>
-      </ul>
-    ),
+    title: "Learn by doing",
+    lead: "The quickest way to learn is a project with a few gaps in it. Pick where to start:",
+    body: null,
   },
 ];
+
+/** The last step's choices: each closes the tour and goes there. */
+function Choices({ onSample, onOpen, onAi }: { onSample(): void; onOpen(): void; onAi(): void }) {
+  const choice = "flex w-full items-start gap-3 rounded-lg border p-3 text-left";
+  return (
+    <div className="space-y-2">
+      <button type="button" onClick={onSample} className={`${choice} border-brand bg-brand-soft hover:border-brand-hover`}>
+        <Icon name="sparkles" size={18} className="mt-0.5 shrink-0 text-brand" />
+        <span>
+          <span className="block text-sm font-semibold text-brand-ink">Try the sample project</span>
+          <span className="block text-xs text-fg-2">A small app in English, French and Japanese. We'll point out each part of the screen as you go.</span>
+        </span>
+      </button>
+      <button type="button" onClick={onOpen} className={`${choice} border-line hover:border-line-strong hover:bg-hover`}>
+        <Icon name="folder" size={18} className="mt-0.5 shrink-0 text-brand" />
+        <span>
+          <span className="block text-sm font-semibold">Open my own project</span>
+          <span className="block text-xs text-muted">Help → Tour of This Screen shows you around once it's open.</span>
+        </span>
+      </button>
+      <button type="button" onClick={onAi} className={`${choice} border-line hover:border-line-strong hover:bg-hover`}>
+        <Icon name="lock" size={18} className="mt-0.5 shrink-0 text-brand" />
+        <span>
+          <span className="block text-sm font-semibold">Set up AI translation</span>
+          <span className="block text-xs text-muted">Optional. A built-in model keeps your text on your computer; cloud AI and agents work too.</span>
+        </span>
+      </button>
+    </div>
+  );
+}
 
 /** The app icon's grid with one cell missing, as a band. Decorative. */
 function Banner({ step }: { step: number }) {
@@ -174,6 +140,10 @@ export function Welcome() {
     useApp.getState().showStart();
     useApp.getState().requestUi("open-project");
   });
+  const openSample = then(() => {
+    useApp.getState().showStart();
+    useApp.getState().requestUi("open-sample");
+  });
   const setUpAi = then(() => useApp.getState().openPrefs("mt"));
 
   return (
@@ -195,7 +165,7 @@ export function Welcome() {
           <p className="text-xs font-medium text-muted">Step {step + 1} of {STEPS.length}</p>
           <h2 className="mt-1 text-xl font-semibold tracking-tight">{title}</h2>
           <p className="mt-2 text-sm text-fg-2">{lead}</p>
-          <div className="mt-4">{body}</div>
+          <div className="mt-4">{last ? <Choices onSample={openSample} onOpen={openProject} onAi={setUpAi} /> : body}</div>
         </div>
         <div className="flex items-center gap-3 border-t border-line px-8 py-4">
           <div className="flex gap-1.5" aria-hidden="true">
@@ -211,10 +181,7 @@ export function Welcome() {
               <button type="button" className={btnGhost} onClick={close}>Skip tour</button>
             )}
             {last ? (
-              <>
-                <button type="button" className={btnSecondary} onClick={setUpAi}>Set up AI translation</button>
-                <button type="button" className={btnPrimary} onClick={openProject}>Open a project</button>
-              </>
+              <button type="button" className={btnGhost} onClick={close}>Maybe later</button>
             ) : (
               <button type="button" className={btnPrimary} onClick={() => setStep(step + 1)}>Next</button>
             )}

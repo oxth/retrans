@@ -213,6 +213,18 @@ export async function setWelcomeSeen(): Promise<void> {
   await s.save();
 }
 
+/** Whether the step-by-step tour of a project was closed once: it then no longer opens by itself. */
+export async function getProjectTourSeen(): Promise<boolean> {
+  const s = await getStore();
+  return (await s.get<boolean>("projectTourSeen")) === true;
+}
+
+export async function setProjectTourSeen(): Promise<void> {
+  const s = await getStore();
+  await s.set("projectTourSeen", true);
+  await s.save();
+}
+
 export async function getAutoCheckUpdates(): Promise<boolean> {
   const s = await getStore();
   return (await s.get<boolean>("autoCheckUpdates")) !== false;

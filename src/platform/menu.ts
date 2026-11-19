@@ -57,6 +57,7 @@ export function menuSpec(platform: Platform, ctx: MenuCtx): Array<{ text: string
   ];
   const help: MenuItemSpec[] = [
     { id: "welcome", text: "Getting Started" },
+    { id: "project-tour", text: "Tour of This Screen", enabled: p },
     sep,
     { id: "github", text: "Retrans on GitHub" },
     { id: "report-bug", text: "Report a Bug…" },

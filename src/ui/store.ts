@@ -15,7 +15,7 @@ import { resolveSyncConflict, syncFromSource, type SyncResult } from "../workspa
 import { BASELINE_PATH, WORKSPACE_META_PATH } from "../workspace/meta";
 import { type Fs, FsError, joinPath } from "../platform/fs";
 import { tauriFs } from "../platform/tauri-fs";
-import { addRecent, setWelcomeSeen } from "../platform/prefs";
+import { addRecent, setProjectTourSeen, setWelcomeSeen } from "../platform/prefs";
 import { watchDir } from "../platform/watch";
 import { defaultTabUi, type TabUi } from "./tab-ui";
 import {
@@ -31,7 +31,7 @@ export interface PendingRecovery { journal: Journal; path: string }
  */
 export type UiConflict = Conflict & { origin?: "source" | "figma"; base?: MessageValue };
 
-export type UiRequestKind = "export" | "import-figma" | "view-list" | "view-table" | "new-project" | "open-project";
+export type UiRequestKind = "export" | "import-figma" | "view-list" | "view-table" | "new-project" | "open-project" | "open-sample";
 
 export const UNDO_SKIPPED_MESSAGE = "Some changes came from your code or Figma since — those weren't undone.";
 export const SOURCE_MISSING_MESSAGE = "Source files not found — showing the saved workspace.";
@@ -77,6 +77,8 @@ export interface AppState {
   whatsNewVersion: string | null;
   /** The Getting started tour (first launch, Help → Getting Started, the start screen). */
   welcomeOpen: boolean;
+  /** The step-by-step tour of the open project (the sample project, Help → Tour of This Screen). */
+  projectTourOpen: boolean;
   /** Set on the first launch after an update: the "Updated to …" toast. */
   updatedTo: string | null;
   /** A newer version found by an update check (automatic or Settings → About); null when none. */
@@ -121,6 +123,8 @@ export interface AppState {
   closeWhatsNew(): void;
   openWelcome(): void;
   closeWelcome(): void;
+  openProjectTour(): void;
+  closeProjectTour(): void;
   switchTab(id: string): void;
   /** The "+" button: keeps every tab and shows the start screen. */
   showStart(): void;
@@ -362,6 +366,7 @@ export const useApp = create<AppState>((set, get) => {
   whatsNewOpen: false,
   whatsNewVersion: null,
   welcomeOpen: false,
+  projectTourOpen: false,
   updatedTo: null,
   update: null,
   updateSeen: null,
@@ -400,6 +405,15 @@ export const useApp = create<AppState>((set, get) => {
   closeWelcome() {
     set({ welcomeOpen: false });
     void setWelcomeSeen().catch(() => {}); // not running inside Tauri
+  },
+
+  openProjectTour() {
+    set({ projectTourOpen: true });
+  },
+
+  closeProjectTour() {
+    set({ projectTourOpen: false });
+    void setProjectTourSeen().catch(() => {}); // not running inside Tauri
   },
 
   switchTab(id) {

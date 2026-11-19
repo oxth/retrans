@@ -113,6 +113,7 @@ export function TabBar() {
         </div>
         <button
           aria-label={updateDot ? "Open settings (update available)" : "Open settings"}
+          data-tour="settings"
           title={`${updateDot ? "A new version is available. " : ""}Settings (${navigator.userAgent.includes("Mac") ? "⌘," : "Ctrl+,"})`}
           className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
           // With an update waiting, go straight to About, where it can be installed.
