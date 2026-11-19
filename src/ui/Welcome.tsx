@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AppIcon } from "./AppIcon";
-import { btnGhost, btnPrimary } from "./Dialog";
+import { btnGhost, btnPrimary, trapTab } from "./Dialog";
 import { Icon, type IconName } from "./Icon";
 import { useApp } from "./store";
 
@@ -152,6 +152,7 @@ export function Welcome() {
         if (e.key === "Escape") close();
         else if (e.key === "ArrowRight" && !last) setStep(step + 1);
         else if (e.key === "ArrowLeft" && step > 0) setStep(step - 1);
+        trapTab(e, e.currentTarget);
       }}
       onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div ref={panel} tabIndex={-1}
@@ -178,7 +179,7 @@ export function Welcome() {
             {step > 0 ? (
               <button type="button" className={btnGhost} onClick={() => setStep(step - 1)}>Back</button>
             ) : (
-              <button type="button" className={btnGhost} onClick={close}>Skip tour</button>
+              <button type="button" className={btnGhost} onClick={close}>Skip</button>
             )}
             {last ? (
               <button type="button" className={btnGhost} onClick={close}>Maybe later</button>

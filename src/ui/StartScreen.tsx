@@ -278,7 +278,7 @@ export function StartScreen() {
           <button type="button" onClick={() => useApp.getState().openWelcome()}
             className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted hover:bg-hover hover:text-fg">
             <Icon name="info" size={15} />
-            New here? Take the tour
+            New here? Get started
           </button>
         </div>
         <div className="mt-8 grid gap-3 sm:grid-cols-3">

@@ -41,9 +41,9 @@ describe("Welcome", () => {
     expect(heading()).toBe("Bring your translations");
   });
 
-  it("Skip tour, Maybe later and Escape close it", async () => {
+  it("Skip, Maybe later and Escape close it", async () => {
     render(<Welcome />);
-    await userEvent.click(screen.getByRole("button", { name: "Skip tour" }));
+    await userEvent.click(screen.getByRole("button", { name: "Skip" }));
     expect(useApp.getState().welcomeOpen).toBe(false);
     useApp.setState({ welcomeOpen: true });
     await userEvent.keyboard("{Escape}");

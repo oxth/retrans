@@ -75,13 +75,13 @@ export function Toolbar(p: ToolbarProps) {
         >
           {SOURCE_CHANGED}
         </button>
-        <button className={chip(f.machine)} aria-pressed={f.machine} onClick={() => p.onFilter({ machine: !f.machine })}>
-          Machine
+        <button className={chip(f.machine)} aria-pressed={f.machine} title="Translations written by AI and not reviewed yet" onClick={() => p.onFilter({ machine: !f.machine })}>
+          AI
         </button>
         <select aria-label="Status" className={field} value={f.status} onChange={(e) => p.onFilter({ status: e.target.value as FilterState["status"] })}>
           <option value="all">All statuses</option>
-          <option value="untranslated">Untranslated</option>
-          <option value="translated">Translated</option>
+          <option value="untranslated">Missing</option>
+          <option value="translated">Not reviewed</option>
           <option value="reviewed">Reviewed</option>
         </select>
         {p.showNamespaces && (

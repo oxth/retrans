@@ -124,7 +124,7 @@ describe("views", () => {
     const row = document.querySelector('[data-row="common::title"]') as HTMLElement;
     const btn = within(row).getByRole("button", { name: /Mark reviewed/ });
     expect(btn).toHaveTextContent("Review");
-    expect(within(row).getByLabelText(/Status: Translated, not reviewed yet/)).toBeInTheDocument();
+    expect(within(row).getByLabelText(/Status: Not reviewed/)).toBeInTheDocument();
   });
 
   it("a cell whose base text changed says Source changed and is cleared by Review", async () => {

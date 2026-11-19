@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Improvements
 
+- **A clearer Review button.** The faint **✓ Review** on each translation now has a border and a background, so it's clear it can be clicked, and it's a little easier to hit.
+- **One name for each status.** The filters, the sidebar and the tooltips now all say **Missing**, **Not reviewed**, **Reviewed** and **Source changed**, and the **Machine** filter is now **AI**, matching the tag on AI-made translations.
+- **Status dots are easier to tell apart in light mode.** The amber (not reviewed) and teal (reviewed) dots are a shade darker.
+- **Keyboard focus stays in the window you're in.** Tab and Shift+Tab now cycle through a dialog, Settings, What's New, Getting started or the tour, instead of moving to the screen behind it.
+- The start screen's **New here? Take the tour** link is now **New here? Get started**, so it isn't confused with **Help → Tour of This Screen**.
 - **Removing a recent project asks first.** The ✕ on a recent project now asks what to do. For a folder Retrans made itself (the sample project, a **New project**, an opened translator package), you can also move the folder to the Trash (Recycle Bin on Windows), where it can be restored. Any other folder, such as your app's own repository, is only taken off the list, with a button to show it in Finder or Explorer. Retrans never deletes files outright.
 
 ## [0.7.0] - 2026-11-19

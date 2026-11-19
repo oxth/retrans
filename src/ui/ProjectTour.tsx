@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { btnGhost, btnPrimary } from "./Dialog";
+import { btnGhost, btnPrimary, trapTab } from "./Dialog";
 import { useApp } from "./store";
 
 const mod = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform) ? "⌘" : "Ctrl+";
@@ -142,6 +142,7 @@ export function ProjectTour() {
         if (e.key === "Escape") close();
         else if (e.key === "ArrowRight" && !last) setI(i + 1);
         else if (e.key === "ArrowLeft" && i > 0) setI(i - 1);
+        trapTab(e, e.currentTarget);
       }}>
       {/* Clicks anywhere but the card are held back, so the tour isn't left behind a changed screen. */}
       <div className="absolute inset-0" />

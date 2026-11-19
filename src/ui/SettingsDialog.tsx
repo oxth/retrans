@@ -15,7 +15,7 @@ import {
 } from "../platform/prefs";
 import { applyAppearance } from "./appearance";
 import { reportBug, showLogFile } from "./bug-report";
-import { btnDanger, btnGhost, btnPrimary, Dialog, inputCls, sectionLabel } from "./Dialog";
+import { btnDanger, btnGhost, btnPrimary, Dialog, inputCls, sectionLabel, trapTab } from "./Dialog";
 import { FigmaSettings } from "./FigmaSettings";
 import { AppIcon } from "./AppIcon";
 import { Icon, type IconName } from "./Icon";
@@ -146,7 +146,8 @@ export function SettingsDialog() {
   const globalItems = shown.filter((s) => !s.project);
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4 sm:p-8">
+    <div role="dialog" aria-modal="true" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4 sm:p-8"
+      onKeyDown={(e) => trapTab(e, e.currentTarget)}>
       <div
         ref={root}
         tabIndex={-1}

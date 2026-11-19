@@ -186,10 +186,8 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
                   type="button"
                   aria-label={`Mark reviewed (${statusLabel})`}
                   title="Mark reviewed (⌘⇧R / Ctrl+Shift+R)"
-                  className={`inline-flex items-center gap-1 rounded-md px-1.5 text-xs font-medium leading-5 ${
-                    meta.needsReview
-                      ? "border border-warn-line bg-surface text-fg hover:bg-ok-soft hover:text-ok"
-                      : "text-muted hover:bg-ok-soft hover:text-ok group-hover/cell:text-fg-2"
+                  className={`inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-md border bg-surface px-1.5 text-xs font-medium shadow-sm hover:border-ok hover:bg-ok-soft hover:text-ok ${
+                    meta.needsReview ? "border-warn-line text-fg" : "border-line-strong text-fg-2"
                   }`}
                   onClick={(e) => {
                     e.stopPropagation();

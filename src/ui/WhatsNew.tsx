@@ -2,6 +2,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { AppIcon } from "./AppIcon";
+import { trapTab } from "./Dialog";
 import { RELEASES, type Release } from "./changelog";
 import { Icon, type IconName } from "./Icon";
 import { useApp } from "./store";
@@ -136,7 +137,10 @@ export function WhatsNew() {
 
   return (
     <div role="dialog" aria-label="What's new" aria-modal="true" className="fixed inset-0 z-40 flex items-center justify-center bg-scrim p-4"
-      onKeyDown={(e) => e.key === "Escape" && close()}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") close();
+        trapTab(e, e.currentTarget);
+      }}
       onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div ref={panel} tabIndex={-1}
         className="flex h-[min(42rem,88vh)] w-full max-w-[56rem] overflow-hidden rounded-xl border border-line bg-surface text-fg shadow-pop outline-none">

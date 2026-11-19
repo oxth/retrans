@@ -9,7 +9,7 @@ const COLOR: Record<Status, string> = {
 /** Plain-language names for each state, shared by the dots and the sidebar's status key. */
 export const STATUS_TEXT: Record<Status, string> = {
   untranslated: "Missing",
-  translated: "Translated, not reviewed yet",
+  translated: "Not reviewed",
   reviewed: "Reviewed",
 };
 export const NEEDS_REVIEW_TEXT = "the base text changed after this was translated";

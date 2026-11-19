@@ -1,4 +1,21 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Keeps Tab inside the dialog `root` (its role="dialog" element): past the last control it wraps
+ * to the first, and Shift+Tab back. Only for the innermost dialog: one opened from another (a
+ * prompt over Settings) keeps Tab to itself.
+ */
+export function trapTab(e: KeyboardEvent, root: HTMLElement): void {
+  if (e.key !== "Tab" || e.defaultPrevented || (e.target as Element).closest('[role="dialog"]') !== root) return;
+  const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.closest('[role="dialog"]') === root);
+  const i = items.indexOf(document.activeElement as HTMLElement);
+  // In between, the browser moves focus as usual (a radio group stays one stop).
+  if (items.length && i !== -1 && (e.shiftKey ? i > 0 : i < items.length - 1)) return;
+  e.preventDefault();
+  items[e.shiftKey ? items.length - 1 : 0]?.focus();
+}
 
 /**
  * Modal: backdrop + labelled dialog. Escape closes via onClose. On open it takes focus (unless a
@@ -22,6 +39,7 @@ export function Dialog({ title, onClose, children, wide }: { title: string; onCl
       className="fixed inset-0 z-40 flex items-center justify-center bg-scrim p-4"
       onKeyDown={(e) => {
         if (e.key === "Escape" && onClose) onClose();
+        trapTab(e, e.currentTarget);
       }}
     >
       <div
