@@ -188,6 +188,52 @@ describe("Live link", () => {
     expect(screen.getByRole("button", { name: "Pair a plugin" })).toBeInTheDocument();
   });
 
+  it("clears the code once the plugin pairs", async () => {
+    const w = await workspace();
+    liveLink.linkStatus.mockResolvedValue({ running: true, port: 47321, paired: false });
+    render(<FigmaSettings session={w.session} />);
+    await screen.findByText("Not paired");
+    vi.useFakeTimers();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Pair a plugin" }));
+    });
+    expect(screen.getByText("042917")).toBeInTheDocument();
+
+    liveLink.linkStatus.mockResolvedValue({ running: true, port: 47321, paired: true });
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    await act(async () => {});
+
+    expect(screen.queryByText("042917")).toBeNull();
+    expect(screen.queryByText(/Expires in/)).toBeNull();
+    expect(screen.getByText("Paired · listening on port 47321")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Forget plugin" })).toBeInTheDocument();
+  });
+
+  it("Forget and switching the link off clear a shown code", async () => {
+    const w = await workspace();
+    let paired = true;
+    liveLink.linkStatus.mockImplementation(async () => ({ running: true, port: 47321, paired }));
+    liveLink.forgetPlugin.mockImplementation(async () => {
+      paired = false;
+    });
+    render(<FigmaSettings session={w.session} />);
+    await screen.findByText("Paired · listening on port 47321");
+
+    await userEvent.click(screen.getByRole("button", { name: "Pair a plugin" }));
+    expect(await screen.findByText("042917")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Forget plugin" }));
+    await waitFor(() => expect(screen.queryByText("042917")).toBeNull());
+    expect(await screen.findByText("Not paired")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Pair a plugin" }));
+    expect(await screen.findByText("042917")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Live link with the Figma plugin" }));
+    await waitFor(() => expect(screen.queryByText("042917")).toBeNull());
+  });
+
   it("turning the switch off stops the link", async () => {
     const w = await workspace();
     render(<FigmaSettings session={w.session} />);

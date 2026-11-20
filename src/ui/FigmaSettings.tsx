@@ -39,7 +39,7 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
   const [linkOn, setLinkOn] = useState(false);
   const [status, setStatus] = useState<LinkStatus | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
-  const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: number; wasPaired: boolean } | null>(null);
   const [left, setLeft] = useState(0);
 
   useEffect(() => {
@@ -58,14 +58,29 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
   }, []);
 
   // The pairing code counts down to 0, then the button comes back; the interval ends with the code.
+  // It also watches for the plugin to pair and then clears the spent code.
   useEffect(() => {
     if (!pairing) return;
+    let live = true;
     const id = setInterval(() => {
       const secs = Math.ceil((pairing.expiresAt - Date.now()) / 1000);
       if (secs <= 0) setPairing(null);
-      else setLeft(secs);
+      else {
+        setLeft(secs);
+        linkStatus().then(
+          (s) => {
+            if (!live) return;
+            setStatus(s);
+            if (s.paired && !pairing.wasPaired) setPairing(null);
+          },
+          () => {},
+        );
+      }
     }, 1000);
-    return () => clearInterval(id);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
   }, [pairing]);
 
   useEffect(() => {
@@ -99,6 +114,7 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
   const toggleLink = (on: boolean) => {
     setLinkOn(on);
     setStartError(null);
+    if (!on) setPairing(null);
     void setLiveLink(on).catch(() => {});
     if (on) {
       void linkStart().then(refreshStatus, (e) => {
@@ -115,7 +131,7 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
       const { code, expiresInMs } = await pairCode();
       setLinkOn(true);
       void setLiveLink(true).catch(() => {});
-      setPairing({ code, expiresAt: Date.now() + expiresInMs });
+      setPairing({ code, expiresAt: Date.now() + expiresInMs, wasPaired: status?.paired ?? false });
       setLeft(Math.ceil(expiresInMs / 1000));
       refreshStatus();
     } catch (e) {
@@ -124,6 +140,7 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
   }
   const forget = () => {
     setStartError(null);
+    setPairing(null);
     void forgetPlugin().then(refreshStatus, refreshStatus);
   };
   const liveNote = startError
