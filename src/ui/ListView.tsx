@@ -4,6 +4,7 @@ import type { Row } from "../core/rows";
 import type { ProjectSession } from "../core/session";
 import { Cell, type EditActions } from "./Cell";
 import { RowMenu } from "./RowMenu";
+import { btnPrimary, btnSecondary } from "./Dialog";
 import { Icon } from "./Icon";
 import { isUnmappedFigmaRow } from "../figma/meta";
 import { RowWarnings } from "./Warnings";
@@ -17,6 +18,8 @@ export interface ViewProps {
   editing: { id: string; locale: string } | null;
   actions: EditActions;
   onRowAction?: (row: Row, action: RowAction) => void;
+  /** What the empty state offers: clearing filters when they hide every key, adding one when there are none. */
+  empty?: EmptyProps;
 }
 
 export type RowAction = "rename" | "delete" | "keep" | "code-key" | "link";
@@ -26,21 +29,42 @@ export const isFigmaRow = (session: ProjectSession, id: string) =>
   !!session.workspace?.figma && isUnmappedFigmaRow(session.workspace, id);
 
 /** The row badge for a Figma string with no code key yet. */
-/** Shown when the search and filters leave no rows. */
-export const NoMatches = () => (
-  <div className="flex flex-col items-center gap-2 px-8 py-16 text-center">
-    <span className="rounded-full bg-sunken p-3 text-muted"><Icon name="filterX" size={20} /></span>
-    <p className="text-sm font-medium text-fg">No keys match.</p>
-    <p className="text-xs text-muted">Try a different search, or turn off some filters.</p>
-  </div>
-);
+export interface EmptyProps {
+  /** A search or filter is on, so rows may be hidden rather than absent. */
+  filtered: boolean;
+  onClear?: () => void;
+  onAdd?: () => void;
+}
 
-export const NoCodeKeyBadge = () => <span className="rounded bg-info-soft px-1.5 text-info">No code key yet</span>;
+/** Shown when there are no rows: either the search and filters hide them all, or the project has no keys yet. */
+export const NoMatches = ({ filtered = true, onClear, onAdd }: Partial<EmptyProps> = {}) =>
+  filtered ? (
+    <div className="flex flex-col items-center gap-2 px-8 py-16 text-center">
+      <span className="rounded-full bg-sunken p-3 text-muted"><Icon name="filterX" size={20} /></span>
+      <p className="text-sm font-medium text-fg">No keys match.</p>
+      <p className="text-sm text-muted">Try a different search, or turn off some filters.</p>
+      {onClear && <button className={`${btnSecondary} mt-2`} onClick={onClear}>Clear filters</button>}
+    </div>
+  ) : (
+    <div className="flex flex-col items-center gap-2 px-8 py-16 text-center">
+      <span className="rounded-full bg-sunken p-3 text-muted"><Icon name="list" size={20} /></span>
+      <p className="text-sm font-medium text-fg">No keys yet.</p>
+      <p className="text-sm text-muted">Add the first key, or bring strings in from Import / Export.</p>
+      {onAdd && (
+        <button className={`${btnPrimary} mt-2`} onClick={onAdd}>
+          <Icon name="plus" size={15} />
+          Add key
+        </button>
+      )}
+    </div>
+  );
+
+export const NoCodeKeyBadge = () => <span className="rounded bg-sunken px-1.5 text-fg-2">No code key yet</span>;
 
 /** True when this workspace row's key was removed from the TypeScript source. */
 export const isRemovedInSource = (session: ProjectSession, id: string) => !!session.workspace?.removedInSource.includes(id);
 
-export function ListView({ session, rows, locales, version, editing, actions, onRowAction }: ViewProps) {
+export function ListView({ session, rows, locales, version, editing, actions, onRowAction, empty }: ViewProps) {
   const parent = useRef<HTMLDivElement>(null);
   const cols = [session.data.baseLocale, ...locales];
   const virt = useVirtualizer({
@@ -58,7 +82,7 @@ export function ListView({ session, rows, locales, version, editing, actions, on
     if (i >= 0) virt.scrollToIndex(i);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId, editLocale]);
-  if (!rows.length) return <NoMatches />;
+  if (!rows.length) return <NoMatches {...empty} />;
   return (
     <div ref={parent} className="h-full overflow-auto" data-testid="list-scroll">
       <div style={{ height: virt.getTotalSize(), position: "relative" }}>
@@ -90,12 +114,12 @@ export function ListView({ session, rows, locales, version, editing, actions, on
                     />
                   )}
                 </div>
-                <div className="mt-1 flex flex-wrap items-center gap-1 text-[0.6875rem] text-muted">
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted">
                   {row.ns && <span>{row.ns}</span>}
                   {row.pluralGroup && (
-                    <span className="rounded bg-brand-soft px-1.5 text-brand-ink">plural · {row.pluralCategory}</span>
+                    <span className="rounded bg-sunken px-1.5 text-fg-2">plural · {row.pluralCategory}</span>
                   )}
-                  {base?.kind === "complex" && <span className="rounded bg-sunken px-1.5 text-muted">complex</span>}
+                  {base?.kind === "complex" && <span className="rounded bg-sunken px-1.5 text-fg-2">complex</span>}
                   {figmaRow && <NoCodeKeyBadge />}
                   <RowWarnings duplicateOf={duplicateGroups(session, row.id)} removedInSource={removed} />
                 </div>

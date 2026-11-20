@@ -8,7 +8,8 @@ import { diffResults, type ResultsDiff } from "../preview/results";
 import { joinPath } from "../platform/fs";
 import { FIGMA_DEFAULT_DIR, isSafeLocalesDir } from "../workspace/meta";
 import { btnPrimary, btnSecondary } from "./Dialog";
-import { btnRow, fieldBase, fieldCls, Group, Row } from "./settings-ui";
+import { btnRow, fieldBase, fieldCls, Group, Row, useSaveNote } from "./settings-ui";
+import { languageWithCode } from "./locales";
 import { FigmaImportDialog } from "./FigmaImportDialog";
 import { PreviewExportDialog, PreviewResultsDialog } from "./PreviewDialogs";
 import { saveFigma } from "./figma-meta";
@@ -30,6 +31,8 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
   const [results, setResults] = useState<ResultsDiff | null>(null);
   const [previewNote, setPreviewNote] = useState<{ ok: boolean; text: string } | null>(null);
   const currentDir = figma?.dir ?? FIGMA_DEFAULT_DIR;
+  const dirSaved = useSaveNote();
+  const modesSaved = useSaveNote();
 
   useEffect(() => {
     let live = true;
@@ -53,7 +56,7 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
     const next = { ...mapped };
     if (locale) next[mode] = locale;
     else delete next[mode];
-    saveFigma(session, { modes: next });
+    modesSaved.trackProject(() => saveFigma(session, { modes: next }));
   };
 
 
@@ -74,7 +77,7 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
 
   return (
     <>
-      <Group label="Folder" footer={dirNote ? <span role="alert" className="text-danger">{dirNote}</span> : undefined}>
+      <Group label="Folder" footer={dirNote ? <span role="alert" className="text-danger">{dirNote}</span> : dirSaved.footer}>
         <Row label="Figma folder" hint="Where exported Figma variable files are kept, inside the project." htmlFor="figma-dir">
           <input id="figma-dir" aria-label="Figma folder" className={`${fieldBase} w-52 font-mono`} value={dir} onChange={(e) => setDir(e.target.value)} />
           <button
@@ -84,14 +87,14 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
               const d = dir.trim().replace(/\/+$/, "");
               if (!d || !isSafeLocalesDir(d)) return setDirNote("The folder must be inside the project.");
               setDirNote(null);
-              saveFigma(session, { dir: d });
+              dirSaved.trackProject(() => saveFigma(session, { dir: d }));
             }}
           >
             Save folder
           </button>
         </Row>
       </Group>
-      <Group label="Modes" footer="Each Figma mode is one language of this workspace.">
+      <Group label="Modes" footer={modesSaved.footer ?? "Each Figma mode is one language of this workspace."}>
         {modes.length === 0 && <Row label="No modes found" hint={`Add Figma files to ${currentDir} and they show up here.`} />}
         {modes.map((m) => (
           <Row key={m} label={<>Mode <span className="font-mono">{m}</span></>} htmlFor={`figma-mode-${m}`}>
@@ -104,7 +107,7 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
             >
               <option value="">(not set)</option>
               {[...new Set([...session.data.locales, ...(mapped[m] ? [mapped[m]] : [])])].map((l) => (
-                <option key={l} value={l}>{l}</option>
+                <option key={l} value={l}>{languageWithCode(l)}</option>
               ))}
               <option value={NEW}>Add new…</option>
             </select>

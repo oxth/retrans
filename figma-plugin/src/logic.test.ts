@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PreviewBundle } from "../../src/preview/format";
-import { type Box, copyPlacement, currentStep, frameToPreview, languageLabel, linkNote, previewNeeded, switchDrafts, markRestFits, nothingLinked, progress, resultsKey, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
+import { type Box, copyPlacement, currentStep, frameToPreview, languageLabel, linkNote, previewNeeded, switchDrafts, markRestFits, nothingLinked, progress, resultsKey, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults, withNotes } from "./logic";
 
 const box = (width: number, height: number, x = 0, y = 0): Box => ({ x, y, width, height });
 const shape = (autoResize: TextShape["autoResize"], b: Box, needed: Box = b): TextShape => ({ box: b, autoResize, needed });
@@ -222,5 +222,24 @@ describe("languageLabel", () => {
   it("falls back to the code when there's no name for it", () => {
     expect(languageLabel("not a code", "en")).toBe("not a code");
     expect(languageLabel("qaa", "en")).toBe("qaa");
+  });
+});
+
+describe("withNotes", () => {
+  const state: PluginState = {
+    bundle: null,
+    fileName: null,
+    rows: [
+      { key: "a", text: "A", flag: null, found: true, verdict: "fits" },
+      { key: "b", text: "B", flag: null, found: true, verdict: "too-long", note: "old" },
+    ],
+  };
+  it("uses the notes as typed, so a note on its way to the plugin still goes into the results", () => {
+    const out = withNotes(state, new Map([["a", "tight"], ["b", "old"]]));
+    expect(out.rows[0].note).toBe("tight");
+    expect(out.rows[1]).toBe(state.rows[1]); // unchanged rows stay as they are
+  });
+  it("returns the state itself when nothing was typed", () => {
+    expect(withNotes(state, new Map())).toBe(state);
   });
 });

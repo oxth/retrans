@@ -22,6 +22,7 @@ import { activeTranslator, useMt } from "./mt-store";
 import { Toolbar } from "./Toolbar";
 import { TranslateMissingDialog } from "./TranslateMissingDialog";
 import { isTextField } from "./edit-commands";
+import { INITIAL_FILTER } from "./tab-ui";
 
 
 export function AppShell() {
@@ -160,6 +161,12 @@ export function AppShell() {
         setEditing(n);
         return !!n;
       },
+      prev: (id, locale) => {
+        const { session: s, rows: r, visible: v } = live.current;
+        const n = s ? nextMissing(s, r, { id, locale }, v, -1) : null;
+        setEditing(n);
+        return !!n;
+      },
       review: (id, locale) => live.current.session?.markReviewed(id, locale),
       error: (message) => useApp.setState({ error: message }),
     }),
@@ -174,6 +181,12 @@ export function AppShell() {
   }, []);
 
   if (!session) return null;
+  const filtered = Object.entries(INITIAL_FILTER).some(([k, v]) => filter[k as keyof typeof filter] !== v);
+  const empty = {
+    filtered,
+    onClear: () => setUi({ filter: { ...INITIAL_FILTER } }),
+    onAdd: () => setDialog({ kind: "add" }),
+  };
   const toggleLocale = (l: string) =>
     setUi({ hidden: hiddenList.includes(l) ? hiddenList.filter((x) => x !== l) : [...hiddenList, l] });
 
@@ -182,10 +195,10 @@ export function AppShell() {
       <Sidebar session={session} stats={stats} page={page} onPage={setPage} />
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
-          <h1 className="text-sm font-semibold">{PAGE_LABEL[page]}</h1>
+          <h1 className="text-[0.9375rem] font-semibold">{PAGE_LABEL[page]}</h1>
           <span aria-live="polite" className="contents">
           {dirty ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">
               <span className="h-1.5 w-1.5 rounded-full bg-warn-solid" aria-hidden="true" />
               Unsaved
             </span>
@@ -252,12 +265,13 @@ export function AppShell() {
               onViewMode={onViewMode}
               onAddKey={() => setDialog({ kind: "add" })}
               onTranslateMissing={hasModel ? () => setDialog({ kind: "translate" }) : undefined}
+              translatePrimary={!dirty && missingCount > 0}
             />
             <div className="min-h-0 flex-1">
               {viewMode === "list" ? (
-                <ListView session={session} rows={rows} locales={visible} version={version} editing={editing} actions={actions} onRowAction={onRowAction} />
+                <ListView session={session} rows={rows} locales={visible} version={version} editing={editing} actions={actions} onRowAction={onRowAction} empty={empty} />
               ) : (
-                <TableView session={session} rows={rows} locales={visible} version={version} editing={editing} actions={actions} onRowAction={onRowAction} />
+                <TableView session={session} rows={rows} locales={visible} version={version} editing={editing} actions={actions} onRowAction={onRowAction} empty={empty} />
               )}
             </div>
           </>

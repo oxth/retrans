@@ -229,11 +229,15 @@ describe("editing", () => {
     expect(s.value("common::only_en", "th")).toEqual({ kind: "text", text: "ก" });
   });
 
-  it("Shift+Tab commits and closes", async () => {
+  it("Shift+Tab commits and opens the previous missing cell (wraps)", async () => {
     const s = await open(nested());
-    await userEvent.click(cell("common::only_en", "th"));
+    const missing = [...document.querySelectorAll('[data-locale="th"]')]
+      .filter((e) => e.getAttribute("data-cell") === "missing")
+      .map((e) => e.closest("[data-row]")!.getAttribute("data-row")!);
+    await userEvent.click(cell(missing[0], "th"));
     await userEvent.type(editor(), "z{Shift>}{Tab}{/Shift}");
-    expect(s.value("common::only_en", "th")).toEqual({ kind: "text", text: "z" });
-    expect(screen.queryByRole("textbox", { name: /^Edit / })).toBeNull();
+    expect(s.value(missing[0], "th")).toEqual({ kind: "text", text: "z" });
+    // wrapped backward to the last missing cell
+    await waitFor(() => expect(editor().closest("[data-row]")!.getAttribute("data-row")).toBe(missing[missing.length - 1]));
   });
 });

@@ -70,6 +70,31 @@ describe("RowMenu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
+  it("keyboard: focus moves into the menu, arrows move, Escape returns to the button", async () => {
+    setup();
+    const btn = screen.getByRole("button", { name: "Actions for aa" });
+    btn.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(btn).toHaveFocus();
+  });
+
+  it("running an item returns focus to the button", async () => {
+    const { onRename } = setup();
+    const btn = screen.getByRole("button", { name: "Actions for aa" });
+    btn.focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard("{Enter}");
+    expect(onRename).toHaveBeenCalled();
+    expect(btn).toHaveFocus();
+  });
+
   it("clicking the button again closes it", async () => {
     setup();
     const btn = screen.getByRole("button", { name: "Actions for aa" });

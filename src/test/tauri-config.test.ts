@@ -12,3 +12,13 @@ describe("Windows bundle config", () => {
     expect(conf("tauri.release.conf.json").bundle.targets).toBeUndefined();
   });
 });
+
+describe("dev config", () => {
+  it("runs as its own app, so it never shares settings with an installed Retrans", () => {
+    const dev = conf("tauri.dev.conf.json");
+    expect(dev.identifier).not.toBe(conf("tauri.conf.json").identifier);
+    expect(dev.productName).toBe("Retrans Dev");
+    // Only the name and identifier: anything else would make dev behave unlike the release.
+    expect(Object.keys(dev).sort()).toEqual(["identifier", "productName"]);
+  });
+});

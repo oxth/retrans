@@ -66,4 +66,4 @@ export const btnDanger = `${btn} bg-danger-solid text-white hover:opacity-90`;
 export const inputCls =
   "w-full rounded-md border border-field-line bg-surface px-3 py-1.5 text-sm text-fg hover:border-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand";
 /** Small uppercase label above a group of controls. */
-export const sectionLabel = "text-xs font-semibold uppercase tracking-wide text-muted";
+export const sectionLabel = "text-xs font-semibold text-muted";

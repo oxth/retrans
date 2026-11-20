@@ -187,6 +187,30 @@ describe("Settings window", () => {
     expect(document.documentElement.style.fontSize).toBe("");
   });
 
+  it("radio groups are one Tab stop and arrow keys move the choice", async () => {
+    await setupApp(loadFixtureDir(FIX + "next-nested"));
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    await userEvent.click(nav().getByRole("button", { name: "Appearance" }));
+    const size = within(screen.getByRole("radiogroup", { name: "Interface size" }));
+    expect(size.getByRole("radio", { name: "Default" })).toHaveAttribute("tabindex", "0");
+    expect(size.getByRole("radio", { name: "Large" })).toHaveAttribute("tabindex", "-1");
+    size.getByRole("radio", { name: "Default" }).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(size.getByRole("radio", { name: "Large" })).toHaveAttribute("aria-checked", "true");
+    expect(size.getByRole("radio", { name: "Large" })).toHaveFocus();
+    await userEvent.keyboard("{Home}");
+    expect(size.getByRole("radio", { name: "Small" })).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(size.getByRole("radio", { name: "Default" }));
+  });
+
+  it("a section named in a footer opens that section", async () => {
+    await openProjectInApp();
+    act(() => useApp.getState().openPrefs("translation"));
+    const content = within(within(screen.getByRole("dialog", { name: "Settings" })).getByRole("main"));
+    await userEvent.click(content.getByRole("button", { name: "Machine translation" }));
+    await waitFor(() => expect(title()).toHaveTextContent("Machine translation"));
+  });
+
   it("About shows the app and its updates; Check for updates opens it from the menu", async () => {
     await setupApp(loadFixtureDir(FIX + "next-nested"));
     act(() => useApp.getState().openPrefs("about"));

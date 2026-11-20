@@ -119,7 +119,7 @@ describe("Install and restart with unsaved edits", () => {
 
   it("Discard installs", async () => {
     await banner();
-    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    await userEvent.click(screen.getByRole("button", { name: "Don't save" }));
     await waitFor(() => expect(install).toHaveBeenCalled());
   });
 

@@ -83,7 +83,7 @@ describe("PreviewExportDialog", () => {
     const { session } = await setup();
     for (const id of session.data.keyOrder) if (session.meta(id, "en").status === "translated") session.markReviewed(id, "en");
     render(<PreviewExportDialog session={session} onClose={() => {}} />);
-    expect(screen.getByText("Nothing to preview in en: no unreviewed drafts are linked to Figma.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing to preview in English (en): no unreviewed drafts are linked to Figma.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export…" })).toBeDisabled();
   });
 
@@ -92,7 +92,7 @@ describe("PreviewExportDialog", () => {
     for (const id of session.data.keyOrder) if (id.startsWith("figma-")) session.setText(id, "en", null);
     render(<PreviewExportDialog session={session} onClose={() => {}} />);
     await userEvent.click(screen.getByLabelText("Include reviewed translations"));
-    expect(screen.getByText("Nothing to preview in en: no drafts are linked to Figma.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing to preview in English (en): no drafts are linked to Figma.")).toBeInTheDocument();
   });
 });
 

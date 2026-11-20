@@ -5,6 +5,7 @@ import { pluralCategories } from "../core/plurals";
 import { KeyError, type ProjectSession } from "../core/session";
 import { btnGhost, btnPrimary, Dialog, inputCls, btnDanger } from "./Dialog";
 import { Segmented } from "./settings-ui";
+import { languageWithCode } from "./locales";
 
 function keyMessage(e: unknown): string {
   if (e instanceof KeyError) {
@@ -16,6 +17,8 @@ function keyMessage(e: unknown): string {
   }
   return e instanceof Error ? e.message : String(e);
 }
+
+const UNDO_KEYS = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent) ? "⌘Z" : "Ctrl+Z";
 
 const FORM_NAME: Record<string, string> = { zero: "Zero", one: "One", two: "Two", few: "Few", many: "Many", other: "Other" };
 
@@ -102,7 +105,7 @@ export function AddKeyDialog({ session, onClose }: { session: ProjectSession; on
 
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-3">
-            <span className="text-xs font-medium text-fg-2">Text ({baseLocale})</span>
+            <span className="text-xs font-medium text-fg-2">Text in {languageWithCode(baseLocale)}</span>
             {canPlural && (
               <Segmented
                 label="Text type"
@@ -213,6 +216,7 @@ export function DeleteKeyDialog({ session, row, onClose }: { session: ProjectSes
       <p className="text-sm">
         Delete <span className="font-mono font-semibold">{name}</span>? It has a value in {count} {count === 1 ? "language" : "languages"}, which will be removed.
       </p>
+      <p className="mt-2 text-xs text-muted">You can undo it with {UNDO_KEYS}.</p>
       {error && <div role="alert" className="mt-2 text-xs text-danger">{error}</div>}
       <div className="mt-5 flex justify-end gap-2">
         <button onClick={onClose} className={btnGhost}>Cancel</button>

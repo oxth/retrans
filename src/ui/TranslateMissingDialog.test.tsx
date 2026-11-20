@@ -158,6 +158,23 @@ describe("TranslateMissingDialog", () => {
     expect(generate).toHaveBeenCalledTimes(1);
   });
 
+  it("after failures, Try again runs the same languages again and only the strings still missing", async () => {
+    let fail = true;
+    mtOn(async (r) => {
+      if (fail) throw new Error("rate limited");
+      return `th:${userText(r.prompt)}`;
+    });
+    const s = await openSession();
+    render(<TranslateMissingDialog session={s} onClose={() => {}} defaultLocale="th" />);
+    await userEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(await screen.findByText("1 failed.")).toBeInTheDocument();
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Translated 3.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(s.value(c("a"), "th")).toEqual({ kind: "text", text: "th:A" });
+  });
+
   it("an unexpected throw still ends in the summary", async () => {
     mtOn(async () => undefined as unknown as string);
     const s = await openSession();
@@ -230,13 +247,12 @@ describe("several languages at once", () => {
     mtOn(async (r) => `x:${userText(r.prompt)}`);
     const s = await threeLangs();
     render(<TranslateMissingDialog session={s} onClose={() => {}} defaultLocale="th" />);
-    expect(screen.getByRole("checkbox", { name: "th" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "de" })).not.toBeChecked();
-    expect(screen.getByText("2 missing")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("checkbox", { name: "de" }));
+    // Every language with gaps starts ticked.
+    expect(screen.getByRole("checkbox", { name: "Thai (th)" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "German (de)" })).toBeChecked();
     expect(screen.getByText("3 missing")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Start" }));
-    expect(await screen.findByRole("heading", { name: "de" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "German (de)" })).toBeInTheDocument();
     expect(s.value(c("a"), "th")).toEqual({ kind: "text", text: "x:A" });
     expect(s.value(c("b"), "de")).toEqual({ kind: "text", text: "x:B" });
     expect(s.value(c("a"), "de")).toEqual({ kind: "text", text: "A-de" });
@@ -246,10 +262,16 @@ describe("several languages at once", () => {
     mtOn();
     const s = await threeLangs();
     render(<TranslateMissingDialog session={s} onClose={() => {}} defaultLocale="th" />);
-    await userEvent.click(screen.getByRole("checkbox", { name: "All languages" }));
-    expect(screen.getByRole("checkbox", { name: "th" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "de" })).toBeChecked();
-    expect(screen.queryByRole("checkbox", { name: "en" })).toBeNull();
+    // Both have gaps, so both start ticked: All languages is on, and toggles them together.
+    const all = screen.getByRole("checkbox", { name: "All languages" });
+    expect(all).toBeChecked();
+    await userEvent.click(all);
+    expect(screen.getByRole("checkbox", { name: "Thai (th)" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "German (de)" })).not.toBeChecked();
+    await userEvent.click(all);
+    expect(screen.getByRole("checkbox", { name: "Thai (th)" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "German (de)" })).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "English (en)" })).toBeNull();
   });
 
   it("progress shows per language and overall", async () => {
@@ -258,13 +280,12 @@ describe("several languages at once", () => {
     mtOn(async (r) => (++n === 1 ? `x:${userText(r.prompt)}` : new Promise<string>((res) => (release = res))));
     const s = await threeLangs();
     render(<TranslateMissingDialog session={s} onClose={() => {}} defaultLocale="th" />);
-    await userEvent.click(screen.getByRole("checkbox", { name: "de" }));
     await userEvent.click(screen.getByRole("button", { name: "Start" }));
     await waitFor(() => expect(screen.getByText("1 of 3")).toBeInTheDocument());
     // One line per language with its own total; which finished first follows the project's language order.
-    const th = screen.getByText(/^th: \d of 2$/).textContent!;
-    const de = screen.getByText(/^de: \d of 1$/).textContent!;
-    expect(Number(th.split(" ")[1]) + Number(de.split(" ")[1])).toBe(1);
+    const th = /: (\d) of 2$/.exec(screen.getByText(/^Thai \(th\): \d of 2$/).textContent!)![1];
+    const de = /: (\d) of 1$/.exec(screen.getByText(/^German \(de\): \d of 1$/).textContent!)![1];
+    expect(Number(th) + Number(de)).toBe(1);
     release("x:B");
     await waitFor(() => expect(screen.getByText("2 of 3")).toBeInTheDocument());
   });

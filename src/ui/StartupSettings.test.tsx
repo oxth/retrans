@@ -22,6 +22,23 @@ describe("Settings → Startup", () => {
     expect(select).toHaveValue("restore");
     await userEvent.selectOptions(select, "Show the start screen");
     await waitFor(() => expect(prefs.get("launchMode")).toBe("start"));
+    // The change is confirmed, not silent.
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved ✓");
+  });
+
+  it("says so when the choice can't be saved", async () => {
+    const set = prefs.set.bind(prefs);
+    prefs.set = (k: string, v: unknown) => {
+      if (k === "launchMode") throw new Error("disk full");
+      return set(k, v);
+    };
+    try {
+      render(<StartupSettings />);
+      await userEvent.selectOptions(screen.getByLabelText("When Retrans opens"), "Show the start screen");
+      expect(await screen.findByRole("status")).toHaveTextContent("Couldn't save: disk full");
+    } finally {
+      prefs.set = set;
+    }
   });
 
   it("shows the saved choice", async () => {

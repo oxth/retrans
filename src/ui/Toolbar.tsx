@@ -22,10 +22,12 @@ export interface ToolbarProps {
   onViewMode: (m: "list" | "table") => void;
   onAddKey?: () => void;
   onTranslateMissing?: () => void;
+  /** Translate missing is the screen's main action (nothing unsaved, something missing). */
+  translatePrimary?: boolean;
 }
 
 const chip = (on: boolean) =>
-  `inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium ${
+  `inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1 text-xs font-medium ${
     on ? "border-brand-line bg-brand-soft text-brand-ink" : "border-line-strong bg-surface text-fg-2 hover:bg-hover"
   }`;
 const field = "rounded-md border border-line-strong bg-surface px-2 py-1 text-sm text-fg hover:border-muted";
@@ -33,6 +35,7 @@ const field = "rounded-md border border-line-strong bg-surface px-2 py-1 text-sm
 export function Toolbar(p: ToolbarProps) {
   const [menu, setMenu] = useState(false);
   const menuBox = useRef<HTMLDivElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const { filter: f } = p;
   const shown = p.targetLocales.filter((l) => !p.hidden.has(l)).length;
 
@@ -40,7 +43,11 @@ export function Toolbar(p: ToolbarProps) {
   useEffect(() => {
     if (!menu) return;
     const onDown = (e: Event) => !menuBox.current?.contains(e.target as Node) && setMenu(false);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setMenu(false);
+      menuButton.current?.focus();
+    };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -66,7 +73,7 @@ export function Toolbar(p: ToolbarProps) {
         <button className={chip(f.missing)} aria-pressed={f.missing} aria-label={`Missing (${p.missingCount})`} onClick={() => p.onFilter({ missing: !f.missing })}>
           <span className="h-2 w-2 rounded-full bg-st-missing" aria-hidden="true" />
           Missing
-          <span className={`rounded-full px-1.5 tabular-nums ${f.missing ? "bg-surface" : "bg-sunken"}`}>{p.missingCount}</span>
+          <span className={`rounded px-1.5 tabular-nums ${f.missing ? "bg-surface" : "bg-sunken"}`}>{p.missingCount}</span>
         </button>
         <button
           className={chip(f.needsReview)}
@@ -89,7 +96,6 @@ export function Toolbar(p: ToolbarProps) {
         </button>
         <select aria-label="Status" className={field} value={f.status} onChange={(e) => p.onFilter({ status: e.target.value as FilterState["status"] })}>
           <option value="all">All statuses</option>
-          <option value="untranslated">Missing</option>
           <option value="translated">Not reviewed</option>
           <option value="reviewed">Reviewed</option>
         </select>
@@ -105,22 +111,22 @@ export function Toolbar(p: ToolbarProps) {
       <div className="ml-auto flex items-center gap-2">
         <div className="relative" ref={menuBox}>
           <button
+            ref={menuButton}
             className={`${field} inline-flex items-center gap-1.5`}
             aria-label="Visible languages"
-            aria-haspopup="true"
             aria-expanded={menu}
             onClick={() => setMenu((m) => !m)}
           >
             Languages
             {shown < p.targetLocales.length && (
-              <span className="rounded-full bg-brand-soft px-1.5 text-xs font-medium tabular-nums text-brand-ink">
+              <span className="rounded bg-brand-soft px-1.5 text-xs font-medium tabular-nums text-brand-ink">
                 {shown}/{p.targetLocales.length}
               </span>
             )}
             <Icon name="chevronDown" size={14} className="text-muted" />
           </button>
           {menu && (
-            <div role="menu" aria-label="Visible languages" className="absolute right-0 z-20 mt-1 min-w-44 rounded-lg border border-line bg-surface p-1.5 shadow-pop">
+            <div role="group" aria-label="Visible languages" className="absolute right-0 z-20 mt-1 min-w-44 rounded-lg border border-line bg-surface p-1.5 shadow-pop">
               {p.targetLocales.map((l) => (
                 <label key={l} className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-hover">
                   <input type="checkbox" checked={!p.hidden.has(l)} onChange={() => p.onToggleLocale(l)} />
@@ -138,7 +144,7 @@ export function Toolbar(p: ToolbarProps) {
               aria-pressed={p.viewMode === m}
               onClick={() => p.onViewMode(m)}
               className={`inline-flex items-center gap-1.5 rounded px-2.5 py-0.5 capitalize ${
-                p.viewMode === m ? "bg-surface font-medium text-fg shadow-sm" : "text-muted hover:text-fg"
+                p.viewMode === m ? "bg-surface font-medium text-fg ring-1 ring-line" : "text-muted hover:text-fg"
               }`}
             >
               <Icon name={m === "list" ? "rows" : "table"} size={14} />
@@ -147,12 +153,12 @@ export function Toolbar(p: ToolbarProps) {
           ))}
         </div>
         {p.onTranslateMissing && (
-          <button className={btnSecondary} data-tour="translate" onClick={p.onTranslateMissing}>
-            <Icon name="sparkles" size={15} className="text-brand" />
+          <button className={p.translatePrimary ? btnPrimary : btnSecondary} data-tour="translate" onClick={p.onTranslateMissing}>
+            <Icon name="sparkles" size={15} />
             Translate missing…
           </button>
         )}
-        <button onClick={p.onAddKey} className={btnPrimary}>
+        <button onClick={p.onAddKey} className={btnSecondary}>
           <Icon name="plus" size={15} />
           Add key
         </button>

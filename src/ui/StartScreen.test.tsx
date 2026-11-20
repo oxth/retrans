@@ -56,6 +56,7 @@ import { MemoryFs, loadFixtureDir } from "../platform/memory-fs";
 import { addRecent, getRecent } from "../platform/prefs";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useApp } from "./store";
+import { NOTHING_FOUND } from "./StartScreen";
 
 const FIX = resolve(__dirname, "../test/fixtures") + "/";
 
@@ -80,7 +81,7 @@ describe("StartScreen", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open project" }));
     const dlg = await screen.findByRole("dialog", { name: "Open project" });
     expect(dlg).toHaveTextContent("next-i18next");
-    expect(dlg).toHaveTextContent("en, th");
+    expect(dlg).toHaveTextContent("English (en), Thai (th)");
     expect(dlg).toHaveTextContent("checkout");
     expect(dlg).toHaveTextContent(/\d+ keys/);
     expect(useApp.getState().session).toBeNull();
@@ -105,10 +106,14 @@ describe("StartScreen", () => {
     expect(useApp.getState().session!.data.baseLocale).toBe("th");
   });
 
-  it('shows "No next-i18next or Paraglide project found" for an empty folder', async () => {
+  it('shows "No translations found here" with every format for an empty folder', async () => {
     await setup(new MemoryFs({ "/project/readme.txt": "x" }));
     await userEvent.click(screen.getByRole("button", { name: "Open project" }));
-    expect(await screen.findByText(/No next-i18next or Paraglide project found/)).toBeInTheDocument();
+    expect(await screen.findByText(NOTHING_FOUND)).toBeInTheDocument();
+    // The message offers the next step, and can be dismissed.
+    expect(screen.getByRole("button", { name: "Choose another folder…" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(NOTHING_FOUND)).toBeNull();
   });
 
   it("wizard creates a workspace and opens it", async () => {
@@ -216,6 +221,8 @@ describe("StartScreen", () => {
     await userEvent.click(screen.getByRole("button", { name: /Try a sample project/ }));
     await userEvent.click(within(await screen.findByRole("dialog", { name: "Tour" })).getByRole("button", { name: "Skip" }));
     useApp.getState().showStart(); // the "+" button: the sample stays open in its tab
+    // Its recent row says it's open in a tab.
+    expect(await screen.findByRole("button", { name: /^Sample project Open\// })).toBeInTheDocument();
 
     const root = "/docs/Retrans/Sample project";
     await userEvent.click(await screen.findByRole("button", { name: "Remove Sample project from recent projects" }));
@@ -470,6 +477,6 @@ describe("opening a folder of Figma Variables files", () => {
     pick.value = "/empty";
     await setup(new MemoryFs({ "/empty/readme.txt": "hi" }));
     await userEvent.click(screen.getByRole("button", { name: "Open project" }));
-    expect(await screen.findByText("No next-i18next or Paraglide project found in this folder.")).toBeInTheDocument();
+    expect(await screen.findByText(NOTHING_FOUND)).toBeInTheDocument();
   });
 });

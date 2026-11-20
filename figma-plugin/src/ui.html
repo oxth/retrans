@@ -5,25 +5,45 @@
 <style>
   /* Keeps a focused field above the pinned Send / Save bar when tabbing down the list. */
   html { scroll-padding-bottom: 64px; }
-  body { margin: 0; padding: 12px; font: 12px/1.4 Inter, system-ui, sans-serif; color: var(--figma-color-text); background: var(--figma-color-bg); }
-  button { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--figma-color-border); background: var(--figma-color-bg); color: inherit; cursor: pointer; }
-  button.primary { background: var(--figma-color-bg-brand); color: var(--figma-color-text-onbrand); border-color: transparent; }
+  /* Figma's own UI: 11 px text, 24 px controls, 5 px corners, Figma theme colours throughout. */
+  body { margin: 0; padding: 0 12px 12px; font: 11px/16px Inter, system-ui, sans-serif; color: var(--figma-color-text); background: var(--figma-color-bg); }
+  button { font: inherit; height: 24px; padding: 0 8px; border-radius: 5px; border: 1px solid var(--figma-color-border); background: var(--figma-color-bg); color: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { background: var(--figma-color-bg-hover, var(--figma-color-bg-secondary)); }
+  :focus-visible { outline: 2px solid var(--figma-color-border-selected); outline-offset: 1px; }
+  button.primary, button.primary:hover:not(:disabled) { background: var(--figma-color-bg-brand); color: var(--figma-color-text-onbrand); border-color: transparent; }
   button[aria-pressed="true"] { background: var(--figma-color-bg-selected); border-color: var(--figma-color-border-selected); }
+  /* A pressed Too long reads as a warning, not the same "selected" as Fits. */
+  button[data-verdict="too-long"][aria-pressed="true"] { background: var(--figma-color-bg-warning-tertiary, var(--figma-color-bg-selected)); border-color: var(--figma-color-border-warning, var(--figma-color-border-selected)); }
   button:disabled { opacity: .5; cursor: default; }
-  input[type=text] { font: inherit; width: 100%; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--figma-color-border); border-radius: 4px; background: transparent; color: inherit; }
+  input[type=text] { font: inherit; width: 100%; height: 24px; box-sizing: border-box; padding: 0 7px; border: 1px solid var(--figma-color-border); border-radius: 5px; background: transparent; color: inherit; }
+  input[type=text]:hover { border-color: var(--figma-color-border-strong, var(--figma-color-border)); }
   .muted { color: var(--figma-color-text-secondary); }
   .warn { color: var(--figma-color-text-warning); }
   .row { padding: 8px 0; border-top: 1px solid var(--figma-color-border); }
-  .row .text { margin: 2px 0 6px; word-break: break-word; }
+  .row .text { margin: 2px 0 6px; font-size: 12px; line-height: 18px; word-break: break-word; }
   .bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+  /* Fits / Too long as one joined control, with the note beside it. */
+  .act { display: flex; gap: 6px; align-items: center; }
+  .act input { flex: 1; min-width: 0; }
+  .seg { display: inline-flex; flex: none; border: 1px solid var(--figma-color-border); border-radius: 5px; }
+  .seg button { height: 22px; border: 0; border-radius: 0; background: transparent; }
+  .seg button:first-child { border-radius: 4px 0 0 4px; }
+  .seg button:last-child { border-radius: 0 4px 4px 0; border-left: 1px solid var(--figma-color-border); }
+  .seg button:focus-visible { outline-offset: -2px; }
+  /* Pressed states come after the reset above; Too long last, so it wins over the plain pressed fill. */
+  .seg button[aria-pressed="true"] { background: var(--figma-color-bg-selected); font-weight: 600; }
+  .seg button[data-verdict="too-long"][aria-pressed="true"] { background: var(--figma-color-bg-warning-tertiary, var(--figma-color-bg-selected)); }
   select { font: inherit; max-width: 100%; }
   .ok { color: var(--figma-color-text-success, #14ae5c); }
   .error { color: var(--figma-color-text-danger); }
   /* The three steps: done ones get a check, the current one stands out. */
-  .steps { display: flex; gap: 4px; margin: 0 0 12px; padding: 0; list-style: none; }
-  .steps li { flex: 1; padding: 6px 4px; border-radius: 6px; text-align: center; font-size: 11px; color: var(--figma-color-text-secondary); background: var(--figma-color-bg-secondary); }
-  /* Normal text on the pale "selected" fill, outlined in brand: readable whatever the theme's blue is. */
-  .steps li.now { color: var(--figma-color-text); background: var(--figma-color-bg-selected); box-shadow: inset 0 0 0 1px var(--figma-color-border-selected); font-weight: 600; }
+  /* The header: a small Retrans mark, so designers know which plugin this is. */
+  .head { display: flex; align-items: center; gap: 6px; height: 40px; margin: 0 -12px; padding: 0 12px; font-weight: 600; }
+  .head .mark { flex: none; }
+  /* The three steps as tabs: the current one underlined, done ones checked. */
+  .steps { display: flex; gap: 14px; margin: 0 -12px 10px; padding: 0 12px; list-style: none; border-bottom: 1px solid var(--figma-color-border); }
+  .steps li { padding: 6px 0 7px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--figma-color-text-secondary); white-space: nowrap; }
+  .steps li.now { color: var(--figma-color-text); border-bottom-color: var(--figma-color-border-selected); font-weight: 600; }
   .steps li.done { color: var(--figma-color-text); }
   /* Secondary actions read as links so the one main button per step stands out. */
   /* Normal text with an underline (the brand blue can fall under 4.5:1 at 12px); blue on hover. */
@@ -44,7 +64,7 @@
   .lang-row { margin-top: 4px; }
   .lang select { margin-left: 4px; }
   .lang-row #reload { margin-left: 8px; }
-  .sticky { position: sticky; bottom: 0; padding: 8px 0; margin: 0; background: var(--figma-color-bg); border-top: 1px solid var(--figma-color-border); }
+  .sticky { position: sticky; bottom: 0; padding: 8px 12px; margin: 0 -12px; background: var(--figma-color-bg); border-top: 1px solid var(--figma-color-border); }
 </style>
 </head>
 <body>

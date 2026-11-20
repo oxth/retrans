@@ -3,6 +3,7 @@ import { type MessageValue, parseKeyId } from "../core/model";
 import type { ProjectSession } from "../core/session";
 import { applyImport, type ImportDiff } from "../package/diff";
 import { btnGhost, btnPrimary, Dialog } from "./Dialog";
+import { languageWithCode } from "./locales";
 
 /** The list renders at most this many rows (conflicts first); the rest are counted in a note. */
 export const MAX_ROWS = 300;
@@ -53,11 +54,15 @@ export function ImportDialog({ session, diff, onClose, onApplied }: {
   return (
     <Dialog title="Import translator work" onClose={onClose} wide>
       <p className="mb-3 flex flex-wrap gap-x-3 text-sm text-fg-2">
-        <span>{count("new")} new</span>
-        <span>{count("changed")} changed</span>
-        <span>{count("status")} status only</span>
-        <span>{conflicts.length} conflicts</span>
-        <span>{diff.skipped.length} skipped</span>
+        {[
+          [count("new"), "new"],
+          [count("changed"), "changed"],
+          [count("status"), "status only"],
+          [conflicts.length, conflicts.length === 1 ? "conflict" : "conflicts"],
+          [diff.skipped.length, "skipped"],
+        ]
+          .filter(([n]) => n)
+          .map(([n, label]) => <span key={label}>{n} {label}</span>)}
       </p>
       {diff.otherProject && <Warn>This package came from a different project. Matching keys will still be merged.</Warn>}
       {!diff.hasManifest && <Warn>No package info: only values are merged.</Warn>}
@@ -76,7 +81,7 @@ export function ImportDialog({ session, diff, onClose, onApplied }: {
             <li key={k} className="px-3 py-2">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="truncate font-mono text-xs">{ns ? `${ns}: ${key}` : key}</span>
-                <span className="shrink-0 text-xs font-semibold uppercase text-muted">{i.locale}</span>
+                <span className="shrink-0 text-xs font-medium text-muted">{languageWithCode(i.locale)}</span>
               </div>
               <div className="break-words text-fg-2">
                 {i.kind === "status" ? "status only" : `${show(i.mine)} → ${show(i.theirs)}`}

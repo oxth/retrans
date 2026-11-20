@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useId, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { isValidLocale } from "../core/session-helpers";
 import { sectionLabel } from "./Dialog";
 import { Icon } from "./Icon";
@@ -86,10 +86,34 @@ export function Switch({ checked, onChange, label, disabled }: { checked: boolea
   );
 }
 
+/**
+ * Arrow keys for a radiogroup of buttons: ←/↑ and →/↓ move and select (wrapping), Home/End go to the
+ * ends. Pair it with tabIndex 0 on the checked radio only, so the group is one Tab stop.
+ */
+export function radioKeys<T>(e: KeyboardEvent<HTMLElement>, values: T[], value: T, onChange: (v: T) => void) {
+  const i = values.indexOf(value);
+  const n = values.length;
+  const to =
+    e.key === "ArrowRight" || e.key === "ArrowDown" ? (i + 1) % n
+    : e.key === "ArrowLeft" || e.key === "ArrowUp" ? (i - 1 + n) % n
+    : e.key === "Home" ? 0
+    : e.key === "End" ? n - 1
+    : -1;
+  if (to < 0) return;
+  e.preventDefault();
+  onChange(values[to]);
+  e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[to]?.focus();
+}
+
 /** A small set of mutually exclusive choices shown as joined buttons. */
 export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: Array<{ value: T; label: string }>; onChange: (v: T) => void; label: string }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-md border border-line-strong bg-surface p-0.5">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="inline-flex rounded-md border border-line-strong bg-surface p-0.5"
+      onKeyDown={(e) => radioKeys(e, options.map((o) => o.value), value, onChange)}
+    >
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -98,6 +122,7 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
             type="button"
             role="radio"
             aria-checked={on}
+            tabIndex={on ? 0 : -1}
             onClick={() => onChange(o.value)}
             className={`rounded px-3 py-1 text-xs font-medium transition-colors duration-150 ${on ? "bg-brand text-on-brand" : "text-fg-2 hover:bg-hover hover:text-fg"}`}
           >
@@ -129,6 +154,51 @@ export function useReportUnsaved(dirty: boolean) {
     report(dirty);
   }, [dirty, report]);
   useEffect(() => () => report(false), [report]);
+}
+
+/**
+ * What a group's footer says after a setting changes: "Saved" for app settings (written at once,
+ * cleared after a moment), a sticky note for project settings (written on the project's next save),
+ * or the error when writing failed. Nothing changes silently.
+ */
+export const PROJECT_PENDING = "Changed. Written to .retrans/state.json when you save the project.";
+export function useSaveNote() {
+  const [note, setNote] = useState<{ ok: boolean; text: string; sticky?: boolean } | null>(null);
+  useEffect(() => {
+    if (!note?.ok || note.sticky) return;
+    const t = setTimeout(() => setNote(null), 2000);
+    return () => clearTimeout(t);
+  }, [note]);
+  /** Runs a save; shows "Saved" (or `ok`) when it resolves, the error when it fails. `quiet`: errors only. */
+  const track = useCallback((save: () => Promise<unknown> | unknown, opts: { ok?: string; sticky?: boolean; quiet?: boolean } = {}) => {
+    void Promise.resolve()
+      .then(save)
+      .then(
+        () => !opts.quiet && setNote({ ok: true, text: opts.ok ?? "Saved", sticky: opts.sticky }),
+        (e) => setNote({ ok: false, text: `Couldn't save: ${e instanceof Error ? e.message : String(e)}` }),
+      );
+  }, []);
+  /** For project settings: staged in the session, written when the project is saved. */
+  const trackProject = useCallback((save: () => unknown) => track(save, { ok: PROJECT_PENDING, sticky: true }), [track]);
+  const footer = note && (
+    <span role="status" className={note.ok ? (note.sticky ? "text-fg-2" : "text-ok") : "text-danger"}>
+      {note.ok && !note.sticky ? `${note.text} ✓` : note.text}
+    </span>
+  );
+  return { track, trackProject, footer };
+}
+
+/** Switches Settings to another section (through the unsaved-changes guard). Outside Settings it does nothing. */
+export const GoToSectionContext = createContext<(id: string) => void>(() => {});
+
+/** A section name in running text that opens that section. */
+export function SectionLink({ to, children }: { to: string; children: string }) {
+  const go = useContext(GoToSectionContext);
+  return (
+    <button type="button" className="font-medium text-fg-2 underline decoration-line-strong underline-offset-2 hover:text-fg" onClick={() => go(to)}>
+      {children}
+    </button>
+  );
 }
 
 /** The bar at the bottom of a form section: status on the left, actions on the right. */

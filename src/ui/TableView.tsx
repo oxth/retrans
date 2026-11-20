@@ -33,16 +33,21 @@ function saveWidths(widths: Record<string, number>): void {
   }
 }
 
-/** Drag handle on a header's right edge. Arrow keys resize too; double-click resets to the default width. */
-function ColumnResizer({ label, width, onResize, onReset, onDone }: {
-  label: string; width: number; onResize: (w: number) => void; onReset: () => void; onDone: () => void;
+/**
+ * Drag handle on a header's right edge. Arrow keys resize too; double-click resets to the default width.
+ * A `grows` column may be wider on screen than its stored width (it shares the window's spare room), so
+ * resizing starts from what's on screen.
+ */
+function ColumnResizer({ label, width, grows, onResize, onReset, onDone }: {
+  label: string; width: number; grows?: boolean; onResize: (w: number) => void; onReset: () => void; onDone: () => void;
 }) {
   const clamp = (w: number) => Math.min(MAX_W, Math.max(MIN_W, Math.round(w)));
+  const shown = (handle: HTMLElement) => (grows && handle.parentElement ? handle.parentElement.getBoundingClientRect().width : width);
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     const startX = e.clientX;
-    const startW = width;
     const handle = e.currentTarget;
+    const startW = shown(handle);
     handle.setPointerCapture?.(e.pointerId);
     const move = (ev: PointerEvent) => onResize(clamp(startW + ev.clientX - startX));
     const up = () => {
@@ -59,7 +64,7 @@ function ColumnResizer({ label, width, onResize, onReset, onDone }: {
     const step = e.key === "ArrowLeft" ? -16 : e.key === "ArrowRight" ? 16 : 0;
     if (!step) return;
     e.preventDefault();
-    onResize(clamp(width + step));
+    onResize(clamp(shown(e.currentTarget as HTMLElement) + step));
     onDone();
   };
   return (
@@ -80,7 +85,7 @@ function ColumnResizer({ label, width, onResize, onReset, onDone }: {
   );
 }
 
-export function TableView({ session, rows, locales, version, editing, actions, onRowAction }: ViewProps) {
+export function TableView({ session, rows, locales, version, editing, actions, onRowAction, empty }: ViewProps) {
   const parent = useRef<HTMLDivElement>(null);
   const base = session.data.baseLocale;
   const [widths, setWidths] = useState(loadWidths);
@@ -93,10 +98,13 @@ export function TableView({ session, rows, locales, version, editing, actions, o
   const colW = (col: string) => widths[col] ?? (col === "key" ? KEY_W : COL_W);
   const keyW = colW("key");
   const width = keyW + colW(base) + locales.reduce((sum, l) => sum + colW(l), 0);
+  // Language columns grow to share spare width (their stored width is the minimum); the key column doesn't.
+  const grow = (col: string) => ({ flex: `1 0 ${colW(col)}px` });
   const resizer = (col: string, label: string) => (
     <ColumnResizer
       label={label}
       width={colW(col)}
+      grows={col !== "key"}
       onResize={(w) => update({ ...latest.current, [col]: w })}
       onReset={() => {
         const { [col]: _, ...rest } = latest.current;
@@ -128,26 +136,26 @@ export function TableView({ session, rows, locales, version, editing, actions, o
     <div ref={parent} className="h-full overflow-auto text-sm" data-testid="table-scroll">
       <div style={{ width, minWidth: "100%" }}>
         <div style={{ height: HEADER_H }}
-          className="sticky top-0 z-10 flex items-center border-b border-line bg-panel text-xs font-semibold uppercase tracking-wide text-muted">
+          className="sticky top-0 z-10 flex items-center border-b border-line bg-panel text-xs font-semibold text-muted">
           <div className="shrink-0 bg-panel px-3 py-1.5" style={{ width: keyW, ...pin(0), zIndex: 12 }}>
             Key
             {resizer("key", "Key")}
           </div>
-          <div className="shrink-0 border-r border-line bg-panel px-2 py-1.5" style={{ width: colW(base), ...pin(keyW), zIndex: 11 }}>
-            <span className="block truncate normal-case tracking-normal" title={languageWithCode(base)}>
+          <div className="border-r border-line bg-panel px-2 py-1.5" style={{ ...grow(base), ...pin(keyW), zIndex: 11 }}>
+            <span className="block truncate" title={languageWithCode(base)}>
               {languageWithCode(base)} <span className="font-normal text-muted">(base)</span>
             </span>
             {resizer(base, languageWithCode(base))}
           </div>
           {locales.map((l) => (
-            <div key={l} className="relative shrink-0 border-r border-line px-2 py-1.5" style={{ width: colW(l) }}>
-              <span className="block truncate normal-case tracking-normal" title={languageWithCode(l)}>{languageWithCode(l)}</span>
+            <div key={l} className="relative border-r border-line px-2 py-1.5" style={grow(l)}>
+              <span className="block truncate" title={languageWithCode(l)}>{languageWithCode(l)}</span>
               {resizer(l, languageWithCode(l))}
             </div>
           ))}
         </div>
         {!rows.length ? (
-          <NoMatches />
+          <NoMatches {...empty} />
         ) : (
           <div style={{ height: virt.getTotalSize(), position: "relative" }}>
             {virt.getVirtualItems().map((vi) => {
@@ -160,7 +168,7 @@ export function TableView({ session, rows, locales, version, editing, actions, o
                   data-index={vi.index}
                   ref={virt.measureElement}
                   className="absolute left-0 top-0 flex border-b border-line"
-                  style={{ transform: `translateY(${vi.start - HEADER_H}px)`, width }}
+                  style={{ transform: `translateY(${vi.start - HEADER_H}px)`, width: "100%" }}
                   data-row={row.id}
                 >
                   <div className="shrink-0 border-r border-line bg-surface px-3 py-1.5" style={{ width: keyW, ...pin(0) }}>
@@ -177,17 +185,17 @@ export function TableView({ session, rows, locales, version, editing, actions, o
                         />
                       )}
                     </div>
-                    {row.ns && <div className="mt-0.5 text-[0.6875rem] text-muted">{row.ns}</div>}
-                    <div className="mt-0.5 text-[0.6875rem]">
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted">
+                      {row.ns && <span>{row.ns}</span>}
                       {figmaRow && <NoCodeKeyBadge />}
                       <RowWarnings duplicateOf={duplicateGroups(session, row.id)} removedInSource={removed} />
                     </div>
                   </div>
-                  <div className="shrink-0 border-r border-line bg-surface" style={{ width: colW(base), ...pin(keyW) }}>
+                  <div className="border-r border-line bg-surface" style={{ ...grow(base), ...pin(keyW) }}>
                     <Cell session={session} id={row.id} locale={base} showCode={false} version={version} editing={editId === row.id && editLocale === base} actions={actions} />
                   </div>
                   {locales.map((l) => (
-                    <div key={l} className="shrink-0 border-r border-line" style={{ width: colW(l) }}>
+                    <div key={l} className="border-r border-line" style={grow(l)}>
                       <Cell session={session} id={row.id} locale={l} showCode={false} version={version} editing={editId === row.id && editLocale === l} actions={actions} />
                     </div>
                   ))}

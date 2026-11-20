@@ -88,6 +88,8 @@ export function nextMissing(
   rows: Row[],
   from: { id: KeyId; locale: string },
   locales: string[],
+  /** 1 searches forward (Tab), -1 backward (Shift+Tab). */
+  dir: 1 | -1 = 1,
 ): { id: KeyId; locale: string } | null {
   const n = rows.length;
   const m = locales.length;
@@ -97,9 +99,10 @@ export function nextMissing(
   if (r0 < 0) { r0 = -1; l0 = m - 1; } // start at first row
   else if (l0 < 0) l0 = -1; // unknown locale: start of that row
   const total = n * m;
-  const start = r0 * m + l0; // linear index of `from`
+  // Linear index of `from`; from no row, going backward starts past the last cell.
+  const start = r0 < 0 && dir < 0 ? total : r0 * m + l0;
   for (let step = 1; step <= total; step++) {
-    const idx = (((start + step) % total) + total) % total;
+    const idx = (((start + step * dir) % total) + total) % total;
     const row = rows[Math.floor(idx / m)];
     const locale = locales[idx % m];
     if (!isApplicable(s.data, row.id, locale) || s.readOnlyReason(row.id, locale) !== null) continue;

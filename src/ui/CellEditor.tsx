@@ -12,6 +12,8 @@ export interface CellEditorProps {
   onCommit: (text: string) => void;
   onCancel: () => void;
   onNextMissing: () => void;
+  /** Shift+Tab: the previous missing cell. Without it, Shift+Tab saves and closes. */
+  onPrevMissing?: () => void;
   onMarkReviewed?: () => void;
   /** Called after a successful Enter/Esc/Tab-without-next close, so the host can return focus to the cell. */
   onRefocus?: () => void;
@@ -22,7 +24,7 @@ export interface CellEditorProps {
   onAcceptSuggestion?: (text: string) => void;
 }
 
-export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, onNextMissing, onMarkReviewed, onRefocus, onFlushError, suggestion, onAcceptSuggestion }: CellEditorProps) {
+export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, onNextMissing, onPrevMissing, onMarkReviewed, onRefocus, onFlushError, suggestion, onAcceptSuggestion }: CellEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [error, setError] = useState<string | null>(null);
   const draft = useRef(initial);
@@ -157,10 +159,12 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
           } else if (e.key === "Tab") {
             e.preventDefault();
             if (tryCommit()) {
-              if (e.shiftKey) {
+              if (!e.shiftKey) onNextMissing();
+              else if (onPrevMissing) onPrevMissing();
+              else {
                 onRefocus?.();
                 onCancel();
-              } else onNextMissing();
+              }
             }
           }
         }}
@@ -171,10 +175,11 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
           {error}
         </div>
       )}
-      <div data-testid="editor-keys" className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.6875rem] text-muted">
+      <div data-testid="editor-keys" className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
         <span><Kbd>Enter</Kbd> Save</span>
         {onMarkReviewed && <span><Kbd>⌘⇧R</Kbd> Save & mark reviewed</span>}
         <span><Kbd>Tab</Kbd> Next missing</span>
+        {onPrevMissing && <span><Kbd>⇧Tab</Kbd> Previous</span>}
         <span><Kbd>Esc</Kbd> Cancel</span>
       </div>
     </div>
@@ -182,5 +187,5 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
 }
 
 const Kbd = ({ children }: { children: string }) => (
-  <kbd className="rounded border border-line-strong bg-panel px-1 font-sans text-[0.625rem] text-fg-2">{children}</kbd>
+  <kbd className="rounded border border-line-strong bg-panel px-1 font-sans text-xs leading-4 text-fg-2">{children}</kbd>
 );

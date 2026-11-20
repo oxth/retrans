@@ -8,6 +8,7 @@ import { useSuggestion } from "./Suggestion";
 import { Icon } from "./Icon";
 import { NEEDS_REVIEW_TEXT, SOURCE_CHANGED, STATUS_TEXT, StatusDot } from "./StatusDot";
 import { Warnings } from "./Warnings";
+import { languageWithCode } from "./locales";
 
 /** Stable callbacks owned by AppShell; every cell shares the same object. */
 export interface EditActions {
@@ -19,6 +20,8 @@ export interface EditActions {
   cancel: () => void;
   /** Opens the next missing cell; returns false (and closes the editor) when there is none. */
   next: (id: KeyId, locale: string) => boolean;
+  /** Opens the previous missing cell; returns false (and closes the editor) when there is none. */
+  prev: (id: KeyId, locale: string) => boolean;
   review: (id: KeyId, locale: string) => void;
   /** Reports an error that can no longer be shown inline (editor already unmounted). */
   error?: (message: string) => void;
@@ -55,7 +58,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     return (
       <div className="flex items-center gap-2 rounded-md bg-panel px-1.5 py-1 text-muted" data-cell="not-applicable" data-locale={locale}>
         {code}
-        <span className="italic">not used in {locale}</span>
+        <span className="italic">not used in {languageWithCode(locale)}</span>
       </div>
     );
   }
@@ -92,6 +95,9 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
           onNextMissing={() => {
             if (!actions.next(id, locale)) refocus.current = true;
           }}
+          onPrevMissing={() => {
+            if (!actions.prev(id, locale)) refocus.current = true;
+          }}
           onMarkReviewed={isBase ? undefined : () => isTranslated(session.value(id, locale)) && actions.review(id, locale)}
           onRefocus={() => {
             refocus.current = true;
@@ -112,15 +118,21 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     }
   };
 
+  // A named group, not a button: it holds its own buttons (Review, Accept draft). Enter or F2 edits.
+  const cellLabel = `${languageWithCode(locale)} translation of ${id}`;
+
   if (!v || !isTranslated(v)) {
     const draft = session.workspace?.drafts[id]?.[locale];
     return (
       <div
-        className="flex cursor-text flex-wrap items-center gap-2 rounded-md border border-dashed border-danger-line px-1.5 py-1 text-danger hover:bg-danger-soft"
+        className="flex cursor-text flex-wrap items-center gap-2 rounded-md border border-dashed border-line-strong px-1.5 py-1 text-fg-2 hover:bg-hover"
         data-cell="missing"
         ref={el}
         data-locale={locale}
         tabIndex={0}
+        role="group"
+        aria-label={`${cellLabel}: missing`}
+        aria-keyshortcuts="Enter F2"
         onClick={() => actions.start(id, locale)}
         onKeyDown={onKeyDown}
       >
@@ -153,13 +165,72 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
   const warnings = session.warnings(id, locale);
   const fit = isBase ? null : session.fitOf(id, locale);
   const statusLabel = `${STATUS_TEXT[meta.status]}${meta.needsReview ? `; ${NEEDS_REVIEW_TEXT}` : ""}`;
+  // Review stays in view only where it needs attention (source changed); elsewhere it appears on hover or focus.
+  const reviewButton = (overlay: boolean) => (
+    <button
+      type="button"
+      aria-label={`Mark reviewed (${statusLabel})`}
+      title="Mark reviewed (⌘⇧R / Ctrl+Shift+R)"
+      data-review={overlay ? "hover" : "pinned"}
+      className={`inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-md border bg-surface px-1.5 text-xs font-medium hover:border-ok hover:bg-ok-soft hover:text-ok ${
+        meta.needsReview ? "border-warn-line text-fg" : "border-line-strong text-fg-2"
+      } ${overlay ? "invisible absolute right-1 top-1 group-hover/cell:visible group-focus-within/cell:visible" : ""}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        actions.review(id, locale);
+      }}
+    >
+      <Icon name="check" size={13} />
+      Review
+    </button>
+  );
+  const pinnedReview = reviewable && meta.needsReview;
+  const fitsMark = fit?.v === "fits" && (
+    <span role="img" aria-label="Designer: fits" title="A designer checked this fits in the Figma preview." className="inline-flex align-[-2px] text-ok">
+      <Icon name="check" size={13} />
+    </span>
+  );
+  // In a table column the small "fits" check stays beside the text; only the wider badges drop below it.
+  const hasMarks = pinnedReview || warnings.length > 0 || fit?.v === "too-long" || (showCode && !!fitsMark);
+  const marks = (
+    <>
+      <Warnings warnings={warnings} />
+      {fit?.v === "too-long" && (
+        <span
+          data-fit="too-long"
+          aria-describedby={fitNoteId}
+          className="rounded bg-warn-soft px-1.5 text-xs font-medium leading-5 text-warn"
+          title={fit.note ? `Designer: ${fit.note}` : "A designer found this too long in the Figma preview."}
+        >
+          Too long
+          {!fit.note && <span id={fitNoteId} hidden>A designer found this too long in the Figma preview.</span>}
+        </span>
+      )}
+      {showCode && fitsMark}
+      {pinnedReview && (
+        <>
+          <span
+            className="rounded bg-warn-soft px-1.5 text-xs font-medium leading-5 text-warn"
+            title="The base text changed after this was translated. Check the translation still fits, then mark it reviewed."
+          >
+            {SOURCE_CHANGED}
+          </span>
+          {reviewButton(false)}
+        </>
+      )}
+    </>
+  );
   return (
     <div
-      className="group/cell flex cursor-text items-start gap-2 rounded-md border border-transparent px-1.5 py-1 hover:border-line hover:bg-hover"
+      className="group/cell relative flex cursor-text items-start gap-2 rounded-md border border-transparent px-1.5 py-1 hover:border-line hover:bg-hover"
       data-cell="value"
+      data-reviewable={reviewable || undefined}
       ref={el}
       data-locale={locale}
       tabIndex={0}
+      role="group"
+      aria-label={`${cellLabel}: ${v.kind === "text" ? v.text : "complex message"}${isBase ? "" : ` (${statusLabel})`}`}
+      aria-keyshortcuts={isBase ? "Enter F2" : "Enter F2 Control+Shift+R Meta+Shift+R"}
       aria-describedby={fit?.v === "too-long" || fit?.note ? fitNoteId : undefined}
       onClick={() => actions.start(id, locale)}
       onKeyDown={onKeyDown}
@@ -170,61 +241,16 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
           <StatusDot status={meta.status} needsReview={meta.needsReview} machine={meta.machine} />
         </span>
       )}
-      {/* The marks float top-right so the text wraps around them and uses the full width below, even in a narrow table column. */}
+      {/* Badges float top-right in the list (wide rows); in a table column they go under the text so it keeps the width. */}
       <div className="min-w-0 flex-1">
-        {(reviewable || warnings.length > 0 || fit) && (
-          <span className="float-right ml-2 flex items-center gap-1.5">
-            <Warnings warnings={warnings} />
-            {fit?.v === "too-long" && (
-              <span
-                data-fit="too-long"
-                aria-describedby={fitNoteId}
-                className="rounded bg-warn-soft px-1.5 text-[0.6875rem] font-medium leading-5 text-warn"
-                title={fit.note ? `Designer: ${fit.note}` : "A designer found this too long in the Figma preview."}
-              >
-                Too long
-                {!fit.note && <span id={fitNoteId} hidden>A designer found this too long in the Figma preview.</span>}
-              </span>
-            )}
-            {fit?.v === "fits" && (
-              <span role="img" aria-label="Designer: fits" title="A designer checked this fits in the Figma preview." className="flex text-ok">
-                <Icon name="check" size={13} />
-              </span>
-            )}
-            {reviewable && (
-              <>
-                {meta.needsReview && (
-                  <span
-                    className="rounded bg-warn-soft px-1.5 text-[0.6875rem] font-medium leading-5 text-warn"
-                    title="The base text changed after this was translated. Check the translation still fits, then mark it reviewed."
-                  >
-                    {SOURCE_CHANGED}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  aria-label={`Mark reviewed (${statusLabel})`}
-                  title="Mark reviewed (⌘⇧R / Ctrl+Shift+R)"
-                  className={`inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-md border bg-surface px-1.5 text-xs font-medium shadow-sm hover:border-ok hover:bg-ok-soft hover:text-ok ${
-                    meta.needsReview ? "border-warn-line text-fg" : "border-line-strong text-fg-2"
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    actions.review(id, locale);
-                  }}
-                >
-                  <Icon name="check" size={13} />
-                  Review
-                </button>
-              </>
-            )}
-          </span>
-        )}
+        {hasMarks && showCode && <span className="float-right ml-2 flex items-center gap-1.5">{marks}</span>}
         {v.kind === "text" ? (
           <span className="whitespace-pre-wrap break-words">{v.text}</span>
         ) : (
           <span className="italic text-muted">complex message</span>
         )}
+        {!showCode && fitsMark && <> {fitsMark}</>}
+        {hasMarks && !showCode && <div className="mt-1 flex flex-wrap items-center gap-1.5">{marks}</div>}
         {/* The designer's note from the Figma preview, on the cell so it reads without hovering. */}
         {fit?.note && (
           <p id={fitNoteId} className={`mt-0.5 whitespace-pre-wrap break-words text-xs ${fit.v === "too-long" ? "text-warn" : "text-muted"}`}>
@@ -232,6 +258,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
           </p>
         )}
       </div>
+      {reviewable && !meta.needsReview && reviewButton(true)}
     </div>
   );
 });

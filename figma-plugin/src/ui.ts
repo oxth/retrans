@@ -3,8 +3,8 @@
  * select a frame (a temporary preview follows the selection), then check each string and send the results.
  */
 import { parseBundle, serializePreview } from "../../src/preview/format";
-import { renderKeepingNote } from "./keep-focus";
-import { currentStep, languageLabel, linkNote, nothingLinked, type PluginState, progress, resultsKey, toResults } from "./logic";
+import { renderKeepingNote, typedNotes } from "./keep-focus";
+import { currentStep, languageLabel, linkNote, nothingLinked, type PluginState, progress, resultsKey, toResults, withNotes } from "./logic";
 import { LinkError, type RetransProject, draftsProject, draftsTarget, reloadLanguage, findRetrans, linkAfterError, liveApi, pair, pickProject, sendResults } from "./live";
 import type { ToCode, ToUi } from "./protocol";
 
@@ -30,6 +30,9 @@ let previewing: string | null = null;
 /** The marks as they were when last sent or copied, so the confirmation hides once they change. */
 let sentKey: string | null = null;
 let copiedKey: string | null = null;
+let savedKey: string | null = null;
+/** The marks with notes as typed right now, so results never miss a note still on its way to the plugin. */
+const current = () => withNotes(state, typedNotes(app));
 
 const api = () => liveApi(fetch.bind(window), (link as { base: string }).base, token!);
 const connected = () => !!link && link !== "searching" && !!token;
@@ -46,6 +49,13 @@ const lang = (code: string) => esc(languageLabel(code, navigator.language || "en
 
 type Step = "drafts" | "select" | "check";
 
+/** The Retrans mark (the app icon's rows), in the theme's brand colour. */
+const MARK = `<svg class="mark" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+  <rect width="16" height="16" rx="4" style="fill:var(--figma-color-bg-brand)"/>
+  <g fill="#fff"><rect x="3.5" y="4" width="2.5" height="1.8" rx=".9"/><rect x="7" y="4" width="5.5" height="1.8" rx=".9"/>
+  <rect x="3.5" y="7.1" width="2.5" height="1.8" rx=".9"/><rect x="7" y="7.1" width="5.5" height="1.8" rx=".9" opacity=".55"/>
+  <rect x="3.5" y="10.2" width="2.5" height="1.8" rx=".9"/><rect x="7" y="10.2" width="5.5" height="1.8" rx=".9"/></g></svg>`;
+
 function stepsHtml(step: Step): string {
   const names = [["drafts", "Get drafts"], ["select", "Select a frame"], ["check", "Check & send"]] as const;
   const at = names.findIndex(([id]) => id === step);
@@ -60,11 +70,12 @@ function rowHtml(r: PluginState["rows"][number]): string {
     <div class="row-head"><strong>${esc(shortKey(r.key))}</strong> ${flag}
       <button class="link show" data-focus aria-label="Show ${esc(shortKey(r.key))} in the preview copy">Show</button></div>
     <div class="text">${esc(r.text)}</div>
-    <div class="bar">
-      <button data-verdict="fits" aria-pressed="${r.verdict === "fits"}">Fits</button>
-      <button data-verdict="too-long" aria-pressed="${r.verdict === "too-long"}">Too long</button>
+    <div class="act">
+      <div class="seg" role="group" aria-label="Does ${esc(shortKey(r.key))} fit?">
+        <button data-verdict="fits" aria-pressed="${r.verdict === "fits"}">Fits</button><button data-verdict="too-long" aria-pressed="${r.verdict === "too-long"}">Too long</button>
+      </div>
+      <input type="text" data-note placeholder="Note (optional)" value="${esc(r.note ?? "")}" aria-label="Note for ${esc(shortKey(r.key))}">
     </div>
-    <input type="text" data-note placeholder="Note (optional)" value="${esc(r.note ?? "")}" aria-label="Note for ${esc(shortKey(r.key))}">
   </div>`;
 }
 
@@ -163,6 +174,7 @@ function checkHtml(): string {
       <button id="copy" ${dis(!checked)}>Copy results</button>
     </div>
     ${sentKey === resultsKey(state) ? `<p class="ok" role="status">Sent. Apply them in Retrans.</p>` : ""}
+    ${savedKey === resultsKey(state) ? `<p class="ok" role="status">Saved ${esc(resultsName())}. Import it in Retrans with Import designer results….</p>` : ""}
     ${copiedKey === resultsKey(state) ? `<p class="ok" role="status">Copied. Paste it into a file named ${esc(resultsName())} and import it in Retrans with Import designer results….</p>` : ""}
     <p class="muted">Select another frame to check it too; your marks are kept.</p>`;
 }
@@ -171,6 +183,7 @@ function render(): void {
   const step: Step = choosing ? "drafts" : currentStep(state);
   const body = step === "drafts" ? draftsHtml() : step === "select" ? selectHtml() : checkHtml();
   renderKeepingNote(app, `
+    <header class="head">${MARK}<span>Retrans Preview</span></header>
     ${stepsHtml(step)}
     ${bannerHtml()}
     ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
@@ -180,7 +193,7 @@ function render(): void {
 }
 
 function resultsText(): string {
-  return serializePreview(toResults(state, new Date()));
+  return serializePreview(toResults(current(), new Date()));
 }
 
 function resultsName(): string {
@@ -235,7 +248,7 @@ async function start(): Promise<void> {
 function useDrafts(msg: ToCode & { type: "bundle" }): void {
   choosing = false;
   useFile = false;
-  sentKey = copiedKey = null;
+  sentKey = copiedKey = savedKey = null;
   post(msg);
 }
 
@@ -304,8 +317,9 @@ app.addEventListener("click", async (e) => {
   } else if (t.id === "send") {
     await live(async () => {
       sentKey = null;
-      await sendResults(api(), toResults(state, new Date()), state.projectId ? state.fileName ?? undefined : undefined, state.projectId);
-      sentKey = resultsKey(state);
+      const marks = current();
+      await sendResults(api(), toResults(marks, new Date()), state.projectId ? state.fileName ?? undefined : undefined, state.projectId);
+      sentKey = resultsKey(marks);
     });
   } else if (t.id === "load") (document.getElementById("file") as HTMLInputElement).click();
   else if (t.id === "reload") await reloadDrafts();
@@ -315,6 +329,8 @@ app.addEventListener("click", async (e) => {
     a.href = URL.createObjectURL(new Blob([resultsText()], { type: "application/json" }));
     a.download = resultsName();
     a.click();
+    savedKey = resultsKey(current());
+    render();
   } else if (t.id === "copy") {
     const text = resultsText();
     try {
@@ -327,7 +343,7 @@ app.addEventListener("click", async (e) => {
       document.execCommand("copy");
       area.remove();
     }
-    copiedKey = resultsKey(state);
+    copiedKey = resultsKey(current());
     render();
   } else if (row && t.dataset.verdict) {
     const v = t.dataset.verdict as "fits" | "too-long";

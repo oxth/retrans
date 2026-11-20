@@ -81,7 +81,7 @@ You need Node.js 20.16+ (or 22.3+), pnpm, Rust with the [Tauri 2 prerequisites](
 
 ```sh
 pnpm install
-pnpm tauri dev
+pnpm app:dev
 ```
 
 [CONTRIBUTING.md](CONTRIBUTING.md) covers tests, builds and releases.

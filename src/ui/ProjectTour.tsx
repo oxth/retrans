@@ -22,9 +22,15 @@ export const STOPS: TourStop[] = [
     body: <>A red dot means there's no translation yet. Click the cell to type one, and press Tab to jump to the next missing cell.</>,
   },
   {
-    targets: ['[data-cell="value"] button[aria-label^="Mark reviewed"]'],
+    // The pinned Review (Source changed) is always visible; elsewhere it shows on hover, so point at the cell.
+    targets: ['[data-cell="value"] [data-review="pinned"]', '[data-cell="value"][data-reviewable]'],
     title: "Mark translations reviewed",
-    body: <>When a translation looks right, click <strong>Review</strong> (or press {mod}⇧R). The dot turns green, and the status is shared through git.</>,
+    body: (
+      <>
+        When a translation looks right, click <strong>Review</strong> (or select it and press {mod}⇧R). It shows when you hover or select a
+        translation, and stays in view where the source changed. The ring fills in, and the status is shared through git.
+      </>
+    ),
   },
   {
     targets: ['[role="group"][aria-label="Filters"]'],

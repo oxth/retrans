@@ -14,8 +14,10 @@ Retrans is a [Tauri 2](https://tauri.app/) app: a React + TypeScript frontend in
 
 ```sh
 pnpm install
-pnpm tauri dev
+pnpm app:dev
 ```
+
+`pnpm app:dev` runs `tauri dev` as "Retrans Dev" (`com.retrans.dev`, from `src-tauri/tauri.dev.conf.json`), so it has its own settings folder and never mixes with an installed Retrans. API keys stay shared: the keychain service is fixed in `secrets.rs`.
 
 ## Tests
 
@@ -55,7 +57,7 @@ The command also creates `android/` and `ios/` folders; delete them, as the app 
 
 ## Manual checklist
 
-The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts`, `src/test/e2e-mt.test.ts` for batch machine translation with a fake engine, `src/test/e2e-package.test.ts` for the translator package round trip, and `src/test/e2e-workspace.test.ts` for the TypeScript workspace round trip). These GUI checks need a person, using `pnpm tauri dev` on a copy of each fixture in `src/test/fixtures/`:
+The core editing logic is covered by automated tests (`src/test/e2e-core.test.ts`, `src/test/e2e-mt.test.ts` for batch machine translation with a fake engine, `src/test/e2e-package.test.ts` for the translator package round trip, and `src/test/e2e-workspace.test.ts` for the TypeScript workspace round trip). These GUI checks need a person, using `pnpm app:dev` on a copy of each fixture in `src/test/fixtures/`:
 
 - [ ] The window opens and the project loads from the chosen folder.
 - [ ] Tab moves to the next missing cell; fill a missing Thai cell this way and mark it reviewed.

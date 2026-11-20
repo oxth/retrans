@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { parseKeyId } from "../core/model";
 import type { ProjectSession } from "../core/session";
 import { type BatchResult, missingItems } from "../mt/batch";
-import { Dialog, btnGhost, btnPrimary, inputCls } from "./Dialog";
+import { Dialog, btnGhost, btnPrimary, btnSecondary, inputCls } from "./Dialog";
+import { languageWithCode } from "./locales";
 import { activeTranslator, useMt } from "./mt-store";
 import { instructionsFor } from "./instructions";
 import { cancelRun, clearRun, type RunPhase, startRun, UNTABBED, useRuns } from "./runs";
@@ -16,7 +17,10 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
   const mt = useMt();
   const { baseLocale, locales, namespaces, format } = session.data;
   const targets = useMemo(() => locales.filter((l) => l !== baseLocale), [locales, baseLocale]);
+  // Start with every language that has gaps, so the dialog never opens on "0 missing" when there's work.
   const [picked, setPicked] = useState<string[]>(() => {
+    const withGaps = targets.filter((l) => missingItems(session, l, "all").length > 0);
+    if (withGaps.length) return withGaps;
     const first = p.defaultLocale && targets.includes(p.defaultLocale) ? p.defaultLocale : targets[0];
     return first ? [first] : [];
   });
@@ -40,6 +44,11 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
   };
 
   const cancel = () => cancelRun(tabId);
+  /** After a run with failures: the same languages and group again; only strings still missing are sent. */
+  const retry = () => {
+    clearRun(tabId);
+    start();
+  };
   const close = () => {
     if (phase.kind === "done") clearRun(tabId);
     p.onClose();
@@ -62,7 +71,7 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
             {targets.map((l) => (
               <label key={l} className="mr-4 inline-flex items-center gap-1.5">
                 <input type="checkbox" checked={picked.includes(l)} onChange={() => toggle(l)} />
-                {l}
+                {languageWithCode(l)}
               </label>
             ))}
           </fieldset>
@@ -102,7 +111,7 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
           {phase.locales.length > 1 && (
             <ul className="text-xs text-muted">
               {phase.locales.map((l) => (
-                <li key={l}>{`${l}: ${phase.perLocale[l]?.done ?? 0} of ${phase.perLocale[l]?.total ?? 0}`}</li>
+                <li key={l}>{`${languageWithCode(l)}: ${phase.perLocale[l]?.done ?? 0} of ${phase.perLocale[l]?.total ?? 0}`}</li>
               ))}
             </ul>
           )}
@@ -117,12 +126,15 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
         <div className="space-y-4">
           {phase.locales.map((l) => (
             <section key={l} className="space-y-2">
-              {phase.locales.length > 1 && <h3 className="text-sm font-semibold">{l}</h3>}
+              {phase.locales.length > 1 && <h3 className="text-sm font-semibold">{languageWithCode(l)}</h3>}
               <Summary result={phase.results[l]} />
             </section>
           ))}
           <p className="text-xs text-muted">Machine translations are marked for review.</p>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {phase.locales.some((l) => phase.results[l] && (phase.results[l].failed.length > 0 || phase.results[l].unsafe.length > 0)) && (
+              <button className={btnSecondary} onClick={retry}>Try again</button>
+            )}
             <button className={btnPrimary} onClick={close}>Close</button>
           </div>
         </div>
