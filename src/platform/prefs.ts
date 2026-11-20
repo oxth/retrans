@@ -292,3 +292,15 @@ export async function setLaunchMode(m: LaunchMode): Promise<void> {
   await s.set("launchMode", m);
   await s.save();
 }
+
+/** Whether the live link with the Figma plugin was on: the app starts it again on launch. */
+export async function getLiveLink(): Promise<boolean> {
+  const s = await getStore();
+  return (await s.get<boolean>("liveLink")) === true;
+}
+
+export async function setLiveLink(on: boolean): Promise<void> {
+  const s = await getStore();
+  await s.set("liveLink", on);
+  await s.save();
+}

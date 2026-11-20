@@ -6,15 +6,20 @@ import { readFigmaFolder } from "../figma/sync";
 import { parseResults } from "../preview/format";
 import { diffResults, type ResultsDiff } from "../preview/results";
 import { joinPath } from "../platform/fs";
+import { forgetPlugin, linkStart, linkStatus, type LinkStatus, linkStop, pairCode } from "../platform/preview-link";
+import { getLiveLink, setLiveLink } from "../platform/prefs";
 import { FIGMA_DEFAULT_DIR, isSafeLocalesDir } from "../workspace/meta";
 import { btnPrimary, btnSecondary } from "./Dialog";
-import { btnRow, fieldBase, fieldCls, Group, Row } from "./settings-ui";
+import { btnRow, fieldBase, fieldCls, Group, Row, Switch } from "./settings-ui";
 import { FigmaImportDialog } from "./FigmaImportDialog";
 import { PreviewExportDialog, PreviewResultsDialog } from "./PreviewDialogs";
 import { saveFigma } from "./figma-meta";
 import { useApp, useSessionVersion } from "./store";
 
 const NEW = "__new";
+
+/** A pairing code's remaining time, as m:ss. */
+const mmss = (secs: number) => `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
 
 /** Settings → Figma (workspaces only): the Figma folder, which language each Figma mode is, and Import. */
 export function FigmaSettings({ session }: { session: ProjectSession }) {
@@ -30,6 +35,38 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
   const [results, setResults] = useState<ResultsDiff | null>(null);
   const [previewNote, setPreviewNote] = useState<{ ok: boolean; text: string } | null>(null);
   const currentDir = figma?.dir ?? FIGMA_DEFAULT_DIR;
+  // Live link with the Figma plugin: pairing is per computer, so this shows for every workspace.
+  const [linkOn, setLinkOn] = useState(false);
+  const [status, setStatus] = useState<LinkStatus | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [left, setLeft] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    getLiveLink().then(
+      (v) => live && setLinkOn(v),
+      () => {},
+    );
+    linkStatus().then(
+      (s) => live && setStatus(s),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // The pairing code counts down to 0, then the button comes back; the interval ends with the code.
+  useEffect(() => {
+    if (!pairing) return;
+    const id = setInterval(() => {
+      const secs = Math.ceil((pairing.expiresAt - Date.now()) / 1000);
+      if (secs <= 0) setPairing(null);
+      else setLeft(secs);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [pairing]);
 
   useEffect(() => {
     let live = true;
@@ -55,6 +92,45 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
     else delete next[mode];
     saveFigma(session, { modes: next });
   };
+
+  const refreshStatus = () => {
+    void linkStatus().then(setStatus, () => {});
+  };
+  const toggleLink = (on: boolean) => {
+    setLinkOn(on);
+    setStartError(null);
+    void setLiveLink(on).catch(() => {});
+    if (on) {
+      void linkStart().then(refreshStatus, (e) => {
+        setStartError(e instanceof Error ? e.message : String(e));
+        refreshStatus();
+      });
+    } else {
+      void linkStop().then(refreshStatus, refreshStatus);
+    }
+  };
+  async function pair() {
+    setStartError(null);
+    try {
+      const { code, expiresInMs } = await pairCode();
+      setLinkOn(true);
+      void setLiveLink(true).catch(() => {});
+      setPairing({ code, expiresAt: Date.now() + expiresInMs });
+      setLeft(Math.ceil(expiresInMs / 1000));
+      refreshStatus();
+    } catch (e) {
+      setStartError(e instanceof Error ? e.message : String(e));
+    }
+  }
+  const forget = () => {
+    setStartError(null);
+    void forgetPlugin().then(refreshStatus, refreshStatus);
+  };
+  const liveNote = startError
+    ? `Couldn't start: ${startError}`
+    : status?.paired
+      ? `Paired${status.port !== null ? ` · listening on port ${status.port}` : ""}`
+      : "Not paired";
 
   async function importResults() {
     setPreviewNote(null);
@@ -148,6 +224,33 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
           <button type="button" className={btnSecondary} onClick={() => void importResults()}>Import designer results…</button>
         </Row>
       </Group>}
+      <Group label="Live link with Figma" footer={liveNote}>
+        <Row label="Live link" hint="Lets the Figma plugin talk to Retrans. Pairing is per computer, not per project.">
+          <Switch label="Live link with the Figma plugin" checked={linkOn} onChange={toggleLink} />
+        </Row>
+        <Row
+          label="Plugin pairing"
+          hint={pairing ? "Enter the code in the Figma plugin before it expires." : "A six-digit code pairs the plugin with this computer."}
+        >
+          {pairing ? (
+            <>
+              <span className="font-mono text-2xl tracking-widest">{pairing.code}</span>
+              <span className="text-xs text-muted">Expires in {mmss(left)}</span>
+            </>
+          ) : (
+            <button type="button" className={btnRow} onClick={() => void pair()}>
+              Pair a plugin
+            </button>
+          )}
+        </Row>
+        {status?.paired && (
+          <Row label="Paired plugin" hint="The plugin can ask for previews until it is forgotten.">
+            <button type="button" className={btnRow} onClick={forget}>
+              Forget plugin
+            </button>
+          </Row>
+        )}
+      </Group>
       {importing && <FigmaImportDialog session={session} onClose={() => setImporting(false)} />}
       {previewing && <PreviewExportDialog session={session} onClose={() => setPreviewing(false)} />}
       {results && (

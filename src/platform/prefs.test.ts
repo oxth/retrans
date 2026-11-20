@@ -96,4 +96,20 @@ describe("prefs store migration wiring", () => {
     await expect(getRecent()).rejects.toThrow("load failed");
     await expect(getRecent()).resolves.toEqual(fixture.recent);
   });
+
+  it("live link is off on an empty store", async () => {
+    const { getLiveLink } = (await import("./prefs")) as typeof import("./prefs") & {
+      getLiveLink: () => Promise<boolean>;
+    };
+    await expect(getLiveLink()).resolves.toBe(false);
+  });
+
+  it("stores the live link preference", async () => {
+    const { getLiveLink, setLiveLink } = (await import("./prefs")) as typeof import("./prefs") & {
+      getLiveLink: () => Promise<boolean>;
+      setLiveLink: (on: boolean) => Promise<void>;
+    };
+    await setLiveLink(true);
+    await expect(getLiveLink()).resolves.toBe(true);
+  });
 });

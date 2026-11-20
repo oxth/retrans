@@ -7,8 +7,10 @@ import { startAutosave, startUnsavedSync, useApp } from "./ui/store";
 import { useMt } from "./ui/mt-store";
 import { UpdateAvailableToast } from "./ui/UpdateAvailableToast";
 import { TabBar } from "./ui/TabBar";
+import { log } from "./platform/log";
 import { installMenu } from "./platform/menu";
-import { onPreviewRequest } from "./platform/preview-link";
+import { getLiveLink } from "./platform/prefs";
+import { linkStart, onPreviewRequest } from "./platform/preview-link";
 import type { LiveRequest } from "./preview/live";
 import { MENU_ACTIONS } from "./ui/menu-actions";
 import { launch, startTabPersistence } from "./ui/restore";
@@ -82,6 +84,10 @@ export default function App() {
     // Reopen last session's tabs (or not, per Settings → Startup), then keep the saved list current.
     const stop = startTabPersistence();
     void launch().catch((e) => console.warn("reopening tabs failed", e));
+    // Live link: when it was on at quit, start it again; a failure is logged, never shown.
+    void (async () => {
+      if (await getLiveLink()) await linkStart();
+    })().catch((e) => log.error("starting the live link failed", e));
     return () => {
       stop();
       stopMenu();
