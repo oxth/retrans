@@ -148,6 +148,18 @@ export function copyPlacement(source: { x: number; y: number; width: number; abs
   return { into: "page", x: source.abs.x + source.abs.width + gap, y: source.abs.y };
 }
 
+/** The state with notes as typed in the window, for building results before a typed note's change has come back. */
+export function withNotes(state: PluginState, typed: Map<string, string>): PluginState {
+  if (!typed.size) return state;
+  return {
+    ...state,
+    rows: state.rows.map((r) => {
+      const note = typed.get(r.key);
+      return note === undefined || note === (r.note ?? "") ? r : { ...r, note };
+    }),
+  };
+}
+
 /** What the designer has marked, so "Sent" and "Copied" can tell when the marks changed since. */
 export function resultsKey(state: PluginState): string {
   return JSON.stringify(state.rows.map((r) => [r.key, r.verdict, r.note ?? ""]));

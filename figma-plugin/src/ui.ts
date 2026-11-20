@@ -3,8 +3,8 @@
  * select a frame (a temporary preview follows the selection), then check each string and send the results.
  */
 import { parseBundle, serializePreview } from "../../src/preview/format";
-import { renderKeepingNote } from "./keep-focus";
-import { currentStep, languageLabel, linkNote, nothingLinked, type PluginState, progress, resultsKey, toResults } from "./logic";
+import { renderKeepingNote, typedNotes } from "./keep-focus";
+import { currentStep, languageLabel, linkNote, nothingLinked, type PluginState, progress, resultsKey, toResults, withNotes } from "./logic";
 import { LinkError, type RetransProject, draftsProject, draftsTarget, reloadLanguage, findRetrans, linkAfterError, liveApi, pair, pickProject, sendResults } from "./live";
 import type { ToCode, ToUi } from "./protocol";
 
@@ -30,6 +30,9 @@ let previewing: string | null = null;
 /** The marks as they were when last sent or copied, so the confirmation hides once they change. */
 let sentKey: string | null = null;
 let copiedKey: string | null = null;
+let savedKey: string | null = null;
+/** The marks with notes as typed right now, so results never miss a note still on its way to the plugin. */
+const current = () => withNotes(state, typedNotes(app));
 
 const api = () => liveApi(fetch.bind(window), (link as { base: string }).base, token!);
 const connected = () => !!link && link !== "searching" && !!token;
@@ -163,6 +166,7 @@ function checkHtml(): string {
       <button id="copy" ${dis(!checked)}>Copy results</button>
     </div>
     ${sentKey === resultsKey(state) ? `<p class="ok" role="status">Sent. Apply them in Retrans.</p>` : ""}
+    ${savedKey === resultsKey(state) ? `<p class="ok" role="status">Saved ${esc(resultsName())}. Import it in Retrans with Import designer results….</p>` : ""}
     ${copiedKey === resultsKey(state) ? `<p class="ok" role="status">Copied. Paste it into a file named ${esc(resultsName())} and import it in Retrans with Import designer results….</p>` : ""}
     <p class="muted">Select another frame to check it too; your marks are kept.</p>`;
 }
@@ -180,7 +184,7 @@ function render(): void {
 }
 
 function resultsText(): string {
-  return serializePreview(toResults(state, new Date()));
+  return serializePreview(toResults(current(), new Date()));
 }
 
 function resultsName(): string {
@@ -235,7 +239,7 @@ async function start(): Promise<void> {
 function useDrafts(msg: ToCode & { type: "bundle" }): void {
   choosing = false;
   useFile = false;
-  sentKey = copiedKey = null;
+  sentKey = copiedKey = savedKey = null;
   post(msg);
 }
 
@@ -304,8 +308,9 @@ app.addEventListener("click", async (e) => {
   } else if (t.id === "send") {
     await live(async () => {
       sentKey = null;
-      await sendResults(api(), toResults(state, new Date()), state.projectId ? state.fileName ?? undefined : undefined, state.projectId);
-      sentKey = resultsKey(state);
+      const marks = current();
+      await sendResults(api(), toResults(marks, new Date()), state.projectId ? state.fileName ?? undefined : undefined, state.projectId);
+      sentKey = resultsKey(marks);
     });
   } else if (t.id === "load") (document.getElementById("file") as HTMLInputElement).click();
   else if (t.id === "reload") await reloadDrafts();
@@ -315,6 +320,8 @@ app.addEventListener("click", async (e) => {
     a.href = URL.createObjectURL(new Blob([resultsText()], { type: "application/json" }));
     a.download = resultsName();
     a.click();
+    savedKey = resultsKey(current());
+    render();
   } else if (t.id === "copy") {
     const text = resultsText();
     try {
@@ -327,7 +334,7 @@ app.addEventListener("click", async (e) => {
       document.execCommand("copy");
       area.remove();
     }
-    copiedKey = resultsKey(state);
+    copiedKey = resultsKey(current());
     render();
   } else if (row && t.dataset.verdict) {
     const v = t.dataset.verdict as "fits" | "too-long";

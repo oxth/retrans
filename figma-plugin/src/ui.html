@@ -9,6 +9,8 @@
   button { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--figma-color-border); background: var(--figma-color-bg); color: inherit; cursor: pointer; }
   button.primary { background: var(--figma-color-bg-brand); color: var(--figma-color-text-onbrand); border-color: transparent; }
   button[aria-pressed="true"] { background: var(--figma-color-bg-selected); border-color: var(--figma-color-border-selected); }
+  /* A pressed Too long reads as a warning, not the same "selected" as Fits. */
+  button[data-verdict="too-long"][aria-pressed="true"] { background: var(--figma-color-bg-warning-tertiary, var(--figma-color-bg-selected)); border-color: var(--figma-color-border-warning, var(--figma-color-border-selected)); }
   button:disabled { opacity: .5; cursor: default; }
   input[type=text] { font: inherit; width: 100%; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--figma-color-border); border-radius: 4px; background: transparent; color: inherit; }
   .muted { color: var(--figma-color-text-secondary); }
