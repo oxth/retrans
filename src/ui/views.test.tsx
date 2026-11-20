@@ -145,8 +145,8 @@ describe("views", () => {
     const th = table.querySelector<HTMLElement>('[title="Thai (th)"]')!;
     expect([...th.children].map((c) => c.textContent)).toEqual(["Thai", "th"]);
     expect(th.children[1]).toHaveClass("shrink-0"); // the name gives way, the code doesn't
-    // The base tag sits with the name.
-    expect([...table.querySelector<HTMLElement>('[title="English (en)"]')!.children].map((c) => c.textContent)).toEqual(["English", "base", "en"]);
+    // The base tag comes after the code.
+    expect([...table.querySelector<HTMLElement>('[title="English (en)"]')!.children].map((c) => c.textContent)).toEqual(["English", "en", "base"]);
     const side = screen.getByRole("complementary", { name: "Sidebar" });
     expect(side.querySelector('[title="English (en)"]')).toHaveTextContent(/^Englishbase$/);
     expect(side.querySelector('[title="Thai (th)"]')).toHaveTextContent(/^Thai$/);

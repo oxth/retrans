@@ -132,14 +132,14 @@ export function TableView({ session, rows, locales, version, editing, actions, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId, editLocale]);
   const pin = (left: number) => ({ position: "sticky" as const, left, zIndex: 1 });
-  // One line: in a narrow column the name gives way ("Chinese (Chi…"), the base tag and the code never do.
+  // One line: name, code, then the base tag. In a narrow column the name gives way ("Chinese (Chi…"); the code and the tag never do.
   const head = (l: string, isBase = false) => {
     const name = localeLabel(l);
     return (
       <span className="flex min-w-0 items-center gap-1.5" title={languageWithCode(l)}>
         {name !== l && <span className="min-w-0 truncate text-fg-2">{name}</span>}
-        {isBase && <span className="shrink-0 rounded bg-sunken px-1 font-normal text-fg-2">base</span>}
         <span className="shrink-0 font-mono font-normal text-muted">{l}</span>
+        {isBase && <span className="shrink-0 rounded bg-sunken px-1 font-normal text-fg-2">base</span>}
       </span>
     );
   };
