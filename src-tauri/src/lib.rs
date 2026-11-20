@@ -88,6 +88,12 @@ pub fn run() {
             let engine = app.state::<Arc<mt::engine::Engine>>().inner().clone();
             mt::engine::unload_at_exit(engine.clone());
             mt::engine::spawn_idle_unloader(engine);
+
+            let version = app.package_info().version.to_string();
+            app.manage(preview_link::commands::LinkState::new(
+                app.handle().clone(),
+                version,
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -121,6 +127,13 @@ pub fn run() {
             secrets::secret_set,
             secrets::secret_has,
             secrets::secret_delete,
+            preview_link::commands::preview_link_start,
+            preview_link::commands::preview_link_stop,
+            preview_link::commands::preview_link_status,
+            preview_link::commands::preview_pair_code,
+            preview_link::commands::preview_forget,
+            preview_link::commands::preview_reply,
+            preview_link::commands::preview_focus,
             set_unsaved,
             system_info
         ])
