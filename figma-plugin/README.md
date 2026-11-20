@@ -3,7 +3,8 @@
 Shows Retrans draft translations in copies of real Figma frames, so a designer can mark each string
 *Fits* or *Too long* before the drafts are accepted. It works with files: Retrans exports a
 `.retrans-preview.json`, the plugin saves a `.retrans-results.json` that Retrans imports. The plugin
-never changes the original frames or variables and has no network access.
+never changes the original frames or variables. Its only network access is to the Retrans app on
+your own computer (`localhost` ports 47321 to 47325), to get drafts and send results without files.
 
 ## Build and try it
 
@@ -30,3 +31,8 @@ These can't run in automated tests. Record the outcome here.
 | Remove copies leaves originals | – | – |
 | A frame inside a Section, and a frame nested in another frame or auto-layout: copy lands beside it and the original layout is unchanged | – | – |
 | Two different Figma files keep their own loaded file and verdicts | – | – |
+| Pair with the 6-digit code shown in Retrans (Settings, Figma) | – | – |
+| *Get drafts* loads a project's drafts for the chosen language | – | – |
+| *Send to Retrans* delivers results; Retrans shows them | – | – |
+| Retrans closed: plugin says "Open Retrans to connect" and the file buttons still work | – | – |
+| Forget the plugin in Retrans: plugin asks to connect again | – | – |

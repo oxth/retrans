@@ -23,6 +23,8 @@ function fileId(): string {
 const storageKey = `retransPreview:${fileId()}`;
 
 let state: PluginState = { bundle: null, fileName: null, rows: [] };
+/** Pairing token for the Retrans app on this computer; kept here because only the plugin code can store it. */
+let token: string | null = null;
 /** Text nodes in the copies, per string key, for "focus". Not stored: copies may be gone next time. */
 const nodesByKey = new Map<string, string[]>();
 
@@ -37,7 +39,7 @@ function selectedFrames(): number {
 }
 
 function publish(): void {
-  send({ type: "state", state, selectedFrames: selectedFrames() });
+  send({ type: "state", state, selectedFrames: selectedFrames(), token });
 }
 
 async function save(): Promise<void> {
@@ -191,6 +193,12 @@ figma.ui.onmessage = async (msg: ToCode) => {
       };
       await save();
     } else if (msg.type === "focus") await focus(msg.key);
+    else if (msg.type === "token") {
+      token = msg.token;
+      if (token) await figma.clientStorage.setAsync("retransToken", token);
+      else await figma.clientStorage.deleteAsync("retransToken");
+      publish();
+    }
   } catch (err) {
     send({ type: "error", message: err instanceof Error ? err.message : String(err) });
   }
@@ -201,5 +209,7 @@ figma.on("selectionchange", publish);
 (async () => {
   const stored = (await figma.clientStorage.getAsync(storageKey)) as PluginState | undefined;
   if (stored?.bundle) state = stored;
+  const t = await figma.clientStorage.getAsync("retransToken");
+  token = typeof t === "string" ? t : null;
   publish();
 })();

@@ -7,9 +7,10 @@ export type ToCode =
   | { type: "make-copies" }
   | { type: "remove-copies" }
   | { type: "verdict"; key: string; verdict: Verdict | null; note?: string }
-  | { type: "focus"; key: string };
+  | { type: "focus"; key: string }
+  | { type: "token"; token: string | null };
 
 /** Messages from the plugin code to the plugin window. */
 export type ToUi =
-  | { type: "state"; state: PluginState; selectedFrames: number }
+  | { type: "state"; state: PluginState; selectedFrames: number; token: string | null }
   | { type: "error"; message: string };
