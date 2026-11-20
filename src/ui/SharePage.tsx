@@ -8,6 +8,7 @@ import { buildPackage, ExportError, packageFileName } from "../package/build";
 import { diffPackage, type ImportDiff, openIncoming, openIncomingFolder } from "../package/diff";
 import { MANIFEST_PATH, parseManifest } from "../package/manifest";
 import { btnPrimary, btnSecondary } from "./Dialog";
+import { languageWithCode } from "./locales";
 import { ExportDialog } from "./ExportDialog";
 import { ImportDialog } from "./ImportDialog";
 import { useApp, useSessionVersion } from "./store";
@@ -105,7 +106,7 @@ export function SharePage({ session }: { session: ProjectSession }) {
         <section aria-label="Export translations" className="space-y-3">
           <h2 className="font-medium">Export translations</h2>
           <p className="text-muted">Write the translations back to your code, or to another format.</p>
-          <button className={btnPrimary} onClick={() => setExporting(true)}>Export…</button>
+          <button className={btnPrimary} onClick={() => setExporting(true)}>Export to code or another format…</button>
         </section>
       )}
       <section aria-label="Export" className="space-y-3">
@@ -115,7 +116,6 @@ export function SharePage({ session }: { session: ProjectSession }) {
             <label key={l} className="flex items-center gap-1">
               <input
                 type="checkbox"
-                aria-label={l}
                 checked={!off.has(l)}
                 onChange={() =>
                   setOff((s) => {
@@ -125,15 +125,26 @@ export function SharePage({ session }: { session: ProjectSession }) {
                   })
                 }
               />
-              <span className="font-semibold uppercase">{l}</span>
+              <span>{languageWithCode(l)}</span>
             </label>
           ))}
         </div>
         <div className="flex items-center gap-3">
-          <button className={btnPrimary} disabled={dirty || busy || chosen.length === 0} onClick={() => void doExport()}>
-            Export…
+          {/* In a workspace, Export to code is the page's main action; the package is the second one. */}
+          <button
+            className={session.workspace ? btnSecondary : btnPrimary}
+            disabled={dirty || busy || chosen.length === 0}
+            aria-busy={busy || undefined}
+            onClick={() => void doExport()}
+          >
+            {busy ? "Exporting…" : fromPackage ? "Export package for the developer…" : "Export package for translator…"}
           </button>
-          {dirty && <span className="text-xs text-warn">Save your changes first.</span>}
+          {dirty && (
+            <>
+              <span className="text-xs text-warn">Save your changes first.</span>
+              <button className={btnSecondary} onClick={() => void useApp.getState().save()}>Save</button>
+            </>
+          )}
         </div>
       </section>
       <section aria-label="Import" className="space-y-3">

@@ -139,7 +139,7 @@ describe("Export dialog", () => {
     await openWs();
     await userEvent.click(screen.getByRole("button", { name: "Import / Export" }));
     const section = screen.getByRole("region", { name: "Export translations" });
-    await userEvent.click(within(section).getByRole("button", { name: "Export…" }));
+    await userEvent.click(within(section).getByRole("button", { name: "Export to code or another format…" }));
     expect(screen.getByRole("dialog", { name: "Export" })).toBeInTheDocument();
   });
 
@@ -299,7 +299,7 @@ describe("Export dialog", () => {
     await user.click(within(dialog).getByRole("button", { name: "Choose folder…" }));
     await exportNow(dialog, user);
     const ask = await within(dialog).findByRole("region", { name: "Files to replace" });
-    expect(ask).toHaveTextContent("These files already exist and will be replaced:");
+    expect(ask).toHaveTextContent("These files already exist and will be replaced. This can't be undone from Retrans.");
     expect(within(ask).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
       `${LOCALES}/change-password.ts`, `${LOCALES}/common.ts`, `${LOCALES}/mapLocale.ts`,
     ]);

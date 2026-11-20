@@ -6,7 +6,7 @@ import {
   type ExportPlan, PartialExportError, planExport, recordWriteBack, SOURCE_CHANGED_MESSAGE, writeExportPlan,
 } from "../workspace/export";
 import { type ExportTarget, jsonEqual } from "../workspace/meta";
-import { btnGhost, btnPrimary, Dialog, btnSecondary } from "./Dialog";
+import { btnDanger, btnGhost, btnPrimary, Dialog, btnSecondary } from "./Dialog";
 import { SOURCE_MISSING_MESSAGE, useApp } from "./store";
 import { isFigmaRow } from "./ListView";
 import { mergeBaseline } from "../figma/export";
@@ -201,6 +201,7 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
   return (
     <Dialog title="Export" onClose={busy ? undefined : onClose} wide>
       <fieldset className="space-y-1 text-sm" disabled={busy || !!confirm}>
+        <legend className="mb-1 text-xs font-medium text-fg-2">Export to</legend>
         {options.map((o) => (
           <div key={o.kind}>
             <label className="flex items-center gap-2">
@@ -240,13 +241,13 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
       {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
       {confirm && (
         <section aria-label="Files to replace" className="mt-3 space-y-2 text-sm">
-          <p>These files already exist and will be replaced:</p>
+          <p>These files already exist and will be replaced. This can't be undone from Retrans.</p>
           <ul className="max-h-40 list-disc overflow-auto pl-5 font-mono text-xs">
             {confirm.existing.map((p) => <li key={p}>{p}</li>)}
           </ul>
           <div className="flex justify-end gap-2">
             <button className={btnGhost} onClick={() => setConfirm(null)}>Cancel</button>
-            <button className={btnPrimary} onClick={() => void replace()}>Replace</button>
+            <button className={btnDanger} onClick={() => void replace()}>Replace</button>
           </div>
         </section>
       )}
@@ -276,9 +277,12 @@ export function ExportDialog({ session, onClose }: { session: ProjectSession; on
         </div>
       )}
 
-      <div className="mt-5 flex justify-end gap-2">
+      <div className="mt-5 flex items-center justify-end gap-2">
+        {!target && !busy && <span className="mr-auto text-xs text-muted">Choose a folder to export to.</span>}
         <button className={btnGhost} disabled={busy} onClick={onClose}>Close</button>
-        <button className={btnPrimary} disabled={busy || !target || !!confirm} onClick={() => void doExport()}>Export</button>
+        <button className={btnPrimary} disabled={busy || !target || !!confirm} aria-busy={busy || undefined} onClick={() => void doExport()}>
+          {busy ? "Exporting…" : "Export"}
+        </button>
       </div>
     </Dialog>
   );
@@ -291,7 +295,6 @@ function Snippet({ text }: { text: string }) {
       <pre className="overflow-auto rounded-md bg-panel p-3 pr-16 text-xs">{text}</pre>
       <button
         className={`${btnSecondary} absolute right-1 top-1 bg-surface text-xs`}
-        aria-label="Copy"
         onClick={() => {
           void navigator.clipboard.writeText(text).then(() => setCopied(true), () => setCopied(false));
         }}

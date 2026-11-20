@@ -96,7 +96,7 @@ describe("Import / Export page", () => {
   it("disables Export with a note while dirty", async () => {
     const s = await open();
     act(() => s.setText(c("b"), "th", "บี"));
-    expect((screen.getByRole("button", { name: "Export…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /^Export package/ }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("Save your changes first.")).toBeTruthy();
   });
 
@@ -104,7 +104,7 @@ describe("Import / Export page", () => {
     const s = await open();
     expect(s.state.project.id).toBeFalsy();
     dlg.save.mockResolvedValue("/out/project-package.zip");
-    await userEvent.click(screen.getByRole("button", { name: "Export…" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Export package/ }));
     await waitFor(() => expect(zip.zipWrite).toHaveBeenCalled());
     expect(s.state.project.id).toBeTruthy();
     expect(zip.zipWrite.mock.calls[0][0]).toBe("/out/project-package.zip");
@@ -117,8 +117,8 @@ describe("Import / Export page", () => {
   it("only exports the checked locales", async () => {
     await open();
     dlg.save.mockResolvedValue("/out/p.zip");
-    await userEvent.click(screen.getByRole("checkbox", { name: "ja" }));
-    await userEvent.click(screen.getByRole("button", { name: "Export…" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Japanese (ja)" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Export package/ }));
     await waitFor(() => expect(zip.zipWrite).toHaveBeenCalled());
     const paths = (zip.zipWrite.mock.calls[0][1] as Entries).map((e) => e.path);
     expect(paths.some((p) => p.includes("/th/"))).toBe(true);
@@ -128,7 +128,7 @@ describe("Import / Export page", () => {
   it("cancelling the save dialog does nothing", async () => {
     await open();
     dlg.save.mockResolvedValue(null);
-    await userEvent.click(screen.getByRole("button", { name: "Export…" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Export package/ }));
     await waitFor(() => expect(dlg.save).toHaveBeenCalled());
     expect(zip.zipWrite).not.toHaveBeenCalled();
     expect(screen.queryByRole("status")).toBeNull();
@@ -137,7 +137,7 @@ describe("Import / Export page", () => {
   it("shows an ExportError message", async () => {
     const fs = new MemoryFs({ ...files(), [`${R}/.retrans/state.json`]: "<<<<<<< nope" });
     await open(fs);
-    await userEvent.click(screen.getByRole("button", { name: "Export…" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Export package/ }));
     expect((await screen.findByRole("alert")).textContent).toBe("Fix .retrans/state.json before exporting.");
     expect(zip.zipWrite).not.toHaveBeenCalled();
   });
@@ -151,7 +151,7 @@ describe("Import / Export page", () => {
     const fs = new MemoryFs(Object.fromEntries(pkg.map((e) => [`${R}/${e.path}`, e.text])));
     await open(fs);
     expect(await screen.findByRole("heading", { name: "Send back to the developer" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Export…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Export package/ })).toBeTruthy();
   });
 });
 
