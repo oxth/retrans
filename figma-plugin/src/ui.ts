@@ -49,6 +49,13 @@ const lang = (code: string) => esc(languageLabel(code, navigator.language || "en
 
 type Step = "drafts" | "select" | "check";
 
+/** The Retrans mark (the app icon's rows), in the theme's brand colour. */
+const MARK = `<svg class="mark" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+  <rect width="16" height="16" rx="4" style="fill:var(--figma-color-bg-brand)"/>
+  <g fill="#fff"><rect x="3.5" y="4" width="2.5" height="1.8" rx=".9"/><rect x="7" y="4" width="5.5" height="1.8" rx=".9"/>
+  <rect x="3.5" y="7.1" width="2.5" height="1.8" rx=".9"/><rect x="7" y="7.1" width="5.5" height="1.8" rx=".9" opacity=".55"/>
+  <rect x="3.5" y="10.2" width="2.5" height="1.8" rx=".9"/><rect x="7" y="10.2" width="5.5" height="1.8" rx=".9"/></g></svg>`;
+
 function stepsHtml(step: Step): string {
   const names = [["drafts", "Get drafts"], ["select", "Select a frame"], ["check", "Check & send"]] as const;
   const at = names.findIndex(([id]) => id === step);
@@ -63,11 +70,12 @@ function rowHtml(r: PluginState["rows"][number]): string {
     <div class="row-head"><strong>${esc(shortKey(r.key))}</strong> ${flag}
       <button class="link show" data-focus aria-label="Show ${esc(shortKey(r.key))} in the preview copy">Show</button></div>
     <div class="text">${esc(r.text)}</div>
-    <div class="bar">
-      <button data-verdict="fits" aria-pressed="${r.verdict === "fits"}">Fits</button>
-      <button data-verdict="too-long" aria-pressed="${r.verdict === "too-long"}">Too long</button>
+    <div class="act">
+      <div class="seg" role="group" aria-label="Does ${esc(shortKey(r.key))} fit?">
+        <button data-verdict="fits" aria-pressed="${r.verdict === "fits"}">Fits</button><button data-verdict="too-long" aria-pressed="${r.verdict === "too-long"}">Too long</button>
+      </div>
+      <input type="text" data-note placeholder="Note (optional)" value="${esc(r.note ?? "")}" aria-label="Note for ${esc(shortKey(r.key))}">
     </div>
-    <input type="text" data-note placeholder="Note (optional)" value="${esc(r.note ?? "")}" aria-label="Note for ${esc(shortKey(r.key))}">
   </div>`;
 }
 
@@ -175,6 +183,7 @@ function render(): void {
   const step: Step = choosing ? "drafts" : currentStep(state);
   const body = step === "drafts" ? draftsHtml() : step === "select" ? selectHtml() : checkHtml();
   renderKeepingNote(app, `
+    <header class="head">${MARK}<span>Retrans Preview</span></header>
     ${stepsHtml(step)}
     ${bannerHtml()}
     ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}

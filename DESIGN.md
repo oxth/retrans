@@ -59,3 +59,11 @@ Tokens are `--c-*` in `src/index.css` (light in `:root`, dark under `prefers-col
 
 ## Voice
 - Plain words over jargon ("Not reviewed", "Source changed"), sentence case, verbs on buttons, an ellipsis when a button opens a dialog.
+
+## Figma plugin (Retrans Preview)
+The plugin lives inside Figma, so it follows Figma's design, not the app tokens above: it should look native next to Figma's own panels, in light and dark.
+- Colour: only Figma's theme variables (`--figma-color-*`, with `themeColors: true` in `showUI`). The one Retrans touch is the 16 px mark in the header, drawn in `--figma-color-bg-brand`.
+- Type: 11/16 px for the panel's own text, 12/18 px for the translations being checked (they are the content).
+- Controls: 24 px high, 5 px corners; Fits / Too long is one joined control with the note beside it. Pressed Fits uses `--figma-color-bg-selected`, pressed Too long `--figma-color-bg-warning-tertiary`.
+- Steps: tabs underlined in `--figma-color-border-selected`; focus: a 2 px ring in the same colour.
+- Source: `figma-plugin/src/ui.html` (styles) and `ui.ts` (markup).
