@@ -3,6 +3,7 @@ import type { RowFilter } from "../core/rows";
 import { btnPrimary, btnSecondary } from "./Dialog";
 import { Icon } from "./Icon";
 import { SOURCE_CHANGED } from "./StatusDot";
+import { languageWithCode } from "./locales";
 
 export type FilterState = Omit<RowFilter, "locales">;
 
@@ -123,7 +124,7 @@ export function Toolbar(p: ToolbarProps) {
               {p.targetLocales.map((l) => (
                 <label key={l} className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-hover">
                   <input type="checkbox" checked={!p.hidden.has(l)} onChange={() => p.onToggleLocale(l)} />
-                  <span className="font-medium uppercase">{l}</span>
+                  <span className="font-medium">{languageWithCode(l)}</span>
                 </label>
               ))}
               {!p.targetLocales.length && <div className="px-2 py-1 text-xs text-muted">No other languages</div>}

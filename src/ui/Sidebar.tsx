@@ -2,6 +2,7 @@ import type { ProjectSession } from "../core/session";
 import { sectionLabel } from "./Dialog";
 import { Icon, type IconName } from "./Icon";
 import { SOURCE_CHANGED } from "./StatusDot";
+import { languageWithCode } from "./locales";
 
 export type Page = "translations" | "languages" | "share";
 
@@ -53,8 +54,8 @@ export function Sidebar({
             return (
               <div key={l}>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5">
-                    <span className="font-semibold uppercase text-fg">{l}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate font-semibold text-fg" title={languageWithCode(l)}>{languageWithCode(l)}</span>
                     {l === base && <span className="rounded bg-sunken px-1 text-[0.6875rem] text-muted">base</span>}
                   </span>
                   <span className="tabular-nums text-muted">{pct}%</span>

@@ -10,6 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Easier to see and use for everyone.** Text fields, dropdowns and outlined buttons have a clearer edge, and a focused field shows a stronger ring. The amber "not reviewed" dot is a shade darker so it stands out on every background. Screen readers now announce each cell's status. The small labels (the **AI** tag, the **Too long** and **Source changed** badges, the sidebar counts) now grow with **Settings → Appearance → Interface size** like the rest of the text. The tab close button is bigger and easier to hit.
 - **Designer notes show on the cell.** A note the designer wrote in the Figma plugin now appears under the translation (amber for **Too long**, grey for **Fits**), so you don't have to hover the badge to read it. The import summary also says how many results come with a note.
+- **Languages by name.** The table's column headers, the sidebar's progress list and the **Languages** menu now show each language by name with its code, such as **Thai (th)**, instead of the code alone.
 
 ### Fixes
 

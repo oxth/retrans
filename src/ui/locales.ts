@@ -23,3 +23,9 @@ export function localeLabel(code: string): string {
     return code;
   }
 }
+
+/** A language as "Thai (th)": its name (in the system language) plus the code; just the code when it has no name. */
+export function languageWithCode(code: string): string {
+  const name = localeLabel(code);
+  return name && name !== code ? `${name} (${code})` : code;
+}
