@@ -67,7 +67,15 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
 
   return (
     <Dialog title="New project" onClose={onCancel}>
-      <div>
+      {/* A form, so Enter goes to the next step (or creates on the last one). */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (step !== "location") {
+            if (canNext) setStep(STEPS[idx + 1]);
+          } else if (folder && !busy) void create();
+        }}
+      >
         <div className="-mt-2 flex items-center gap-3">
           <div className="flex flex-1 gap-1" aria-hidden="true">
             {STEPS.map((s, i) => (
@@ -81,6 +89,7 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
             <label className="block text-sm">
               Project name
               <input
+                autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className={`${inputCls} mt-1`}
@@ -107,7 +116,7 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
               ) : (
                 <p className="text-xs text-muted">Choose a folder for the project.</p>
               )}
-              <button onClick={choose} className={`${btnSecondary} mt-2`}>
+              <button type="button" onClick={choose} className={`${btnSecondary} mt-2`}>
                 Choose…
               </button>
             </div>
@@ -115,35 +124,27 @@ export function NewProjectWizard({ onCancel }: { onCancel(): void }) {
         </div>
         {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
         <div className="mt-6 flex justify-between">
-          <button onClick={onCancel} className={btnGhost}>
+          <button type="button" onClick={onCancel} className={btnGhost}>
             Cancel
           </button>
           <div className="flex gap-2">
             {idx > 0 && (
-              <button onClick={() => setStep(STEPS[idx - 1])} className={btnGhost}>
+              <button type="button" onClick={() => setStep(STEPS[idx - 1])} className={btnGhost}>
                 Back
               </button>
             )}
             {step !== "location" ? (
-              <button
-                onClick={() => setStep(STEPS[idx + 1])}
-                disabled={!canNext}
-                className={btnPrimary}
-              >
+              <button type="submit" disabled={!canNext} className={btnPrimary}>
                 Next
               </button>
             ) : (
-              <button
-                onClick={create}
-                disabled={!folder || busy}
-                className={btnPrimary}
-              >
-                Create
+              <button type="submit" disabled={!folder || busy} aria-busy={busy || undefined} className={btnPrimary}>
+                {busy ? "Creating…" : "Create"}
               </button>
             )}
           </div>
         </div>
-      </div>
+      </form>
     </Dialog>
   );
 }

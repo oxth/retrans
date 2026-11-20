@@ -304,7 +304,7 @@ describe("saving", () => {
     const dlg = await screen.findByRole("dialog", { name: "Resolve conflicts" });
     expect(within(dlg).getByText("MINE")).toBeInTheDocument();
     expect(within(dlg).getByText("THEIRS")).toBeInTheDocument();
-    await userEvent.click(within(dlg).getByRole("button", { name: "Keep all mine" }));
+    await userEvent.click(within(dlg).getByRole("button", { name: "Keep every left-hand version" }));
     expect(screen.queryByRole("dialog", { name: "Resolve conflicts" })).toBeNull();
     expect(useApp.getState().conflicts).toEqual([]);
     await userEvent.keyboard("{Meta>}s{/Meta}");
@@ -324,7 +324,7 @@ describe("saving", () => {
     await fs.writeTextAtomic(TH, JSON.stringify({ ...orig, title: "THEIRS" }, null, 2) + "\n");
     await act(async () => void (await useApp.getState().save()));
     const dlg = await screen.findByRole("dialog", { name: "Resolve conflicts" });
-    await userEvent.click(within(dlg).getByRole("button", { name: "Theirs" }));
+    await userEvent.click(within(dlg).getByRole("button", { name: /^Keep version (on disk|in the source files|from Figma)$/ }));
     expect(s.value("common::title", "th")).toEqual({ kind: "text", text: "THEIRS" });
     expect(useApp.getState().conflicts).toEqual([]);
   });
@@ -380,7 +380,7 @@ describe("journal and closing", () => {
     await userEvent.click(within(dlg).getByRole("button", { name: "Cancel" }));
     expect(useApp.getState().session).toBe(s);
     await act(async () => void useApp.getState().requestClose("project"));
-    await userEvent.click(within(await screen.findByRole("dialog", { name: "Unsaved changes" })).getByRole("button", { name: "Discard" }));
+    await userEvent.click(within(await screen.findByRole("dialog", { name: "Unsaved changes" })).getByRole("button", { name: "Don't save" }));
     await waitFor(() => expect(useApp.getState().session).toBeNull());
     expect(JSON.parse(await fs.readText(TH)).title).toBe("สวัสดี");
   });
@@ -410,7 +410,7 @@ describe("journal and closing", () => {
     act(() => s.setText("common::title", "th", "W"));
     blockSave();
     win.handler!({ preventDefault() {} });
-    await userEvent.click(within(await screen.findByRole("dialog", { name: "Unsaved changes" })).getByRole("button", { name: "Discard" }));
+    await userEvent.click(within(await screen.findByRole("dialog", { name: "Unsaved changes" })).getByRole("button", { name: "Don't save" }));
     await waitFor(() => expect(win.exit).toHaveBeenCalledWith(0));
     expect(await fs.exists(path)).toBe(false);
     expect(JSON.parse(await fs.readText(TH)).title).toBe("สวัสดี");

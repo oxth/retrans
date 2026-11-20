@@ -6,6 +6,7 @@ import { serializePreview } from "../preview/format";
 import { applyResults, type ResultsDiff } from "../preview/results";
 import { btnGhost, btnPrimary, Dialog, inputCls } from "./Dialog";
 import { useApp } from "./store";
+import { languageWithCode } from "./locales";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
@@ -70,7 +71,7 @@ export function PreviewExportDialog({ session, onClose }: { session: ProjectSess
         <label className="flex items-center gap-2">
           Language
           <select aria-label="Language" className={inputCls} value={locale} onChange={(e) => setLocale(e.target.value)} disabled={busy}>
-            {targets.map((l) => <option key={l} value={l}>{l}</option>)}
+            {targets.map((l) => <option key={l} value={l}>{languageWithCode(l)}</option>)}
           </select>
         </label>
         <label className="flex items-center gap-2">
@@ -82,7 +83,7 @@ export function PreviewExportDialog({ session, onClose }: { session: ProjectSess
             {count} {count === 1 ? "string" : "strings"} · {left} left out (no Figma variable: {built.leftOut.noVariable}, plural: {built.leftOut.complex})
           </p>
         )}
-        {built && count === 0 && <p className="text-warn">Nothing to preview in {locale}: no {includeReviewed ? "" : "unreviewed "}drafts are linked to Figma.</p>}
+        {built && count === 0 && <p className="text-warn">Nothing to preview in {languageWithCode(locale)}: no {includeReviewed ? "" : "unreviewed "}drafts are linked to Figma.</p>}
         {(error ?? attempt?.error) && <p role="alert" className="text-danger">{error ?? attempt?.error}</p>}
         {done && <p role="status" className="text-ok">{done}</p>}
         <div className="flex justify-end gap-2">
@@ -106,7 +107,7 @@ export function PreviewResultsDialog({ session, diff, onClose, onApplied }: {
   return (
     <Dialog title="Import designer results" onClose={onClose}>
       <div className="space-y-3 text-sm">
-        <p>Results for <span className="font-mono">{diff.locale}</span></p>
+        <p>Results for {languageWithCode(diff.locale)}</p>
         <p>
           {diff.fits} fit · {diff.tooLong} too long
           {notes > 0 && ` · ${notes} with ${notes === 1 ? "a note" : "notes"}`}

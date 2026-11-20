@@ -21,12 +21,15 @@ afterEach(() => {
 });
 
 describe("ConflictDialog", () => {
-  it("figma conflict shows From code / From Figma / Original", () => {
+  it("figma conflict shows the code and Figma versions and the original", () => {
     useApp.setState({ conflicts: [figma] });
     render(<ConflictDialog />);
     const item = screen.getByRole("listitem");
-    expect(within(item).getByText("From code")).toBeInTheDocument();
-    expect(within(item).getByText("From Figma")).toBeInTheDocument();
+    expect(within(item).getByText("Version from code")).toBeInTheDocument();
+    expect(within(item).getByText("Version from Figma")).toBeInTheDocument();
+    // Each column's button says which version it keeps.
+    expect(within(item).getByRole("button", { name: "Keep version from code" })).toBeInTheDocument();
+    expect(within(item).getByRole("button", { name: "Keep version from Figma" })).toBeInTheDocument();
     expect(within(item).getByText("Original")).toBeInTheDocument();
     expect(within(item).getByText("Warranty info")).toBeInTheDocument();
   });
@@ -47,7 +50,7 @@ describe("ConflictDialog", () => {
   it("other conflicts keep their labels", () => {
     useApp.setState({ conflicts: [{ id: "common::title", locale: "th", mine: text("a"), theirs: text("b") }] });
     render(<ConflictDialog />);
-    expect(screen.getByText("Yours")).toBeInTheDocument();
-    expect(screen.getByText("On disk")).toBeInTheDocument();
+    expect(screen.getByText("Your version")).toBeInTheDocument();
+    expect(screen.getByText("Version on disk")).toBeInTheDocument();
   });
 });

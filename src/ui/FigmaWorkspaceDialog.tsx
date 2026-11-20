@@ -7,6 +7,7 @@ import type { Fs } from "../platform/fs";
 import { createWorkspace } from "../workspace/store";
 import { btnGhost, btnPrimary, Dialog, inputCls } from "./Dialog";
 import { useApp } from "./store";
+import { languageWithCode } from "./locales";
 
 /** The Figma modes of the `*.tokens.json` files in `root` (and one folder down), or [] when there are none. */
 export async function figmaModesIn(fs: Fs, root: string): Promise<string[]> {
@@ -73,14 +74,14 @@ export function FigmaWorkspaceDialog({ root, modes, onClose }: { root: string; m
           Base language
           <select aria-label="Base language" className={inputCls} value={baseNow} onChange={(e) => setBase(e.target.value)}>
             {locales.map((l) => (
-              <option key={l} value={l}>{l}</option>
+              <option key={l} value={l}>{languageWithCode(l)}</option>
             ))}
           </select>
         </label>
         {error && <p role="alert" className="text-danger">{error}</p>}
         <div className="flex justify-end gap-2">
           <button className={btnGhost} disabled={busy} onClick={onClose}>Cancel</button>
-          <button className={btnPrimary} disabled={!ready || busy} onClick={() => void create()}>Create workspace</button>
+          <button className={btnPrimary} disabled={!ready || busy} aria-busy={busy || undefined} onClick={() => void create()}>{busy ? "Creating…" : "Create workspace"}</button>
         </div>
       </div>
     </Dialog>

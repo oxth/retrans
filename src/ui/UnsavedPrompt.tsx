@@ -33,7 +33,7 @@ export function UnsavedPrompt() {
       <p className="text-sm">You have unsaved changes. Save them before {doing}?</p>
       <div className="mt-5 flex justify-end gap-2">
         <button className={btnGhost} onClick={() => void answer("cancel")}>Cancel</button>
-        <button className={btnGhost} onClick={() => void answer("discard")}>Discard</button>
+        <button className={btnGhost} onClick={() => void answer("discard")}>Don't save</button>
         <button className={btnPrimary} onClick={() => void answer("save")}>Save</button>
       </div>
     </Dialog>

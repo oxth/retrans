@@ -171,6 +171,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
       type="button"
       aria-label={`Mark reviewed (${statusLabel})`}
       title="Mark reviewed (⌘⇧R / Ctrl+Shift+R)"
+      data-review={overlay ? "hover" : "pinned"}
       className={`inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-md border bg-surface px-1.5 text-xs font-medium hover:border-ok hover:bg-ok-soft hover:text-ok ${
         meta.needsReview ? "border-warn-line text-fg" : "border-line-strong text-fg-2"
       } ${overlay ? "invisible absolute right-1 top-1 group-hover/cell:visible group-focus-within/cell:visible" : ""}`}
@@ -223,6 +224,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     <div
       className="group/cell relative flex cursor-text items-start gap-2 rounded-md border border-transparent px-1.5 py-1 hover:border-line hover:bg-hover"
       data-cell="value"
+      data-reviewable={reviewable || undefined}
       ref={el}
       data-locale={locale}
       tabIndex={0}

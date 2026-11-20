@@ -8,6 +8,7 @@ import { FIGMA_DEFAULT_DIR } from "../workspace/meta";
 import { btnGhost, btnPrimary, Dialog, inputCls } from "./Dialog";
 import { saveFigma } from "./figma-meta";
 import { useApp } from "./store";
+import { languageWithCode } from "./locales";
 
 interface Picked {
   path: string;
@@ -93,6 +94,7 @@ export function FigmaImportDialog({ session, onClose }: { session: ProjectSessio
         <label className="block">
           Collection
           <input aria-label="Collection" className={inputCls} value={collection} onChange={(e) => setCollection(e.target.value)} />
+          <span className="mt-1 block text-xs text-muted">The folder the files go into, inside the Figma folder.</span>
         </label>
         {Object.keys(modes).map((m) => (
           <label key={m} className="block">
@@ -108,13 +110,18 @@ export function FigmaImportDialog({ session, onClose }: { session: ProjectSessio
         ))}
         <datalist id="figma-import-locales">
           {locales.map((l) => (
-            <option key={l} value={l} />
+            <option key={l} value={l} label={languageWithCode(l)} />
           ))}
         </datalist>
         {problem && <p role="alert" className="text-danger">{problem}</p>}
+        {!problem && files && !ready && (
+          <p className="text-xs text-muted">
+            {collection.trim() === "" || /[\\/]/.test(collection) ? "Give the collection a folder name (no slashes)." : "Give every mode a language code, e.g. th or pt-BR."}
+          </p>
+        )}
         <div className="flex justify-end gap-2">
           <button className={btnGhost} onClick={onClose}>Cancel</button>
-          <button className={btnPrimary} disabled={!ready || busy} onClick={() => void doImport()}>Import</button>
+          <button className={btnPrimary} disabled={!ready || busy} aria-busy={busy || undefined} onClick={() => void doImport()}>{busy ? "Importing…" : "Import"}</button>
         </div>
       </div>
     </Dialog>

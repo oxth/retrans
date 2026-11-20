@@ -2,6 +2,7 @@ import { btnPrimary, btnGhost, Dialog, inputCls } from "./Dialog";
 import { useState } from "react";
 import type { DetectResult } from "../formats/adapter";
 import { useApp } from "./store";
+import { languageWithCode } from "./locales";
 
 interface Props {
   root: string;
@@ -36,7 +37,7 @@ export function OpenProjectDialog({ root, detected, savedBase, onCancel }: Props
           <dt className="text-muted">Format</dt>
           <dd>{detected.format === "paraglide" ? "Paraglide" : "next-i18next"}</dd>
           <dt className="text-muted">Languages</dt>
-          <dd>{detected.locales.join(", ") || "none"}</dd>
+          <dd>{detected.locales.map(languageWithCode).join(", ") || "none"}</dd>
           <dt className="text-muted">{detected.workspace ? "Groups" : "Namespaces"}</dt>
           <dd>{detected.namespaces.filter(Boolean).join(", ") || "none"}</dd>
           <dt className="text-muted">Keys</dt>
@@ -52,7 +53,7 @@ export function OpenProjectDialog({ root, detected, savedBase, onCancel }: Props
             >
               <option value="">Choose…</option>
               {detected.locales.map((l) => (
-                <option key={l} value={l}>{l}</option>
+                <option key={l} value={l}>{languageWithCode(l)}</option>
               ))}
             </select>
           </label>
@@ -65,9 +66,10 @@ export function OpenProjectDialog({ root, detected, savedBase, onCancel }: Props
           <button
             onClick={open}
             disabled={!base || busy}
+            aria-busy={busy || undefined}
             className={btnPrimary}
           >
-            Open
+            {busy ? "Opening…" : "Open"}
           </button>
         </div>
       </div>

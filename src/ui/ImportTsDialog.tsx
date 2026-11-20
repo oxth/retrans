@@ -6,6 +6,7 @@ import { importTsLocales, type TsImport } from "../tssource/import";
 import { WORKSPACE_DIR } from "../workspace/meta";
 import { btnGhost, btnPrimary, Dialog, inputCls } from "./Dialog";
 import { useApp } from "./store";
+import { languageWithCode } from "./locales";
 
 interface Props {
   /** Where the workspace will live (.retrans/ is created there on the first Save). */
@@ -79,7 +80,7 @@ export function ImportTsDialog({ root, localesDir, onCancel }: Props) {
         <ul className="mt-4 space-y-0.5 text-sm">
           <li>{preview.modules.size} files</li>
           <li>{preview.keyOrder.length} keys</li>
-          <li>{locales.length} languages ({locales.join(", ")})</li>
+          <li>{locales.length} languages ({locales.map(languageWithCode).join(", ")})</li>
           <li>{markers} marked "(EN)" (shown as missing)</li>
           <li>{preview.duplicates.length} duplicate keys</li>
           {preview.errors.length > 0 && (
@@ -99,7 +100,7 @@ export function ImportTsDialog({ root, localesDir, onCancel }: Props) {
             className={`${inputCls} mt-1`}
           >
             {locales.map((l) => (
-              <option key={l} value={l}>{l}</option>
+              <option key={l} value={l}>{languageWithCode(l)}</option>
             ))}
           </select>
         </label>
@@ -108,7 +109,7 @@ export function ImportTsDialog({ root, localesDir, onCancel }: Props) {
       {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <button className={btnGhost} onClick={onCancel}>Cancel</button>
-        <button className={btnPrimary} disabled={!preview || !base || busy} onClick={() => void doImport()}>Import</button>
+        <button className={btnPrimary} disabled={!preview || !base || busy} aria-busy={busy || undefined} onClick={() => void doImport()}>{busy ? "Importing…" : "Import"}</button>
       </div>
     </Dialog>
   );

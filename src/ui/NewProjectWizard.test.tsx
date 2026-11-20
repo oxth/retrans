@@ -34,6 +34,15 @@ describe("NewProjectWizard", () => {
   });
   afterEach(cleanup);
 
+  it("the name field is focused and Enter goes to the next step", async () => {
+    render(<NewProjectWizard onCancel={() => {}} />);
+    expect(screen.getByLabelText("Project name")).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByText("Step 1 of 3")).toBeInTheDocument(); // no name yet: stays
+    await userEvent.type(screen.getByLabelText("Project name"), "My App{Enter}");
+    expect(screen.getByText("Step 2 of 3")).toBeInTheDocument();
+  });
+
   it("defaults the location to <documents>/Retrans/<name>", async () => {
     render(<NewProjectWizard onCancel={() => {}} />);
     await toLocation("My App");

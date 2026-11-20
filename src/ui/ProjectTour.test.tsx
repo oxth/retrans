@@ -73,6 +73,14 @@ describe("ProjectTour", () => {
     await waitFor(() => expect(prefs.get("projectTourSeen")).toBe(true));
   });
 
+  it("the review stop points at a Review button that's always visible (a Source changed cell)", async () => {
+    await openSample();
+    const review = STOPS.findIndex((s) => s.title === "Mark translations reviewed");
+    const el = document.querySelector(STOPS[review].targets[0]);
+    expect(el).not.toBeNull();
+    expect(el).toHaveAttribute("data-review", "pinned");
+  });
+
   it("with no AI set up, the AI stop points at Settings and says how to turn it on", async () => {
     const tour = await openSample();
     const ai = STOPS.findIndex((s) => s.fallback);

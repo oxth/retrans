@@ -179,8 +179,9 @@ describe("Import", () => {
     await importZip();
     const d = await screen.findByRole("dialog", { name: "Import translator work" });
     expect(within(d).getByText("1 new")).toBeTruthy();
-    expect(within(d).getByText("1 conflicts")).toBeTruthy();
-    expect(within(d).getByText("0 skipped")).toBeTruthy();
+    expect(within(d).getByText("1 conflict")).toBeTruthy();
+    // Zero counts aren't listed.
+    expect(within(d).queryByText(/skipped/)).toBeNull();
     await userEvent.click(within(d).getByRole("radio", { name: "Use theirs" }));
     await userEvent.click(within(d).getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

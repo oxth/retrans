@@ -3,6 +3,7 @@ import { parseKeyId } from "../core/model";
 import { useState } from "react";
 import { btnGhost, btnPrimary, Dialog, inputCls, btnSecondary } from "./Dialog";
 import { type UiConflict, useApp } from "./store";
+import { languageWithCode } from "./locales";
 
 function show(v: MessageValue | undefined): string {
   if (!v) return "(empty)";
@@ -10,10 +11,13 @@ function show(v: MessageValue | undefined): string {
 }
 
 const LABELS: Record<string, { mine: string; theirs: string }> = {
-  figma: { mine: "From code", theirs: "From Figma" },
-  source: { mine: "Yours", theirs: "In the source files" },
-  disk: { mine: "Yours", theirs: "On disk" },
+  figma: { mine: "Version from code", theirs: "Version from Figma" },
+  source: { mine: "Your version", theirs: "Version in the source files" },
+  disk: { mine: "Your version", theirs: "Version on disk" },
 };
+
+/** "Version from Figma" -> "version from Figma": only the first letter, so names keep their capitals. */
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 /** Lists every unresolved conflict; open whenever the store has any. */
 export function ConflictDialog() {
@@ -33,8 +37,8 @@ export function ConflictDialog() {
         ))}
       </ul>
       <div className="mt-5 flex justify-end gap-2">
-        <button className={btnGhost} onClick={() => resolveAll("theirs")}>Take all theirs</button>
-        <button className={btnPrimary} onClick={() => resolveAll("mine")}>Keep all mine</button>
+        <button className={btnGhost} onClick={() => resolveAll("theirs")}>Keep every right-hand version</button>
+        <button className={btnPrimary} onClick={() => resolveAll("mine")}>Keep every left-hand version</button>
       </div>
     </Dialog>
   );
@@ -51,18 +55,18 @@ function ConflictItem({ c, resolve, resolveWith }: {
   return (
     <li className="rounded-md border border-line p-3 text-sm">
       <div className="mb-2 font-mono text-xs text-muted">
-        {ns ? `${ns} · ` : ""}{key} · {c.locale}
+        {ns ? `${ns} · ` : ""}{key} · {languageWithCode(c.locale)}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <div className="text-xs font-semibold text-muted">{label.mine}</div>
           <div className="whitespace-pre-wrap break-words">{show(c.mine)}</div>
-          <button className={`${btnSecondary} mt-1`} onClick={() => resolve(c, "mine")}>Mine</button>
+          <button className={`${btnSecondary} mt-1`} aria-label={`Keep ${lower(label.mine)}`} onClick={() => resolve(c, "mine")}>Keep this</button>
         </div>
         <div>
           <div className="text-xs font-semibold text-muted">{label.theirs}</div>
           <div className="whitespace-pre-wrap break-words">{show(c.theirs)}</div>
-          <button className={`${btnSecondary} mt-1`} onClick={() => resolve(c, "theirs")}>Theirs</button>
+          <button className={`${btnSecondary} mt-1`} aria-label={`Keep ${lower(label.theirs)}`} onClick={() => resolve(c, "theirs")}>Keep this</button>
         </div>
       </div>
       {c.base && (

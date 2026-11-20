@@ -196,7 +196,7 @@ describe("workspace cells", () => {
       expect(await useApp.getState().save()).toBe(false);
     });
     expect(useApp.getState().error).toBe("Resolve conflicts before saving.");
-    await userEvent.click(within(dlg).getByRole("button", { name: "Theirs" }));
+    await userEvent.click(within(dlg).getByRole("button", { name: /^Keep version (on disk|in the source files|from Figma)$/ }));
     expect(session.value(id, "en")).toEqual({ kind: "text", text: "Save it" });
     expect(session.pendingBaseline![id].en).toBe("Save it");
     expect(useApp.getState().conflicts).toEqual([]);

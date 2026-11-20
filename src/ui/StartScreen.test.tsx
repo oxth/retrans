@@ -81,7 +81,7 @@ describe("StartScreen", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open project" }));
     const dlg = await screen.findByRole("dialog", { name: "Open project" });
     expect(dlg).toHaveTextContent("next-i18next");
-    expect(dlg).toHaveTextContent("en, th");
+    expect(dlg).toHaveTextContent("English (en), Thai (th)");
     expect(dlg).toHaveTextContent("checkout");
     expect(dlg).toHaveTextContent(/\d+ keys/);
     expect(useApp.getState().session).toBeNull();
