@@ -47,7 +47,7 @@ function liveHtml(): string {
   if (!link) return `<p class="muted">Open Retrans to connect, or use a file below.</p><div class="bar"><button id="retry">Try again</button></div>`;
   if (!token) {
     return `<div class="live"><strong>Connect to Retrans</strong>
-      <p class="muted">Enter the 6-digit code shown in Retrans (Settings → Figma).</p>
+      <p class="muted">Enter the 6-digit code shown in Retrans (Settings → Figma plugin).</p>
       <div class="bar"><input type="text" id="code" inputmode="numeric" maxlength="6" placeholder="123456" value="${esc(code)}" aria-label="6-digit code">
       <button class="primary" id="pair" ${busy ? "disabled" : ""}>Connect</button></div></div>`;
   }

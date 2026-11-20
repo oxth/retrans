@@ -68,6 +68,16 @@ describe("Settings window", () => {
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
   });
 
+  it("with no project open, the Figma plugin section has the live link controls", async () => {
+    await setupApp(loadFixtureDir(FIX + "next-nested"));
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    await screen.findByRole("dialog", { name: "Settings" });
+    await userEvent.click(nav().getByRole("button", { name: /Figma plugin/ }));
+    expect(title()).toHaveTextContent("Figma plugin");
+    expect(await screen.findByRole("checkbox", { name: "Live link with the Figma plugin" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pair a plugin" })).toBeInTheDocument();
+  });
+
   it("with no project open, shows only app sections", async () => {
     await setupApp(loadFixtureDir(FIX + "next-nested"));
     await userEvent.click(screen.getByRole("button", { name: "Open settings" }));

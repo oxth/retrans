@@ -9,7 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### What's new
 
 - **Designer preview in Figma.** A designer can check that AI drafts fit the real design before anyone accepts them. In **Settings → Figma**, **Export preview for a designer…** saves the drafts of one language to a file. The designer loads it in the new **Retrans Preview** Figma plugin, which puts the drafts into copies of the selected frames, flags text that may overflow, and lets them mark each string **Fits** or **Too long** with a note. Import their results file with **Import designer results…**: **Too long** shows on the cell, and a **Too long** filter lists them. Marks only stay on the exact text the designer saw; editing the text clears them. The plugin never changes the original frames.
-- **Live link to the Figma plugin.** On the same computer, the plugin can get drafts from Retrans and send results back without files. Pair once in **Settings → Figma** with a 6-digit code; Retrans comes to the front with the usual results summary, and nothing is added until you click **Apply**. A switch turns it off and **Forget plugin** removes the pairing. Retrans listens only on your computer and answers only the paired plugin. Files still work.
+- **Live link to the Figma plugin.** On the same computer, the plugin can get drafts from Retrans and send results back without files. Pair once in **Settings → Figma plugin** with a 6-digit code; Retrans comes to the front with the usual results summary, and nothing is added until you click **Apply**. A switch turns it off and **Forget plugin** removes the pairing. Retrans listens only on your computer and answers only the paired plugin. Files still work.
 
 ## [0.7.1] - 2026-11-19
 

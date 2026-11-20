@@ -37,6 +37,7 @@ import { loadFixtureDir } from "../platform/memory-fs";
 import { openFixtureWorkspace } from "../test/workspace-fixture";
 import { FigmaImportDialog } from "./FigmaImportDialog";
 import { FigmaSettings } from "./FigmaSettings";
+import { LiveLinkSettings } from "./LiveLinkSettings";
 import { useApp } from "./store";
 
 const FIX = resolve(__dirname, "../test/fixtures/figma/ALL");
@@ -155,9 +156,8 @@ describe("Settings → Figma", () => {
 
 describe("Live link", () => {
   it("pairing shows the code and turns the switch on", async () => {
-    const w = await workspace();
     liveLink.pairCode.mockResolvedValueOnce({ code: "042917", expiresInMs: 300000 });
-    render(<FigmaSettings session={w.session} />);
+    render(<LiveLinkSettings />);
 
     await userEvent.click(await screen.findByRole("button", { name: "Pair a plugin" }));
 
@@ -167,8 +167,7 @@ describe("Live link", () => {
   });
 
   it("counts down to zero and shows Pair a plugin again", async () => {
-    const w = await workspace();
-    render(<FigmaSettings session={w.session} />);
+    render(<LiveLinkSettings />);
     await screen.findByText("Not paired");
     vi.useFakeTimers();
 
@@ -189,9 +188,8 @@ describe("Live link", () => {
   });
 
   it("clears the code once the plugin pairs", async () => {
-    const w = await workspace();
     liveLink.linkStatus.mockResolvedValue({ running: true, port: 47321, paired: false });
-    render(<FigmaSettings session={w.session} />);
+    render(<LiveLinkSettings />);
     await screen.findByText("Not paired");
     vi.useFakeTimers();
 
@@ -213,13 +211,12 @@ describe("Live link", () => {
   });
 
   it("Forget and switching the link off clear a shown code", async () => {
-    const w = await workspace();
     let paired = true;
     liveLink.linkStatus.mockImplementation(async () => ({ running: true, port: 47321, paired }));
     liveLink.forgetPlugin.mockImplementation(async () => {
       paired = false;
     });
-    render(<FigmaSettings session={w.session} />);
+    render(<LiveLinkSettings />);
     await screen.findByText("Paired · listening on port 47321");
 
     await userEvent.click(screen.getByRole("button", { name: "Pair a plugin" }));
@@ -235,8 +232,7 @@ describe("Live link", () => {
   });
 
   it("turning the switch off stops the link", async () => {
-    const w = await workspace();
-    render(<FigmaSettings session={w.session} />);
+    render(<LiveLinkSettings />);
     const toggle = await screen.findByRole("checkbox", { name: "Live link with the Figma plugin" });
 
     await userEvent.click(toggle);
@@ -246,11 +242,10 @@ describe("Live link", () => {
   });
 
   it("shows paired status and forgets the plugin", async () => {
-    const w = await workspace();
     liveLink.linkStatus
       .mockResolvedValueOnce({ running: true, port: 47321, paired: true })
       .mockResolvedValue({ running: true, port: 47321, paired: false });
-    render(<FigmaSettings session={w.session} />);
+    render(<LiveLinkSettings />);
 
     expect(await screen.findByText("Paired · listening on port 47321")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Forget plugin" }));
@@ -261,17 +256,15 @@ describe("Live link", () => {
   });
 
   it("shows Not paired when no plugin is paired", async () => {
-    const w = await workspace();
     liveLink.linkStatus.mockResolvedValue({ running: false, port: null, paired: false });
-    render(<FigmaSettings session={w.session} />);
+    render(<LiveLinkSettings />);
 
     expect(await screen.findByText("Not paired")).toBeInTheDocument();
   });
 
   it("shows a start error", async () => {
-    const w = await workspace();
     liveLink.linkStart.mockRejectedValueOnce(new Error("no free port"));
-    render(<FigmaSettings session={w.session} />);
+    render(<LiveLinkSettings />);
 
     await userEvent.click(await screen.findByRole("checkbox", { name: "Live link with the Figma plugin" }));
 

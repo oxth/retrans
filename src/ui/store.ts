@@ -67,7 +67,7 @@ export const updateUnseen = (s: Pick<AppState, "update" | "updateSeen">): boolea
 export const normRoot = (root: string) => root.replace(/[\\/]+$/, "") || root;
 
 /** Sections of the Settings window: the first three belong to the open project. */
-export type SettingsSection = "project" | "translation" | "figma" | "appearance" | "general" | "mt" | "instructions" | "about";
+export type SettingsSection = "project" | "translation" | "figma" | "appearance" | "general" | "mt" | "instructions" | "plugin" | "about";
 
 export interface AppState {
   fs: Fs;

@@ -17,6 +17,7 @@ import { applyAppearance } from "./appearance";
 import { reportBug, showLogFile } from "./bug-report";
 import { btnDanger, btnGhost, btnPrimary, Dialog, inputCls, sectionLabel, trapTab } from "./Dialog";
 import { FigmaSettings } from "./FigmaSettings";
+import { LiveLinkSettings } from "./LiveLinkSettings";
 import { AppIcon } from "./AppIcon";
 import { Icon, type IconName } from "./Icon";
 import { MtSettings } from "./MtSettings";
@@ -45,6 +46,7 @@ const SECTIONS: SectionDef[] = [
   { id: "appearance", label: "Appearance", hint: "Theme, interface size and layout", icon: "monitor", keywords: "theme dark light mode system size zoom font text scale default view list table" },
   { id: "mt", label: "Machine translation", hint: "Who translates: a built-in model, a cloud API or an AI agent", icon: "sparkles", keywords: "model provider api key openai anthropic claude agent gguf download" },
   { id: "instructions", label: "AI instructions", hint: "Rules sent with every translation, for all projects", icon: "message", keywords: "prompt instructions tone style" },
+  { id: "plugin", label: "Figma plugin", hint: "Live link with the Retrans Preview plugin", icon: "layers", keywords: "figma plugin live link pair pairing forget designer" },
   { id: "about", label: "About", hint: "Version and software updates", icon: "info", keywords: "about version update install release what's new changelog bug report problem log issue" },
 ];
 
@@ -256,6 +258,8 @@ function SectionBody({ id, session, version }: { id: SettingsSection; session: P
       return <MtSettings session={session} />;
     case "instructions":
       return <GlobalInstructions />;
+    case "plugin":
+      return <LiveLinkSettings />;
     case "about":
       return <About version={version} />;
   }
