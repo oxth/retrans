@@ -26,13 +26,13 @@ jobs:
         platform: [macos-latest, windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: pnpm
@@ -116,9 +116,19 @@ jobs:
         if: runner.os == 'Windows'
         run: pnpm tauri build --bundles nsis
 
-      - name: Set up the MSVC developer environment (dumpbin)
+      # dumpbin from the newest MSVC toolset, found with vswhere (preinstalled on the runner). Replaces
+      # ilammy/msvc-dev-cmd, which still runs on Node 20; the check below needs nothing else from it.
+      - name: Put dumpbin on the PATH
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { Write-Error 'No Visual Studio with the C++ tools found' }
+          $msvc = Get-ChildItem (Join-Path $vs 'VC\Tools\MSVC') -Directory | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          $bin = Join-Path $msvc.FullName 'bin\Hostx64\x64'
+          if (-not (Test-Path (Join-Path $bin 'dumpbin.exe'))) { Write-Error "dumpbin.exe not found in $bin" }
+          $bin | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
       # A clean Windows 10+ machine has no VC++ redistributable: retrans.exe and every shipped DLL
       # may import only Windows' own DLLs (the UCRT included) and each other. The VC++ runtime
