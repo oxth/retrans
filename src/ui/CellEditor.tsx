@@ -171,7 +171,7 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
           {error}
         </div>
       )}
-      <div data-testid="editor-keys" className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.6875rem] text-muted">
+      <div data-testid="editor-keys" className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
         <span><Kbd>Enter</Kbd> Save</span>
         {onMarkReviewed && <span><Kbd>⌘⇧R</Kbd> Save & mark reviewed</span>}
         <span><Kbd>Tab</Kbd> Next missing</span>
@@ -182,5 +182,5 @@ export function CellEditor({ id, locale, initial, complex, onCommit, onCancel, o
 }
 
 const Kbd = ({ children }: { children: string }) => (
-  <kbd className="rounded border border-line-strong bg-panel px-1 font-sans text-[0.625rem] text-fg-2">{children}</kbd>
+  <kbd className="rounded border border-line-strong bg-panel px-1 font-sans text-xs leading-4 text-fg-2">{children}</kbd>
 );

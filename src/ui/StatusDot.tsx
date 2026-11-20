@@ -1,8 +1,9 @@
 import type { Status } from "../core/model";
 
+/** Not reviewed is a ring, the others are filled: the states differ by shape, not only by colour. */
 const COLOR: Record<Status, string> = {
   untranslated: "bg-st-missing",
-  translated: "bg-st-translated",
+  translated: "border-2 border-st-translated",
   reviewed: "bg-st-reviewed",
 };
 
@@ -28,7 +29,7 @@ export function StatusDot({ status, needsReview, machine, onClick }: StatusDotPr
   const label = `${STATUS_TEXT[status]}${needsReview ? `; ${NEEDS_REVIEW_TEXT}` : ""}${machine ? "; machine translated" : ""}`;
   const cls = `inline-block h-2.5 w-2.5 shrink-0 rounded-full ${COLOR[status]} ${needsReview ? "ring-2 ring-warn-solid ring-offset-1 ring-offset-surface" : ""}`;
   const dot = <span data-status={status} data-needs-review={needsReview} className={cls} />;
-  const ai = machine ? <span className="ml-1 rounded bg-brand-soft px-1 text-[0.625rem] font-semibold leading-4 text-brand-ink">AI</span> : null;
+  const ai = machine ? <span className="ml-1 rounded bg-sunken px-1 text-xs font-medium leading-4 text-fg-2">AI</span> : null;
   if (!onClick) {
     return (
       <span role="img" className="inline-flex shrink-0 items-center" title={label} aria-label={`Status: ${label}`}>

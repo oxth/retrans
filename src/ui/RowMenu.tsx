@@ -27,7 +27,11 @@ export function RowMenu({ name, onRename, onDelete, onKeep, onCodeKey, onLink }:
       const t = e.target as Node;
       if (!menu.current?.contains(t) && !button.current?.contains(t)) close();
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      close();
+      button.current?.focus();
+    };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey);
     window.addEventListener("scroll", close, true);
@@ -55,8 +59,31 @@ export function RowMenu({ name, onRename, onDelete, onKeep, onCodeKey, onLink }:
     if (m.right > window.innerWidth - 4) left = Math.max(4, window.innerWidth - 4 - m.width);
     if (top !== pos.top || left !== pos.left) setPos({ top, left });
   }, [pos]);
+  // The menu lives in <body>, after every row, so Tab can't reach it: focus moves in on open.
+  useEffect(() => {
+    if (open) menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [open]);
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    const items = [...(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    const to =
+      e.key === "ArrowDown" ? (i + 1) % items.length
+      : e.key === "ArrowUp" ? (i - 1 + items.length) % items.length
+      : e.key === "Home" ? 0
+      : e.key === "End" ? items.length - 1
+      : e.key === "Tab" ? -2
+      : -1;
+    if (to === -1) return;
+    e.preventDefault();
+    if (to === -2) {
+      // Tab leaves the menu back where it was opened, not at the end of the page.
+      close();
+      button.current?.focus();
+    } else items[to]?.focus();
+  };
   const run = (action: () => void) => () => {
     close();
+    button.current?.focus();
     action();
   };
 
@@ -67,7 +94,7 @@ export function RowMenu({ name, onRename, onDelete, onKeep, onCodeKey, onLink }:
         aria-label={`Actions for ${name}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`rounded p-0.5 text-muted hover:bg-sunken hover:text-fg ${open ? "bg-sunken text-fg" : ""}`}
+        className={`rounded p-1 text-muted hover:bg-sunken hover:text-fg ${open ? "bg-sunken text-fg" : ""}`}
         onClick={toggle}
       >
         <Icon name="more" size={16} />
@@ -78,6 +105,8 @@ export function RowMenu({ name, onRename, onDelete, onKeep, onCodeKey, onLink }:
           <div
             ref={menu}
             role="menu"
+            aria-label={`Actions for ${name}`}
+            onKeyDown={onMenuKey}
             className="z-50 w-max min-w-36 rounded-lg border border-line bg-surface p-1 text-fg shadow-pop"
             style={{ position: "fixed", top: pos.top, left: pos.left }}
           >

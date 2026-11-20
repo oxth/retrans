@@ -176,6 +176,23 @@ describe("views", () => {
     expect(screen.getByRole("button", { name: /^Missing \(6\)$/ })).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("when filters hide every key, Clear filters brings them back", async () => {
+    await open(nested());
+    await userEvent.click(screen.getByRole("button", { name: /^Missing \(\d+\)$/ }));
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search" }), "no-such-key");
+    await screen.findByText("No keys match.");
+    await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await waitFor(() => expect(document.querySelectorAll("[data-row]").length).toBe(10));
+    expect(screen.getByRole("searchbox", { name: "Search" })).toHaveValue("");
+  });
+
+  it("a cell is a named group that says its language, key and status", async () => {
+    await open(nested());
+    const cell = document.querySelector<HTMLElement>('[data-row="common::title"] [data-cell="value"][data-locale="th"]')!;
+    expect(cell).toHaveAttribute("role", "group");
+    expect(cell.getAttribute("aria-label")).toMatch(/^Thai \(th\) translation of common::title: .+ \(.+\)$/);
+  });
+
   it('missing cells render "Missing" and plural non-applicable cells render "not used"', async () => {
     await open(nested());
     const only = document.querySelector('[data-row="common::only_en"]') as HTMLElement;

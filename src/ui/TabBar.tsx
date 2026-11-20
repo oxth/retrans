@@ -57,7 +57,7 @@ export function TabBar() {
             return (
               <div
                 key={t.id}
-                className={`group flex h-7 shrink-0 items-center rounded-md ${active ? "bg-surface shadow-sm ring-1 ring-line" : "hover:bg-hover"}`}
+                className={`group flex h-7 shrink-0 items-center rounded-md ${active ? "bg-surface ring-1 ring-line" : "hover:bg-hover"}`}
               >
                 <button
                   role="tab"
@@ -67,9 +67,10 @@ export function TabBar() {
                   onClick={() => switchTab(t.id)}
                 >
                   <span className="truncate">{t.name}</span>
-                  {dirty && <span aria-label="Unsaved changes" className="h-2 w-2 shrink-0 rounded-full bg-warn-solid" />}
+                  {dirty && <span role="img" aria-label="Unsaved changes" className="h-2 w-2 shrink-0 rounded-full bg-warn-solid" />}
                   {t.busy > 0 && (
                     <span
+                      role="img"
                       aria-label="Working"
                       className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-brand-line border-t-brand"
                     />
@@ -87,14 +88,14 @@ export function TabBar() {
           })}
           {/* The start screen is a tab of its own, like a browser's new tab. */}
           {activeId === null && (
-            <div className="group flex h-7 shrink-0 items-center rounded-md bg-surface shadow-sm ring-1 ring-line">
+            <div className="group flex h-7 shrink-0 items-center rounded-md bg-surface ring-1 ring-line">
               <span role="tab" aria-selected="true" className={`py-1 pl-3 text-sm font-medium text-fg ${tabs.length ? "pr-1" : "pr-3"}`}>
                 New Tab
               </span>
               {tabs.length > 0 && (
                 <button
                   aria-label="Close New Tab"
-                  className="mr-1 rounded p-0.5 text-muted opacity-70 hover:bg-sunken hover:text-fg group-hover:opacity-100"
+                  className="mr-1 rounded p-1.5 text-muted opacity-70 hover:bg-sunken hover:text-fg group-hover:opacity-100"
                   onClick={() => switchTab(tabs[tabs.length - 1].id)}
                 >
                   <Icon name="x" size={13} />

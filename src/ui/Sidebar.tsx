@@ -34,7 +34,7 @@ export function Sidebar({
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-line bg-panel" aria-label="Sidebar">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
-        <Icon name="folder" size={16} className="text-brand" />
+        <Icon name="folder" size={16} className="text-muted" />
         <div className="min-w-0 truncate text-sm font-semibold" title={session.data.root}>{name}</div>
       </div>
       <nav className="space-y-0.5 p-2" data-tour="pages">
@@ -56,7 +56,7 @@ export function Sidebar({
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className="truncate font-semibold text-fg" title={languageWithCode(l)}>{languageWithCode(l)}</span>
-                    {l === base && <span className="rounded bg-sunken px-1 text-[0.6875rem] text-muted">base</span>}
+                    {l === base && <span className="rounded bg-sunken px-1 text-xs font-normal text-fg-2">base</span>}
                   </span>
                   <span className="tabular-nums text-muted">{pct}%</span>
                 </div>
@@ -80,14 +80,14 @@ export function Sidebar({
           <div className={sectionLabel}>Status key</div>
           <ul className="mt-2 space-y-1.5 text-xs text-fg-2">
             <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-st-missing" aria-hidden="true" />Missing</li>
-            <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-st-translated" aria-hidden="true" />Not reviewed</li>
+            <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full border-2 border-st-translated" aria-hidden="true" />Not reviewed</li>
             <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-st-reviewed" aria-hidden="true" />Reviewed</li>
             <li className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-st-reviewed ring-2 ring-warn-solid ring-offset-1 ring-offset-panel" aria-hidden="true" />
               {SOURCE_CHANGED}
             </li>
           </ul>
-          <dl className="mt-2.5 space-y-1.5 text-[0.6875rem] leading-4 text-muted">
+          <dl className="mt-2.5 space-y-1.5 text-xs leading-4 text-muted">
             <div>
               <dt className="inline font-medium text-fg-2">Not reviewed:</dt> <dd className="inline">translated, but nobody has checked it yet.</dd>
             </div>
