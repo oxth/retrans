@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Fetch, LinkError, draftsProject, draftsTarget, findRetrans, linkAfterError, liveApi, pickProject, pair, sendResults } from "./live";
+import { type Fetch, LinkError, draftsProject, draftsTarget, reloadLanguage, findRetrans, linkAfterError, liveApi, pickProject, pair, sendResults } from "./live";
 
 const json = (status: number, body: unknown): Response =>
   ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body), json: async () => body }) as Response;
@@ -214,5 +214,18 @@ describe("draftsProject", () => {
     expect(draftsProject(list, "tab-other", undefined)?.id).toBe("tab-other");
     expect(draftsProject(list, "tab-gone", "proj-9")).toBeUndefined();
     expect(draftsProject(list, undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("reloadLanguage", () => {
+  const project = { id: "tab", name: "Shop", projectId: "p", baseLocale: "en", locales: ["en", "th", "ja"] };
+  it("keeps the current language while the project still has it", () => {
+    expect(reloadLanguage(project, "ja")).toBe("ja");
+  });
+  it("moves to the first remaining language when the current one was removed", () => {
+    expect(reloadLanguage(project, "de")).toBe("th");
+  });
+  it("is null when the project has no language left but its base", () => {
+    expect(reloadLanguage({ ...project, locales: ["en"] }, "th")).toBeNull();
   });
 });

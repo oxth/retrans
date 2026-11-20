@@ -155,6 +155,12 @@ export function draftsProject(projects: RetransProject[], tabId: string | undefi
   return (sourceProjectId ? projects.find((p) => p.projectId === sourceProjectId) : undefined) ?? projects.find((p) => p.id === tabId);
 }
 
+/** The language to reload: the current one while the project still has it, else its first other language. */
+export function reloadLanguage(project: RetransProject, current: string): string | null {
+  const langs = project.locales.filter((l) => l !== project.baseLocale);
+  return langs.includes(current) ? current : (langs[0] ?? null);
+}
+
 /**
  * The project and language Get drafts asks for, after the project list was reloaded. Stops rather
  * than quietly fetching another project or language than the one the designer picked.

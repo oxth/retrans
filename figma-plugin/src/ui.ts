@@ -5,7 +5,7 @@
 import { parseBundle, serializePreview } from "../../src/preview/format";
 import { renderKeepingNote } from "./keep-focus";
 import { currentStep, linkNote, nothingLinked, type PluginState, progress, resultsKey, toResults } from "./logic";
-import { LinkError, type RetransProject, draftsProject, draftsTarget, findRetrans, linkAfterError, liveApi, pair, pickProject, sendResults } from "./live";
+import { LinkError, type RetransProject, draftsProject, draftsTarget, reloadLanguage, findRetrans, linkAfterError, liveApi, pair, pickProject, sendResults } from "./live";
 import type { ToCode, ToUi } from "./protocol";
 
 const app = document.getElementById("app")!;
@@ -116,7 +116,8 @@ function loadedHtml(): string {
     // Always the picker for drafts from Retrans, even with one language, so switching is where you expect it.
     language = `<label class="lang">Language <select id="draft-locale" aria-label="Language" ${dis(busy)}>${langs
       .map((l) => `<option value="${esc(l)}" ${l === b.locale ? "selected" : ""}>${esc(l)}</option>`)
-      .join("")}</select></label>`;
+      .join("")}</select></label>
+      <button class="link" id="reload" title="Get the latest languages and translations from Retrans" ${dis(busy)}>Reload</button>`;
   } else if (fromRetrans) {
     language = `Language <strong>${esc(b.locale)}</strong> <span class="muted">(connect to Retrans to switch)</span>`;
   } else {
@@ -231,6 +232,21 @@ function useDrafts(msg: ToCode & { type: "bundle" }): void {
   post(msg);
 }
 
+/** Gets the latest languages and translations for the loaded drafts' project; marks on unchanged text stay. */
+async function reloadDrafts(): Promise<void> {
+  const b = state.bundle;
+  if (!b) return;
+  await live(async () => {
+    projects = await api().projects();
+    const project = draftsProject(projects, state.projectId, b.sourceProjectId);
+    if (!project) throw new Error("That project isn't open in Retrans any more. Open it, then reload.");
+    const lang = reloadLanguage(project, b.locale);
+    if (!lang) throw new Error(`${project.name} has no languages to translate into any more.`);
+    const bundle = await api().bundle(project.id, lang, includeReviewed);
+    useDrafts({ type: "bundle", bundle, fileName: project.name, projectId: project.id });
+  });
+}
+
 /** Fetches `lang` drafts for a Retrans project and loads them. */
 async function fetchDrafts(project: string, lang: string): Promise<void> {
   await live(async () => {
@@ -285,6 +301,7 @@ app.addEventListener("click", async (e) => {
       sentKey = resultsKey(state);
     });
   } else if (t.id === "load") (document.getElementById("file") as HTMLInputElement).click();
+  else if (t.id === "reload") await reloadDrafts();
   else if (t.id === "rest") post({ type: "mark-rest-fits" });
   else if (t.id === "save") {
     const a = document.createElement("a");
