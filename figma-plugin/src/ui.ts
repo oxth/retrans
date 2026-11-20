@@ -1,7 +1,8 @@
 /** Retrans Preview, plugin window: load a preview file, list the strings, record verdicts, save results. */
 import { parseBundle, serializePreview } from "../../src/preview/format";
-import { type PluginState, toResults } from "./logic";
-import { LinkError, type RetransProject, findRetrans, linkAfterError, liveApi, pair, pickProject, sendResults } from "./live";
+import { renderKeepingNote } from "./keep-focus";
+import { type PluginState, resultsKey, toResults } from "./logic";
+import { LinkError, type RetransProject, draftsTarget, findRetrans, linkAfterError, liveApi, pair, pickProject, sendResults } from "./live";
 import type { ToCode, ToUi } from "./protocol";
 
 const app = document.getElementById("app")!;
@@ -18,7 +19,9 @@ let locale = "";
 let includeReviewed = false;
 let code = "";
 let busy = false;
-let sent = false;
+/** The marks as they were when last sent or copied, so the confirmation hides once they change. */
+let sentKey: string | null = null;
+let copiedKey: string | null = null;
 
 const api = () => liveApi(fetch.bind(window), (link as { base: string }).base, token!);
 const projectNow = () => projects.find((p) => p.id === projectId);
@@ -69,7 +72,7 @@ function render(): void {
   const missing = state.rows.length - found.length;
   const checked = state.rows.filter((r) => r.verdict).length;
   const rows = [...found].sort((a, c) => Number(!!c.flag) - Number(!!a.flag));
-  app.innerHTML = `
+  renderKeepingNote(app, `
     ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
     ${liveHtml()}
     <div class="bar"><button id="load">${b ? "Load other…" : "Load preview file…"}</button>
@@ -87,7 +90,8 @@ function render(): void {
         ${link && link !== "searching" && token ? `<button id="send" ${checked && !busy ? "" : "disabled"}>Send to Retrans</button>` : ""}
         <button id="remove">Remove copies</button>
       </div>
-      ${sent ? `<p class="ok" role="status">Sent. Apply them in Retrans.</p>` : ""}` : `<p class="muted">Export a preview file from Retrans (Settings → Figma → Designer preview), then load it here.</p>`}`;
+      ${sentKey === resultsKey(state) ? `<p class="ok" role="status">Sent. Apply them in Retrans.</p>` : ""}
+      ${copiedKey === resultsKey(state) ? `<p class="ok" role="status">Copied. Paste it into a file named ${esc(resultsName())} and import it in Retrans with Import designer results….</p>` : ""}` : `<p class="muted">Export a preview file from Retrans (Settings → Figma → Designer preview), then load it here.</p>`}`);
 }
 
 function resultsText(): string {
@@ -152,17 +156,24 @@ app.addEventListener("click", async (e) => {
   else if (t.id === "drafts") {
     await live(async () => {
       const picked = projectId;
-      await loadProjects();
-      if (projectId !== picked) throw new Error("That project isn't open in Retrans any more. Pick a project and try again.");
-      const bundle = await api().bundle(projectId, locale, includeReviewed);
-      sent = false;
-      post({ type: "bundle", bundle, fileName: projectNow()?.name ?? projectId, projectId });
+      const wanted = locale;
+      projects = await api().projects();
+      let target: ReturnType<typeof draftsTarget>;
+      try {
+        target = draftsTarget(projects, picked, wanted);
+      } finally {
+        projectId = pickProject(projects, projectId, state.bundle?.sourceProjectId);
+        if (!targetLocales().includes(locale)) locale = targetLocales()[0] ?? "";
+      }
+      const bundle = await api().bundle(target.project.id, target.locale, includeReviewed);
+      sentKey = copiedKey = null;
+      post({ type: "bundle", bundle, fileName: target.project.name, projectId: target.project.id });
     });
   } else if (t.id === "send") {
     await live(async () => {
-      sent = false;
-      await sendResults(api(), toResults(state, new Date()), state.projectId ? state.fileName ?? undefined : undefined);
-      sent = true;
+      sentKey = null;
+      await sendResults(api(), toResults(state, new Date()), state.projectId ? state.fileName ?? undefined : undefined, state.projectId);
+      sentKey = resultsKey(state);
     });
   } else if (t.id === "load") (document.getElementById("file") as HTMLInputElement).click();
   else if (t.id === "make") post({ type: "make-copies" });
@@ -184,6 +195,8 @@ app.addEventListener("click", async (e) => {
       document.execCommand("copy");
       area.remove();
     }
+    copiedKey = resultsKey(state);
+    render();
   } else if (row && t.dataset.verdict) {
     const v = t.dataset.verdict as "fits" | "too-long";
     const current = state.rows.find((r) => r.key === row.dataset.key)?.verdict;

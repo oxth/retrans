@@ -85,7 +85,7 @@ Before you accept AI drafts, a designer can check they fit the real design. The 
 
 1. In **Settings → Figma**, click **Export preview for a designer…**, pick a language and save the file. It holds that language's drafts that aren't reviewed yet and are linked to a Figma variable (tick **Include reviewed translations** to add the rest).
 2. The designer opens the **Retrans Preview** plugin in Figma, loads the file, selects the frames to check and clicks **Make preview copies**. The copies appear next to the originals with the drafts in place; the originals are never changed.
-3. The plugin flags text that may overflow (⚠) or uses a font that isn't installed. The designer marks each string **Fits** or **Too long**, adds a note if useful, and clicks **Save results** (or **Copy results**).
+3. The plugin flags text that may overflow (⚠) or uses a font that isn't installed. The designer marks each string **Fits** or **Too long**, adds a note if useful, and clicks **Save results**. If saving a file doesn't work, **Copy results** puts the same text on the clipboard: paste it into a new file whose name ends in `.retrans-results.json`.
 4. Back in Retrans, **Import designer results…** shows how many fit and how many are too long, then adds the marks. **Too long** shows on the cell with the designer's note, and the **Too long** filter lists them.
 5. Shorten what's too long and review as usual. A mark belongs to the exact text the designer saw: editing the text clears it, and a results file for text that changed since is skipped.
 

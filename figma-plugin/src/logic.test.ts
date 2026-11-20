@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PreviewBundle } from "../../src/preview/format";
-import { type Box, copyPlacement, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
+import { type Box, copyPlacement, resultsKey, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
 
 const box = (width: number, height: number, x = 0, y = 0): Box => ({ x, y, width, height });
 const shape = (autoResize: TextShape["autoResize"], b: Box, needed: Box = b): TextShape => ({ box: b, autoResize, needed });
@@ -91,5 +91,19 @@ describe("copyPlacement", () => {
   });
   it("places a nested frame on the page, beside where it shows", () => {
     expect(copyPlacement({ x: 10, y: 20, width: 100, abs, parentType: "FRAME" })).toEqual({ into: "page", x: 1180, y: 2000 });
+  });
+});
+
+describe("resultsKey", () => {
+  const base: PluginState = {
+    bundle: null, fileName: null,
+    rows: [{ key: "a", text: "ก", flag: null, found: true, verdict: "fits" }],
+  };
+  it("stays the same for the same verdicts and notes", () => {
+    expect(resultsKey(base)).toBe(resultsKey({ ...base, rows: base.rows.map((r) => ({ ...r })) }));
+  });
+  it("changes when a verdict or a note changes", () => {
+    expect(resultsKey({ ...base, rows: [{ ...base.rows[0], verdict: "too-long" }] })).not.toBe(resultsKey(base));
+    expect(resultsKey({ ...base, rows: [{ ...base.rows[0], note: "cut" }] })).not.toBe(resultsKey(base));
   });
 });

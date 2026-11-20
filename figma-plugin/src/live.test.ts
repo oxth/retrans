@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Fetch, LinkError, findRetrans, linkAfterError, liveApi, pickProject, pair, sendResults } from "./live";
+import { type Fetch, LinkError, draftsTarget, findRetrans, linkAfterError, liveApi, pickProject, pair, sendResults } from "./live";
 
 const json = (status: number, body: unknown): Response =>
   ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body), json: async () => body }) as Response;
@@ -118,6 +118,18 @@ describe("sendResults", () => {
     expect(err.message).toBe("Open Shop in Retrans to send these results.");
     expect(calls.map((c) => c.url)).toEqual([`${base}/v1/projects`]);
   });
+  it("with the project open in two tabs, sends to the tab the drafts came from", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const f = fake({
+      [`${base}/v1/projects`]: () => json(200, [
+        { id: "tab-1", name: "Shop", projectId: "proj-1", baseLocale: "en", locales: ["en", "th"] },
+        { id: "tab-2", name: "Shop", projectId: "proj-1", baseLocale: "en", locales: ["en", "th"] },
+      ]),
+      [`${base}/v1/results?project=tab-2`]: () => json(202, {}),
+    }, calls);
+    await sendResults(liveApi(f, base, "tok"), results, "Shop", "tab-2");
+    expect(calls[1].url).toBe(`${base}/v1/results?project=tab-2`);
+  });
   it("says 'that project' when the name is unknown", async () => {
     const f = fake({ [`${base}/v1/projects`]: () => json(200, []) });
     const err = await sendResults(liveApi(f, base, "tok"), results).catch((e) => e);
@@ -127,8 +139,11 @@ describe("sendResults", () => {
 
 describe("linkAfterError", () => {
   const link = { base: "http://localhost:47321", paired: true };
-  it("drops the link when Retrans can't be reached or timed out", () => {
+  it("drops the link when Retrans can't be reached", () => {
     expect(linkAfterError(link, new LinkError("Can't reach Retrans. Is it open?", 0))).toBeNull();
+  });
+  it("keeps the link when Retrans is only slow", () => {
+    expect(linkAfterError(link, new LinkError("Retrans didn't answer in time. Is it busy?", 408))).toBe(link);
   });
   it("keeps the link for an answer from Retrans or any other error", () => {
     expect(linkAfterError(link, new LinkError("x", 422))).toBe(link);
@@ -166,10 +181,23 @@ describe("timeouts", () => {
   it("a hung call rejects with a LinkError", async () => {
     const err = await liveApi(never, "http://localhost:47321", "tok", 20).projects().catch((e) => e);
     expect(err).toBeInstanceOf(LinkError);
-    expect(err.status).toBe(0);
+    expect(err.status).toBe(408);
     expect(err.message).toBe("Retrans didn't answer in time. Is it busy?");
   });
   it("a hung pair rejects with a LinkError", async () => {
     await expect(pair(never, "http://localhost:47321", "123456", 20)).rejects.toBeInstanceOf(LinkError);
+  });
+});
+
+describe("draftsTarget", () => {
+  const list = [{ id: "tab-a", name: "Shop", projectId: "proj-a", baseLocale: "en", locales: ["en", "th", "ja"] }];
+  it("keeps the picked project and language when both are still there", () => {
+    expect(draftsTarget(list, "tab-a", "th")).toEqual({ project: list[0], locale: "th" });
+  });
+  it("stops when the picked project has closed", () => {
+    expect(() => draftsTarget(list, "tab-gone", "th")).toThrow("That project isn't open in Retrans any more. Pick a project and try again.");
+  });
+  it("stops instead of switching language when the picked one is gone", () => {
+    expect(() => draftsTarget(list, "tab-a", "fr")).toThrow("Shop no longer has fr. Pick a language and try again.");
   });
 });

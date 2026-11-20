@@ -54,6 +54,11 @@ export function copyPlacement(source: { x: number; y: number; width: number; abs
   return { into: "page", x: source.abs.x + source.abs.width + gap, y: source.abs.y };
 }
 
+/** What the designer has marked, so "Sent" and "Copied" can tell when the marks changed since. */
+export function resultsKey(state: PluginState): string {
+  return JSON.stringify(state.rows.map((r) => [r.key, r.verdict, r.note ?? ""]));
+}
+
 export function toResults(state: PluginState, now: Date): PreviewResults {
   const b = state.bundle;
   if (!b) throw new Error("Load a preview file first.");

@@ -63,7 +63,8 @@ async function call(fetch: Fetch, url: string, init: RequestInit | undefined, ti
       return { res: r, text: await r.text() };
     }));
   } catch (e) {
-    if (e instanceof TimedOut) throw new LinkError("Retrans didn't answer in time. Is it busy?", 0);
+    // 408: Retrans is there but slow, so the link stays; 0: it can't be reached at all.
+    if (e instanceof TimedOut) throw new LinkError("Retrans didn't answer in time. Is it busy?", 408);
     throw new LinkError("Can't reach Retrans. Is it open?", 0);
   }
   if (!res.ok) {
@@ -121,14 +122,17 @@ export async function sendResults(
   api: { projects(): Promise<RetransProject[]>; send(project: string, results: PreviewResults): Promise<void> },
   results: PreviewResults,
   projectName?: string,
+  /** The tab the drafts came from: preferred when the project is open in more than one tab. */
+  preferTab?: string,
 ): Promise<void> {
   const projects = await api.projects();
-  const project = projects.find((p) => p.projectId !== undefined && p.projectId === results.sourceProjectId);
+  const matches = projects.filter((p) => p.projectId !== undefined && p.projectId === results.sourceProjectId);
+  const project = matches.find((p) => p.id === preferTab) ?? matches[0];
   if (!project) throw new LinkError(`Open ${projectName || "that project"} in Retrans to send these results.`, 404);
   await api.send(project.id, results);
 }
 
-/** Drops the link when Retrans can't be reached or timed out; any other error keeps it. */
+/** Drops the link when Retrans can't be reached; a slow answer or any other error keeps it. */
 export function linkAfterError<L>(link: L, err: unknown): L | null {
   return err instanceof LinkError && err.status === 0 ? null : link;
 }
@@ -141,4 +145,17 @@ export function pickProject(projects: RetransProject[], current: string, sourceP
     if (match) return match.id;
   }
   return projects[0]?.id ?? "";
+}
+
+/**
+ * The project and language Get drafts asks for, after the project list was reloaded. Stops rather
+ * than quietly fetching another project or language than the one the designer picked.
+ */
+export function draftsTarget(projects: RetransProject[], picked: string, locale: string): { project: RetransProject; locale: string } {
+  const project = projects.find((p) => p.id === picked);
+  if (!project) throw new Error("That project isn't open in Retrans any more. Pick a project and try again.");
+  if (!project.locales.includes(locale) || locale === project.baseLocale) {
+    throw new Error(`${project.name} no longer has ${locale}. Pick a language and try again.`);
+  }
+  return { project, locale };
 }
