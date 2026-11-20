@@ -5,6 +5,7 @@
 
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -25,6 +26,9 @@ const HEAD_LIMIT: usize = 16 * 1024;
 
 /// How long a connection may block on a single read or write before it is abandoned.
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The total time allowed for reading one request.
+const CONNECTION_DEADLINE: Duration = Duration::from_secs(10);
 
 /// The most connections served at once. A connection past the cap is dropped, not queued.
 const MAX_CONNECTIONS: usize = 32;
@@ -67,6 +71,27 @@ pub fn start(
     ports: &[u16],
     timeout: Duration,
 ) -> Result<Server, String> {
+    start_with_deadline(
+        store,
+        bridge,
+        pairing,
+        version,
+        ports,
+        timeout,
+        CONNECTION_DEADLINE,
+    )
+}
+
+/// Test seam for choosing a shorter total request-reading deadline.
+fn start_with_deadline(
+    store: Arc<dyn SecretStore>,
+    bridge: Arc<dyn Bridge>,
+    pairing: Arc<Mutex<Option<Pairing>>>,
+    version: &str,
+    ports: &[u16],
+    timeout: Duration,
+    deadline: Duration,
+) -> Result<Server, String> {
     let (port, listener) = bind_v4(ports)?;
     let v4 = listener
         .local_addr()
@@ -79,6 +104,7 @@ pub fn start(
         version: version.to_string(),
         port,
         timeout,
+        deadline,
     });
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -139,6 +165,20 @@ fn spawn_acceptor(
     (address, handle)
 }
 
+/// Decides what an accept failure means: once `stop` is set the loop ends, otherwise the failure
+/// is treated as transient, logged and paced so the thread keeps serving instead of spinning.
+fn accept_failure(stop: &AtomicBool) -> ControlFlow<(), ()> {
+    if stop.load(Ordering::SeqCst) {
+        ControlFlow::Break(())
+    } else {
+        // A transient accept error (a reset from a peer that vanished mid-handshake, say) must not
+        // end the listener: pace the retry so it cannot busy-spin and keep accepting.
+        log::debug!("preview link: accept failed, retrying");
+        thread::sleep(Duration::from_millis(50));
+        ControlFlow::Continue(())
+    }
+}
+
 /// Accepts connections until the stop flag is set, handing each one to a short-lived thread.
 ///
 /// The loop blocks in `accept` (never busy-spins); a stop nudge or a stop flag makes it exit.
@@ -151,15 +191,14 @@ fn accept_loop(
     loop {
         let (stream, _peer) = match listener.accept() {
             Ok(accepted) => accepted,
-            Err(error) => {
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                // An unexpected accept failure must not spin the thread; give up on the listener.
-                log::debug!("preview link listener stopped: {error}");
-                break;
-            }
+            Err(_) => match accept_failure(&stop) {
+                ControlFlow::Break(()) => break,
+                ControlFlow::Continue(()) => continue,
+            },
         };
+
+        // The request-reading deadline starts at accept, before the connection is handed off.
+        let deadline = Instant::now() + endpoint.deadline;
 
         if stop.load(Ordering::SeqCst) {
             break;
@@ -182,10 +221,17 @@ fn accept_loop(
         let guard = ConnectionGuard {
             connections: connections.clone(),
         };
-        thread::spawn(move || {
-            let _guard = guard;
-            endpoint.serve(stream);
-        });
+        // A spawn failure drops the closure, which drops `guard` and `stream` together: the slot is
+        // released and the connection goes unanswered, exactly like a connection past the cap.
+        if let Err(error) = thread::Builder::new()
+            .name("preview-link".to_string())
+            .spawn(move || {
+                let _guard = guard;
+                endpoint.serve(stream, deadline);
+            })
+        {
+            log::debug!("preview link: couldn't spawn a connection thread: {error}");
+        }
     }
 }
 
@@ -240,14 +286,18 @@ struct Endpoint {
     version: String,
     port: u16,
     timeout: Duration,
+    /// The total time allowed for reading one request before the connection is dropped.
+    deadline: Duration,
 }
 
 impl Endpoint {
     /// Serves exactly one request on `stream` and lets the connection close when it returns.
-    fn serve(&self, stream: TcpStream) {
+    ///
+    /// `deadline` bounds reading the request only (head and body); the bridge wait is not covered.
+    fn serve(&self, stream: TcpStream, deadline: Instant) {
         let mut reader = BufReader::new(stream);
 
-        let head = match read_head(&mut reader) {
+        let head = match read_head(&mut reader, deadline) {
             HeadRead::Head(head) => head,
             HeadRead::TooLarge => {
                 self.respond(
@@ -271,11 +321,12 @@ impl Endpoint {
             }
         };
 
-        self.dispatch(&mut reader, request);
+        self.dispatch(&mut reader, request, deadline);
     }
 
-    /// Runs the checks in order (host, preflight, body framing, route) and answers the request.
-    fn dispatch(&self, reader: &mut BufReader<TcpStream>, request: RequestHead) {
+    /// Runs the checks in order (host, preflight, body framing, route) and answers the request. A
+    /// `None` from `route` means the connection deadline passed and nothing is sent.
+    fn dispatch(&self, reader: &mut BufReader<TcpStream>, request: RequestHead, deadline: Instant) {
         if !auth::host_allowed(request.header("host"), self.port) {
             self.respond(
                 reader,
@@ -326,32 +377,41 @@ impl Endpoint {
             return;
         }
 
-        let reply = self.route(reader, &request, declared);
-        self.respond(reader, reply);
+        // A `None` means the deadline passed while reading the body: drop the connection quietly.
+        if let Some(reply) = self.route(reader, &request, declared, deadline) {
+            self.respond(reader, reply);
+        }
     }
 
     /// Picks the answer for a request, after the host, preflight and size checks.
+    ///
+    /// Returns `None` when reading the body ran past the connection deadline, which the caller
+    /// answers by closing the connection without a reply.
     fn route(
         &self,
         reader: &mut BufReader<TcpStream>,
         request: &RequestHead,
         declared: u64,
-    ) -> Reply {
+        deadline: Instant,
+    ) -> Option<Reply> {
         let url = request.target.as_str();
         let (path, _) = url.split_once('?').unwrap_or((url, ""));
         let query: Vec<(String, String)> = query_pairs(url).collect();
 
-        match (request.method.as_str(), path) {
+        let reply = match (request.method.as_str(), path) {
             ("GET", "/v1/hello") => Reply::json(
                 200,
                 json!({ "app": "retrans", "version": self.version, "paired": self.paired() }),
             ),
-            ("POST", "/v1/pair") => self.pair(reader, declared),
+            ("POST", "/v1/pair") => return self.pair(reader, declared, deadline),
             ("GET", "/v1/projects") => self.projects(request),
             ("GET", "/v1/bundle") => self.bundle(request, &query),
-            ("POST", "/v1/results") => self.results(reader, request, &query, declared),
+            ("POST", "/v1/results") => {
+                return self.results(reader, request, &query, declared, deadline)
+            }
             _ => Reply::json(404, json!({ "error": "No such endpoint." })),
-        }
+        };
+        Some(reply)
     }
 
     /// Whether a plugin token is stored.
@@ -382,13 +442,24 @@ impl Endpoint {
     }
 
     /// Handles `POST /v1/pair`: checks the shown code, stores a fresh token and spends the code.
-    fn pair(&self, reader: &mut BufReader<TcpStream>, declared: u64) -> Reply {
-        let value = match self.json_body(reader, declared) {
+    ///
+    /// Returns `None` when the connection deadline passed while reading the body.
+    fn pair(
+        &self,
+        reader: &mut BufReader<TcpStream>,
+        declared: u64,
+        deadline: Instant,
+    ) -> Option<Reply> {
+        let value = match self.json_body(reader, declared, deadline) {
             Ok(value) => value,
-            Err(reply) => return reply,
+            Err(BodyRead::Rejected(reply)) => return Some(reply),
+            Err(BodyRead::Expired) => return None,
         };
         let Some(code) = value.get("code").and_then(Value::as_str) else {
-            return Reply::json(403, json!({ "error": "That pairing code didn't work." }));
+            return Some(Reply::json(
+                403,
+                json!({ "error": "That pairing code didn't work." }),
+            ));
         };
 
         let accepted = {
@@ -411,14 +482,17 @@ impl Endpoint {
         };
 
         if !accepted {
-            return Reply::json(403, json!({ "error": "That pairing code didn't work." }));
+            return Some(Reply::json(
+                403,
+                json!({ "error": "That pairing code didn't work." }),
+            ));
         }
 
         let token = auth::new_token();
         if let Err(error) = self.store.set(auth::TOKEN_ACCOUNT, &token) {
-            return Reply::json(500, json!({ "error": error }));
+            return Some(Reply::json(500, json!({ "error": error })));
         }
-        Reply::json(200, json!({ "token": token }))
+        Some(Reply::json(200, json!({ "token": token })))
     }
 
     /// Handles `GET /v1/projects`.
@@ -451,24 +525,28 @@ impl Endpoint {
     }
 
     /// Handles `POST /v1/results`, which needs a project and a JSON body.
+    ///
+    /// Returns `None` when the connection deadline passed while reading the body.
     fn results(
         &self,
         reader: &mut BufReader<TcpStream>,
         request: &RequestHead,
         query: &[(String, String)],
         declared: u64,
-    ) -> Reply {
+        deadline: Instant,
+    ) -> Option<Reply> {
         if let Err(reply) = self.check_token(request) {
-            return reply;
+            return Some(reply);
         }
         let Some(project) = query_value(query, "project") else {
-            return Reply::json(400, json!({ "error": "project is required" }));
+            return Some(Reply::json(400, json!({ "error": "project is required" })));
         };
-        let body = match self.json_body(reader, declared) {
+        let body = match self.json_body(reader, declared, deadline) {
             Ok(body) => body,
-            Err(reply) => return reply,
+            Err(BodyRead::Rejected(reply)) => return Some(reply),
+            Err(BodyRead::Expired) => return None,
         };
-        self.forward("results", json!({ "project": project }), Some(body))
+        Some(self.forward("results", json!({ "project": project }), Some(body)))
     }
 
     /// Asks the webview and turns a timeout into a 504.
@@ -484,20 +562,48 @@ impl Endpoint {
 
     /// Reads the declared body, growing the buffer by the bytes that actually arrive (never by the
     /// declared length) and giving up as a 400 when the body is short of its declaration.
-    fn json_body(&self, reader: &mut BufReader<TcpStream>, declared: u64) -> Result<Value, Reply> {
+    ///
+    /// The connection deadline is re-checked on every chunk: once it passes, reading stops with
+    /// [`BodyRead::Expired`] so the caller closes the connection without a reply.
+    fn json_body(
+        &self,
+        reader: &mut BufReader<TcpStream>,
+        declared: u64,
+        deadline: Instant,
+    ) -> Result<Value, BodyRead> {
         let mut bytes = Vec::new();
-        let mut limited = reader.take(declared);
-        match limited.read_to_end(&mut bytes) {
-            Ok(read) if read as u64 == declared => {}
-            _ => {
-                return Err(Reply::json(
-                    400,
-                    json!({ "error": "Couldn't read the request body." }),
-                ));
+        while (bytes.len() as u64) < declared {
+            if !arm_read_timeout(reader.get_mut(), deadline) {
+                return Err(BodyRead::Expired);
             }
+
+            let chunk = match reader.fill_buf() {
+                Ok(chunk) => chunk,
+                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                // A read that ran out its (deadline-narrowed) timeout means the peer went quiet.
+                Err(error)
+                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>
+                {
+                    return Err(BodyRead::Expired);
+                }
+                Err(_) => return Err(BodyRead::Rejected(short_body())),
+            };
+
+            if chunk.is_empty() {
+                return Err(BodyRead::Rejected(short_body()));
+            }
+
+            let want = chunk.len().min((declared - bytes.len() as u64) as usize);
+            bytes.extend_from_slice(&chunk[..want]);
+            reader.consume(want);
         }
-        serde_json::from_slice(&bytes)
-            .map_err(|_| Reply::json(400, json!({ "error": "The request body is not valid JSON." })))
+
+        serde_json::from_slice(&bytes).map_err(|_| {
+            BodyRead::Rejected(Reply::json(
+                400,
+                json!({ "error": "The request body is not valid JSON." }),
+            ))
+        })
     }
 
     /// Sends a JSON reply with the CORS header every response carries, then the connection closes.
@@ -534,6 +640,19 @@ fn write_out(stream: &mut TcpStream, bytes: &[u8]) {
     let _ = stream.flush();
 }
 
+/// Why reading a request body stopped before the caller could answer.
+enum BodyRead {
+    /// The connection deadline passed mid-read; the caller closes without a reply.
+    Expired,
+    /// The body could not be read to its declaration; the caller sends this reply.
+    Rejected(Reply),
+}
+
+/// The 400 for a body that could not be read to its declared length.
+fn short_body() -> Reply {
+    Reply::json(400, json!({ "error": "Couldn't read the request body." }))
+}
+
 /// Winds a rejected request down without a reset: sends our FIN, then consumes up to `remaining`
 /// bytes of the incoming body into a fixed buffer. Everything is bounded by the socket's read
 /// timeout, so a peer that stops sending is abandoned rather than waited on, and the buffer is
@@ -564,14 +683,18 @@ enum HeadRead {
     Closed,
 }
 
-/// Reads a request head byte by byte until CRLFCRLF, bounded by `HEAD_LIMIT`.
+/// Reads a request head byte by byte until CRLFCRLF, bounded by `HEAD_LIMIT` and `deadline`.
 ///
-/// A read timeout or EOF before the terminator is a `Closed` head, which is answered by silence;
-/// bytes the buffered reader has already pulled in beyond the head stay available for the body.
-fn read_head<R: BufRead>(reader: &mut R) -> HeadRead {
+/// A read timeout, EOF, or a `deadline` that passes before the terminator is a `Closed` head,
+/// which is answered by silence; bytes the buffered reader has already pulled in beyond the head
+/// stay available for the body.
+fn read_head(reader: &mut BufReader<TcpStream>, deadline: Instant) -> HeadRead {
     let mut head = Vec::with_capacity(256);
     let mut byte = [0u8; 1];
     loop {
+        if !arm_read_timeout(reader.get_mut(), deadline) {
+            return HeadRead::Closed;
+        }
         match reader.read(&mut byte) {
             Ok(0) => return HeadRead::Closed,
             Ok(_) => {
@@ -588,6 +711,18 @@ fn read_head<R: BufRead>(reader: &mut R) -> HeadRead {
             Err(_) => return HeadRead::Closed,
         }
     }
+}
+
+/// Arms `stream` for the next read, narrowing the socket's read timeout to whichever is shorter,
+/// `IO_TIMEOUT` or the time left before `deadline`. Returns `false` once the deadline has passed,
+/// telling the caller to stop reading and let the connection close.
+fn arm_read_timeout(stream: &TcpStream, deadline: Instant) -> bool {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return false;
+    }
+    let _ = stream.set_read_timeout(Some(remaining.min(IO_TIMEOUT)));
+    true
 }
 
 /// A parsed request line and header list. Header names are kept as written and matched
@@ -702,7 +837,7 @@ mod tests {
     use super::*;
 
     use std::collections::HashMap;
-    use std::io::{Read, Write};
+    use std::io::{self, Read, Write};
     use std::net::{Shutdown, TcpListener, TcpStream};
     use std::time::Instant;
 
@@ -1420,5 +1555,158 @@ mod tests {
         );
 
         let _ = client.join();
+    }
+
+    #[test]
+    fn accept_errors_are_retried_until_stop_is_set() {
+        let stop = AtomicBool::new(false);
+        let mut source = [
+            Err(io::Error::from(io::ErrorKind::ConnectionAborted)),
+            Err(io::Error::from(io::ErrorKind::ConnectionAborted)),
+            Ok(()),
+            Err(io::Error::from(io::ErrorKind::ConnectionAborted)),
+        ]
+        .into_iter();
+        let mut errors = 0;
+        let mut accepted = 0;
+
+        loop {
+            match source.next().expect("the fake accept source was exhausted") {
+                Ok(()) => {
+                    accepted += 1;
+                    stop.store(true, Ordering::SeqCst);
+                }
+                Err(error) => {
+                    assert_eq!(error.kind(), io::ErrorKind::ConnectionAborted);
+                    errors += 1;
+                    if let ControlFlow::Break(()) = accept_failure(&stop) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        assert_eq!(errors, 3, "errors before stop must not end the accept loop");
+        assert_eq!(accepted, 1, "the loop must reach an accepted connection");
+    }
+
+    /// Sends bytes one at a time until the server closes the connection or the observation window
+    /// expires. A read timeout keeps the test from blocking between trickled bytes.
+    fn trickle_until_closed(mut stream: TcpStream, bytes: &[u8], window: Duration) -> bool {
+        stream
+            .set_read_timeout(Some(Duration::from_millis(40)))
+            .expect("read timeout");
+        let deadline = Instant::now() + window;
+
+        for byte in bytes {
+            if Instant::now() >= deadline {
+                break;
+            }
+            if stream.write_all(std::slice::from_ref(byte)).is_err() {
+                return true;
+            }
+
+            let mut response = [0u8; 1];
+            match stream.read(&mut response) {
+                Ok(0) => return true,
+                Ok(_) => return true,
+                Err(error)
+                    if !matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    return true;
+                }
+                Err(_) => {}
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+
+        false
+    }
+
+    #[test]
+    fn a_trickling_request_head_expires_without_blocking_new_requests() {
+        let port = 47410;
+        let store = Arc::new(MemStore::default());
+        let bridge = Arc::new(FakeBridge::default());
+        let pairing = Arc::new(Mutex::new(None));
+        let server = start_with_deadline(
+            store,
+            bridge,
+            pairing,
+            "test",
+            &[port],
+            Duration::from_secs(5),
+            Duration::from_millis(600),
+        )
+        .unwrap();
+        let host = format!("127.0.0.1:{port}");
+        let body = json!({ "code": "000000" }).to_string();
+        let request = build(
+            "POST",
+            "/v1/pair",
+            &host,
+            None,
+            body.len(),
+            body.as_bytes(),
+        );
+        let client = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        let closed = trickle_until_closed(client, &request, Duration::from_secs(2));
+        let status = status_within(
+            port,
+            &build("GET", "/v1/hello", &host, None, 0, &[]),
+            Duration::from_secs(1),
+        );
+
+        server.stop();
+
+        assert!(closed, "the trickling request head was not closed by its deadline");
+        assert_eq!(status, 200);
+    }
+
+    #[test]
+    fn a_trickling_request_body_expires_without_blocking_new_requests() {
+        let port = 47411;
+        let store = Arc::new(MemStore::default());
+        let bridge = Arc::new(FakeBridge::default());
+        let pairing = Arc::new(Mutex::new(None));
+        let server = start_with_deadline(
+            store,
+            bridge,
+            pairing,
+            "test",
+            &[port],
+            Duration::from_secs(5),
+            Duration::from_millis(600),
+        )
+        .unwrap();
+        let host = format!("127.0.0.1:{port}");
+        let body = json!("x".repeat(4_094)).to_string();
+        assert_eq!(body.len(), 4_096);
+        let request = build("POST", "/v1/pair", &host, None, 4_096, &[]);
+        let mut client = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        client
+            .set_write_timeout(Some(Duration::from_secs(1)))
+            .expect("write timeout");
+        let head_end = request
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .expect("request head");
+        client
+            .write_all(&request[..head_end + 4])
+            .expect("write request head");
+        let closed = trickle_until_closed(client, body.as_bytes(), Duration::from_secs(2));
+        let status = status_within(
+            port,
+            &build("GET", "/v1/hello", &host, None, 0, &[]),
+            Duration::from_secs(1),
+        );
+
+        server.stop();
+
+        assert!(closed, "the trickling request body was not closed by its deadline");
+        assert_eq!(status, 200);
     }
 }
