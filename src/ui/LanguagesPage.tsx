@@ -33,9 +33,14 @@ export function LanguagesPage({ session, stats }: { session: ProjectSession; sta
     order.splice(Math.max(0, Math.min(to, order.length)), 0, l);
     if (order.some((x, k) => x !== others[k])) session.setProjectSetting({ localeOrder: order });
   };
+  /** Keyboard reorder (↑ / ↓ on a focused grip), said aloud so screen-reader users know where it went. */
+  const [said, setSaid] = useState("");
   const move = (l: string, delta: -1 | 1) => {
     const i = others.indexOf(l);
-    if (i >= 0 && i + delta >= 0 && i + delta < others.length) place(l, i + delta);
+    if (i < 0 || i + delta < 0 || i + delta >= others.length) return;
+    place(l, i + delta);
+    // Position counts the base, which is always 1.
+    setSaid(`${languageWithCode(l)} moved to position ${i + delta + 2} of ${others.length + 1}.`);
   };
 
   // Dragging a row by its grip: it follows the pointer, the rows it passes make room, and it lands where it's
@@ -100,10 +105,16 @@ export function LanguagesPage({ session, stats }: { session: ProjectSession; sta
 
   return (
     <div className="mx-auto w-full max-w-2xl p-6">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-sm text-muted">The languages in this project and how complete each one is. Their order here is the order of the columns.</p>
-        <button className={btnPrimary} onClick={() => setAdding(true)}>Add language</button>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <p className="min-w-0 text-sm text-muted">
+          The languages in this project and how complete each one is. Drag a language to change the order of the columns.
+        </p>
+        <button className={`${btnPrimary} shrink-0 whitespace-nowrap`} onClick={() => setAdding(true)}>
+          <Icon name="plus" size={15} />
+          Add language
+        </button>
       </div>
+      <p aria-live="polite" className="sr-only">{said}</p>
       {custom && (
         <p className="mb-2 flex items-center justify-end gap-2 text-xs text-muted">
           Your own order, shared through git.
@@ -128,56 +139,47 @@ export function LanguagesPage({ session, stats }: { session: ProjectSession; sta
                 dragged ? "z-10 shadow-pop" : drag ? "transition-transform duration-150 motion-reduce:transition-none" : ""
               }`}
             >
-              {/* The base is always first; the others move by dragging the grip, or with ↑ / ↓. */}
-              <div className="flex w-[4.5rem] shrink-0 items-center gap-0.5">
+              {/* The base is always first. The others move by dragging the grip, or with ↑ / ↓ while it has focus. */}
+              <div className="w-6 shrink-0">
                 {l !== baseLocale && (
-                  <>
-                    <span
-                      aria-hidden="true"
-                      title="Drag to reorder"
-                      className={`touch-none rounded p-1 text-faint hover:bg-hover hover:text-fg ${dragged ? "cursor-grabbing" : "cursor-grab"}`}
-                      onPointerDown={(e) => startDrag(e, l)}
-                    >
-                      <Icon name="grip" size={14} />
-                    </span>
-                    <button
-                      aria-label={`Move ${localeLabel(l)} (${l}) up`}
-                      title="Move up"
-                      disabled={at === 0}
-                      className="rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-30"
-                      onClick={() => move(l, -1)}
-                    >
-                      <Icon name="chevronDown" size={14} className="rotate-180" />
-                    </button>
-                    <button
-                      aria-label={`Move ${localeLabel(l)} (${l}) down`}
-                      title="Move down"
-                      disabled={at === others.length - 1}
-                      className="rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-30"
-                      onClick={() => move(l, 1)}
-                    >
-                      <Icon name="chevronDown" size={14} />
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    aria-label={`Reorder ${languageWithCode(l)}, position ${at + 2} of ${others.length + 1}. Use the up and down arrow keys.`}
+                    title="Drag to reorder"
+                    className={`flex touch-none rounded p-1 text-faint hover:bg-hover hover:text-fg ${dragged ? "cursor-grabbing" : "cursor-grab"}`}
+                    onPointerDown={(e) => startDrag(e, l)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+                      e.preventDefault();
+                      move(l, e.key === "ArrowUp" ? -1 : 1);
+                    }}
+                  >
+                    <Icon name="grip" size={14} />
+                  </button>
                 )}
               </div>
-              <div className="w-48">
-                <span className="font-mono font-semibold">{l}</span>{" "}
-                <span className="text-muted">{localeLabel(l)}{l === baseLocale ? " (base)" : ""}</span>
+              {/* Name, code, base: as in the sidebar. A long name gives way; the code and the tag don't. */}
+              <div className="flex w-56 min-w-0 items-center gap-1.5" title={languageWithCode(l)}>
+                <span className="truncate font-medium text-fg">{localeLabel(l)}</span>
+                <span className="shrink-0 font-mono text-xs text-muted">{l}</span>
+                {l === baseLocale && <span className="shrink-0 rounded bg-sunken px-1 text-xs text-fg-2">base</span>}
               </div>
               <div className="h-1.5 flex-1 rounded bg-sunken">
                 <div className={`h-full rounded ${pct < 80 ? "bg-warn-solid" : "bg-ok-solid"}`} style={{ width: `${pct}%` }} />
               </div>
-              <div className="w-24 text-right text-xs text-muted">{s.done} / {s.total} ({pct}%)</div>
-              <button
-                aria-label={`Remove ${l}`}
-                disabled={l === baseLocale}
-                title={l === baseLocale ? "The base language can't be removed" : undefined}
-                className="rounded px-2 py-1 text-xs text-danger hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-40"
-                onClick={() => setRemoving(l)}
-              >
-                Remove
-              </button>
+              <div className="w-24 shrink-0 text-right text-xs tabular-nums text-muted">{s.done} / {s.total} ({pct}%)</div>
+              {/* Quiet until hovered: four red words in a column read as an alarm. The base can't be removed, so it has none. */}
+              <div className="w-16 shrink-0 text-right">
+                {l !== baseLocale && (
+                  <button
+                    aria-label={`Remove ${l}`}
+                    className="rounded px-2 py-1 text-xs text-muted hover:bg-danger-soft hover:text-danger"
+                    onClick={() => setRemoving(l)}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
             </li>
           );
         })}

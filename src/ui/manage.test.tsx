@@ -208,14 +208,20 @@ describe("languages", () => {
     act(() => s.addLanguage("de"));
     expect(s.displayLocales()).toEqual(["en", "de", "th"]);
     await userEvent.click(screen.getByRole("button", { name: "Languages" }));
-    expect(screen.getByRole("button", { name: "Move German (de) up" })).toBeDisabled();
-    await userEvent.click(screen.getByRole("button", { name: "Move German (de) down" }));
+    // Keyboard: the grip has focus, ↑ / ↓ move it (↑ at the top does nothing), and the move is announced.
+    const grip = screen.getByRole("button", { name: /^Reorder German \(de\), position 2 of 3/ });
+    grip.focus();
+    await userEvent.keyboard("{ArrowUp}");
+    expect(s.displayLocales()).toEqual(["en", "de", "th"]);
+    await userEvent.keyboard("{ArrowDown}");
+    expect(screen.getByText("German (de) moved to position 3 of 3.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Reorder German \(de\), position 3 of 3/ })).toHaveFocus();
     expect(s.displayLocales()).toEqual(["en", "th", "de"]);
     expect(s.state.project.localeOrder).toEqual(["th", "de"]);
     // A language added later goes at the end; the base never moves.
     act(() => s.addLanguage("ja"));
     expect(s.displayLocales()).toEqual(["en", "th", "de", "ja"]);
-    expect(screen.queryByRole("button", { name: /^Move English \(en\)/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Reorder English/ })).toBeNull();
     // The Translations view shows them in that order.
     await userEvent.click(screen.getByRole("button", { name: "Translations" }));
     const row = document.querySelector<HTMLElement>("[data-row]")!;
@@ -251,7 +257,7 @@ describe("languages", () => {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     const s = await open(nested());
     await userEvent.click(screen.getByRole("button", { name: "Languages" }));
-    expect(screen.getByRole("button", { name: "Remove en" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Remove en" })).toBeNull(); // the base can't be removed: no button
     await userEvent.click(screen.getByRole("button", { name: "Add language" }));
     const dlg = screen.getByRole("dialog", { name: "Add language" });
     await userEvent.type(within(dlg).getByLabelText("Language"), "fr");
