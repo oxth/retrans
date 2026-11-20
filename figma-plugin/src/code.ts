@@ -1,10 +1,11 @@
 /**
- * Retrans Preview, plugin side. Makes copies of the selected frames with the drafts of a preview
- * file in place, flags text that spills, and keeps the designer's verdicts. Only nodes this plugin
- * made (tagged "retransPreview") are ever changed or removed.
+ * Retrans Preview, plugin side. Shows one temporary preview: a copy of the selected frame with the
+ * drafts in place, which follows the selection and goes away when the plugin closes. Flags text that
+ * spills and keeps the designer's verdicts. Only nodes this plugin made (tagged "retransPreview") are
+ * ever changed or removed.
  */
 import type { PreviewBundle, PreviewFlag } from "../../src/preview/format";
-import { type Box, copyPlacement, isOverflow, markRestFits, matchesVariable, planCopies, type PluginState, type TextShape } from "./logic";
+import { type Box, copyPlacement, frameToPreview, isOverflow, markRestFits, matchesVariable, type PluginState, type SelectedNode, type TextShape } from "./logic";
 import type { ToCode, ToUi } from "./protocol";
 
 const TAG = "retransPreview";
@@ -100,79 +101,106 @@ function worse(a: PreviewFlag, b: PreviewFlag): PreviewFlag {
   return a === "font-missing" || b === "font-missing" ? "font-missing" : a ?? b;
 }
 
-/** Puts the drafts into one copy; returns the flag per key for the strings found in it. */
-async function fill(copy: SceneNode & ChildrenMixin, bundle: PreviewBundle): Promise<Map<string, PreviewFlag>> {
-  const found = new Map<string, PreviewFlag>();
+/** Puts the drafts into one copy: the flag per key for the strings found in it, and how many text layers matched. */
+async function fill(copy: SceneNode & ChildrenMixin, bundle: PreviewBundle): Promise<{ flags: Map<string, PreviewFlag>; linked: number }> {
+  const flags = new Map<string, PreviewFlag>();
+  let linked = 0;
   for (const node of copy.findAllWithCriteria({ types: ["TEXT"] })) {
     const bound = node.boundVariables?.characters?.id;
     if (!bound) continue;
     const s = bundle.strings.find((x) => x.figmaVariableId && matchesVariable(bound, x.figmaVariableId));
     if (!s) continue;
+    linked++;
     nodesByKey.set(s.key, [...(nodesByKey.get(s.key) ?? []), node.id]);
     if (!(await loadFonts(node))) {
-      found.set(s.key, worse(found.get(s.key) ?? null, "font-missing"));
+      flags.set(s.key, worse(flags.get(s.key) ?? null, "font-missing"));
       continue;
     }
     const before = measure(node);
     node.setBoundVariable("characters", null);
     node.characters = s.text;
     const flag = isOverflow(before, measure(node), parentBox(node)) ? "overflow" : null;
-    found.set(s.key, worse(found.get(s.key) ?? null, flag));
+    flags.set(s.key, worse(flags.get(s.key) ?? null, flag));
   }
-  return found;
+  return { flags, linked };
 }
 
-function existingCopies(): Array<{ copyId: string; sourceId: string; locale: string; node: SceneNode }> {
-  return figma.currentPage
-    .findAll((n) => n.getPluginData(TAG) !== "")
-    .map((n) => ({ copyId: n.id, sourceId: n.getPluginData(SOURCE), locale: n.getPluginData(TAG), node: n }));
+/** Every preview copy this plugin made, on any page it has loaded. */
+function removeAllCopies(): void {
+  for (const n of figma.currentPage.findAll((x) => x.getPluginData(TAG) !== "")) n.remove();
+  nodesByKey.clear();
 }
 
-async function makeCopies(): Promise<void> {
+/** The frame being previewed, so selecting more of the same frame doesn't remake its copy. */
+let previewSource: string | null = null;
+
+/** The top-level frame a node sits in (the ancestor whose parent is the page or a section), or null. */
+function topFrameOf(node: BaseNode): SceneNode | null {
+  let n: BaseNode | null = node;
+  while (n && n.parent && n.parent.type !== "PAGE" && n.parent.type !== "SECTION" && n.parent.type !== "DOCUMENT") n = n.parent;
+  // Only containers (frames, components, instances, groups) can be previewed; a lone layer keeps the current preview.
+  return n && n.parent && n.type !== "PAGE" && n.type !== "DOCUMENT" && "clone" in n && "findAllWithCriteria" in n ? (n as SceneNode) : null;
+}
+
+function inPreview(node: BaseNode): boolean {
+  for (let n: BaseNode | null = node; n && n.type !== "PAGE"; n = n.parent) if (n.getPluginData(TAG) !== "") return true;
+  return false;
+}
+
+/** Shows one preview: a copy of `frameId` next to it with the drafts in place; every other copy goes. */
+async function previewFrame(frameId: string): Promise<void> {
   const bundle = state.bundle;
-  if (!bundle) return send({ type: "error", message: "Load a preview file first." });
-  const selected = figma.currentPage.selection.filter((n) => "clone" in n && n.type !== "TEXT");
-  if (!selected.length) return send({ type: "error", message: "Select one or more frames to preview." });
-  const existing = existingCopies();
-  const plan = planCopies(selected.map((n) => n.id), existing, bundle.locale);
-  for (const e of existing) if (plan.remove.includes(e.copyId)) e.node.remove();
-
-  nodesByKey.clear();
-  const flags = new Map<string, PreviewFlag>();
-  const made: SceneNode[] = [];
-  for (const id of plan.copy) {
-    const source = (await figma.getNodeByIdAsync(id)) as (SceneNode & ChildrenMixin) | null;
-    if (!source || !("clone" in source)) continue;
-    const copy = source.clone() as SceneNode & ChildrenMixin;
-    const place = copyPlacement({ x: source.x, y: source.y, width: source.width, abs: boxOf(source), parentType: source.parent?.type ?? "PAGE" });
-    if (place.into === "parent" && source.parent) (source.parent as ChildrenMixin).appendChild(copy);
-    else figma.currentPage.appendChild(copy);
-    copy.x = place.x;
-    copy.y = place.y;
-    copy.name = `${source.name} · Preview ${bundle.locale}`;
-    copy.setPluginData(TAG, bundle.locale);
-    copy.setPluginData(SOURCE, source.id);
-    for (const [k, f] of await fill(copy, bundle)) flags.set(k, worse(flags.get(k) ?? null, f));
-    made.push(copy);
+  if (!bundle) return;
+  removeAllCopies();
+  const source = (await figma.getNodeByIdAsync(frameId)) as (SceneNode & ChildrenMixin) | null;
+  if (!source || !("clone" in source) || !("findAllWithCriteria" in source)) {
+    previewSource = null;
+    state = { ...state, preview: undefined, rows: state.rows.map((r) => ({ ...r, found: false, flag: null })) };
+    return save();
   }
-  state = { ...state, copiesMade: made.length, rows: state.rows.map((r) => ({ ...r, found: flags.has(r.key), flag: flags.get(r.key) ?? null })) };
-  figma.currentPage.selection = made;
-  if (made.length) figma.viewport.scrollAndZoomIntoView(made);
+  const copy = source.clone() as SceneNode & ChildrenMixin;
+  const place = copyPlacement({ x: source.x, y: source.y, width: source.width, abs: boxOf(source), parentType: source.parent?.type ?? "PAGE" });
+  if (place.into === "parent" && source.parent) (source.parent as ChildrenMixin).appendChild(copy);
+  else figma.currentPage.appendChild(copy);
+  copy.x = place.x;
+  copy.y = place.y;
+  copy.name = `${source.name} · Preview ${bundle.locale}`;
+  copy.setPluginData(TAG, bundle.locale);
+  copy.setPluginData(SOURCE, source.id);
+  const textLayers = source.findAllWithCriteria({ types: ["TEXT"] }).length;
+  const { flags, linked } = await fill(copy, bundle);
+  previewSource = source.id;
+  state = {
+    ...state,
+    preview: { frameName: source.name, textLayers, linked },
+    rows: state.rows.map((r) => ({ ...r, found: flags.has(r.key), flag: flags.get(r.key) ?? null })),
+  };
   await save();
 }
 
-async function removeCopies(): Promise<void> {
-  for (const e of existingCopies()) e.node.remove();
-  nodesByKey.clear();
-  state = { ...state, copiesMade: undefined, rows: state.rows.map((r) => ({ ...r, found: false, flag: null })) };
-  await save();
+/** Follows the selection: previews its frame after a short pause, so clicking around makes one copy. */
+let pending: ReturnType<typeof setTimeout> | null = null;
+function followSelection(force = false): void {
+  if (pending) clearTimeout(pending);
+  pending = setTimeout(() => {
+    pending = null;
+    if (!state.bundle) return;
+    const selection: SelectedNode[] = figma.currentPage.selection.map((n) => ({
+      id: n.id,
+      topFrameId: topFrameOf(n)?.id ?? null,
+      inPreview: inPreview(n),
+    }));
+    const target = frameToPreview(selection);
+    const frame = target === "keep" ? (force ? previewSource : null) : target;
+    if (!frame || (frame === previewSource && !force)) return;
+    void previewFrame(frame).catch((err) => send({ type: "error", message: err instanceof Error ? err.message : String(err) }));
+  }, 300);
 }
 
 async function focus(key: string): Promise<void> {
   for (const id of nodesByKey.get(key) ?? []) {
     const node = await figma.getNodeByIdAsync(id);
     if (node && node.type === "TEXT") {
-      figma.currentPage.selection = [node];
       figma.viewport.scrollAndZoomIntoView([node]);
       return;
     }
@@ -184,9 +212,9 @@ figma.ui.onmessage = async (msg: ToCode) => {
     if (msg.type === "bundle") {
       state = { bundle: msg.bundle, fileName: msg.fileName, ...(msg.projectId ? { projectId: msg.projectId } : {}), rows: rowsFor(msg.bundle, state) };
       await save();
-    } else if (msg.type === "make-copies") await makeCopies();
-    else if (msg.type === "remove-copies") await removeCopies();
-    else if (msg.type === "verdict") {
+      // New drafts (or another language): preview the selected frame, or the one already previewed.
+      followSelection(true);
+    } else if (msg.type === "verdict") {
       state = {
         ...state,
         rows: state.rows.map((r) => (r.key !== msg.key ? r : { ...r, verdict: msg.verdict, ...(msg.note !== undefined ? { note: msg.note } : {}) })),
@@ -207,11 +235,19 @@ figma.ui.onmessage = async (msg: ToCode) => {
   }
 };
 
-figma.on("selectionchange", publish);
+figma.on("selectionchange", () => {
+  publish();
+  followSelection();
+});
+
+// The preview is temporary: it never outlives the plugin window.
+figma.on("close", removeAllCopies);
 
 (async () => {
+  // Copies left behind by a crash or an older version go first.
+  removeAllCopies();
   const stored = (await figma.clientStorage.getAsync(storageKey)) as PluginState | undefined;
-  if (stored?.bundle) state = stored;
+  if (stored?.bundle) state = { ...stored, preview: undefined, rows: stored.rows.map((r) => ({ ...r, found: false, flag: null })) };
   const t = await figma.clientStorage.getAsync("retransToken");
   token = typeof t === "string" ? t : null;
   publish();

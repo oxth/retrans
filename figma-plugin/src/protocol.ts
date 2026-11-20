@@ -4,8 +4,6 @@ import type { PluginState } from "./logic";
 /** Messages from the plugin window to the plugin code. */
 export type ToCode =
   | { type: "bundle"; bundle: PreviewBundle; fileName: string; projectId?: string }
-  | { type: "make-copies" }
-  | { type: "remove-copies" }
   | { type: "verdict"; key: string; verdict: Verdict | null; note?: string }
   | { type: "mark-rest-fits" }
   | { type: "focus"; key: string }
