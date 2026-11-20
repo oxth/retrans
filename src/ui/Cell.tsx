@@ -160,7 +160,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
       ref={el}
       data-locale={locale}
       tabIndex={0}
-      aria-describedby={fit?.v === "too-long" ? fitNoteId : undefined}
+      aria-describedby={fit?.v === "too-long" || fit?.note ? fitNoteId : undefined}
       onClick={() => actions.start(id, locale)}
       onKeyDown={onKeyDown}
     >
@@ -183,7 +183,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
                 title={fit.note ? `Designer: ${fit.note}` : "A designer found this too long in the Figma preview."}
               >
                 Too long
-                <span id={fitNoteId} hidden>{fit.note ? `Designer: ${fit.note}` : "A designer found this too long in the Figma preview."}</span>
+                {!fit.note && <span id={fitNoteId} hidden>A designer found this too long in the Figma preview.</span>}
               </span>
             )}
             {fit?.v === "fits" && (
@@ -224,6 +224,12 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
           <span className="whitespace-pre-wrap break-words">{v.text}</span>
         ) : (
           <span className="italic text-muted">complex message</span>
+        )}
+        {/* The designer's note from the Figma preview, on the cell so it reads without hovering. */}
+        {fit?.note && (
+          <p id={fitNoteId} className={`mt-0.5 whitespace-pre-wrap break-words text-xs ${fit.v === "too-long" ? "text-warn" : "text-muted"}`}>
+            Designer: {fit.note}
+          </p>
         )}
       </div>
     </div>

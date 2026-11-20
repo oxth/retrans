@@ -102,11 +102,15 @@ export function PreviewResultsDialog({ session, diff, onClose, onApplied }: {
   onApplied: (count: number) => void;
 }) {
   const skipped = diff.changedSinceChecked + diff.missingKeys + diff.unreadable;
+  const notes = diff.apply.filter((r) => r.note).length;
   return (
     <Dialog title="Import designer results" onClose={onClose}>
       <div className="space-y-3 text-sm">
         <p>Results for <span className="font-mono">{diff.locale}</span></p>
-        <p>{diff.fits} fit · {diff.tooLong} too long</p>
+        <p>
+          {diff.fits} fit · {diff.tooLong} too long
+          {notes > 0 && ` · ${notes} with ${notes === 1 ? "a note" : "notes"}`}
+        </p>
         {diff.changedSinceChecked > 0 && <p className="text-muted">{diff.changedSinceChecked} changed since checked (skipped)</p>}
         {diff.missingKeys > 0 && <p className="text-muted">{diff.missingKeys} no longer in this project (skipped)</p>}
         {diff.unreadable > 0 && <p className="text-muted">{diff.unreadable} couldn't be read (skipped)</p>}
