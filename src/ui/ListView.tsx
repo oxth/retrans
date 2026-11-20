@@ -67,6 +67,8 @@ export const isRemovedInSource = (session: ProjectSession, id: string) => !!sess
 export function ListView({ session, rows, locales, version, editing, actions, onRowAction, empty }: ViewProps) {
   const parent = useRef<HTMLDivElement>(null);
   const cols = [session.data.baseLocale, ...locales];
+  // Wide enough for the longest language code shown (uppercase, 12 px semibold), at least the old 2rem.
+  const codeW = `${Math.max(2.5, Math.max(...cols.map((l) => l.length)) * 0.72 + 0.4)}em`;
   const virt = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parent.current,
@@ -84,7 +86,7 @@ export function ListView({ session, rows, locales, version, editing, actions, on
   }, [editId, editLocale]);
   if (!rows.length) return <NoMatches {...empty} />;
   return (
-    <div ref={parent} className="h-full overflow-auto" data-testid="list-scroll">
+    <div ref={parent} className="h-full overflow-auto" data-testid="list-scroll" style={{ "--code-w": codeW } as React.CSSProperties}>
       <div style={{ height: virt.getTotalSize(), position: "relative" }}>
         {virt.getVirtualItems().map((vi) => {
           const row = rows[vi.index];

@@ -52,7 +52,12 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
   });
   const isBase = locale === session.data.baseLocale;
   const suggestion = useSuggestion(session, id, locale, editing && !isBase);
-  const code = showCode ? <span className="w-8 shrink-0 pt-px text-xs font-semibold uppercase leading-5 text-muted">{locale}</span> : null;
+  // The list view sets --code-w to fit its longest code (ZH-CN), so codes stay on one line and the text lines up.
+  const code = showCode ? (
+    <span className="shrink-0 whitespace-nowrap pt-px text-xs font-semibold uppercase leading-5 text-muted" style={{ width: "var(--code-w, 2rem)" }}>
+      {locale}
+    </span>
+  ) : null;
 
   if (!isApplicable(session.data, id, locale)) {
     return (
@@ -191,7 +196,8 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     </span>
   );
   // In a table column the small "fits" check stays beside the text; only the wider badges drop below it.
-  const hasMarks = pinnedReview || warnings.length > 0 || fit?.v === "too-long" || (showCode && !!fitsMark);
+  // The small "fits" check stays beside the text in both views; only the wider badges go to the side or below.
+  const hasMarks = pinnedReview || warnings.length > 0 || fit?.v === "too-long";
   const marks = (
     <>
       <Warnings warnings={warnings} />
@@ -206,7 +212,6 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
           {!fit.note && <span id={fitNoteId} hidden>A designer found this too long in the Figma preview.</span>}
         </span>
       )}
-      {showCode && fitsMark}
       {pinnedReview && (
         <>
           <span
@@ -249,7 +254,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
         ) : (
           <span className="italic text-muted">complex message</span>
         )}
-        {!showCode && fitsMark && <> {fitsMark}</>}
+        {fitsMark && <> {fitsMark}</>}
         {hasMarks && !showCode && <div className="mt-1 flex flex-wrap items-center gap-1.5">{marks}</div>}
         {/* The designer's note from the Figma preview, on the cell so it reads without hovering. */}
         {fit?.note && (

@@ -101,10 +101,22 @@ describe("designer verdicts", () => {
     expect(cell).toHaveAccessibleDescription(/wraps to 2 lines/);
   });
 
-  it("shows a quiet mark for Fits", async () => {
+  it("shows a quiet mark for Fits, right after the text (not off at the row's far edge)", async () => {
     const s = await open(nested());
     await mark(s, "fits");
-    expect(await screen.findByLabelText("Designer: fits")).toBeInTheDocument();
+    const check = await screen.findByLabelText("Designer: fits");
+    expect(check.closest(".float-right")).toBeNull();
+    expect(check.parentElement!.textContent).toContain(s.value(TITLE, "th")!.kind === "text" ? (s.value(TITLE, "th") as { text: string }).text : "");
+  });
+
+  it("the list view's language code column fits a long code like zh-CN on one line", async () => {
+    await open(
+      new MemoryFs({ "/p/public/locales/en/common.json": '{"a":"A"}\n', "/p/public/locales/zh-CN/common.json": '{"a":"甲"}\n' }),
+      "/p",
+    );
+    const width = parseFloat(screen.getByTestId("list-scroll").style.getPropertyValue("--code-w"));
+    expect(width).toBeGreaterThanOrEqual(5 * 0.72); // five uppercase characters at 12 px
+    expect(screen.getAllByText("zh-CN")[0]).toHaveClass("whitespace-nowrap");
   });
 
   it("hides the mark once the text is edited", async () => {
