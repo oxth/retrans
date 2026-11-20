@@ -78,6 +78,14 @@ export function Toolbar(p: ToolbarProps) {
         <button className={chip(f.machine)} aria-pressed={f.machine} title="Translations written by AI and not reviewed yet" onClick={() => p.onFilter({ machine: !f.machine })}>
           AI
         </button>
+        <button
+          className={chip(!!f.tooLong)}
+          aria-pressed={!!f.tooLong}
+          title="Translations a designer marked too long in the Figma preview"
+          onClick={() => p.onFilter({ tooLong: !f.tooLong })}
+        >
+          Too long
+        </button>
         <select aria-label="Status" className={field} value={f.status} onChange={(e) => p.onFilter({ status: e.target.value as FilterState["status"] })}>
           <option value="all">All statuses</option>
           <option value="untranslated">Missing</option>

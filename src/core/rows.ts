@@ -10,6 +10,8 @@ export interface RowFilter {
   needsReview: boolean;
   machine: boolean;
   status: Status | "all";
+  /** Only rows a designer marked "too long" in a visible language. */
+  tooLong?: boolean;
 }
 
 export interface Row {
@@ -28,7 +30,7 @@ function valueText(v: MessageValue | undefined): string {
 export function buildRows(s: ProjectSession, f: RowFilter): Row[] {
   const data = s.data;
   const needle = f.search.toLocaleLowerCase();
-  const needMeta = f.needsReview || f.machine || f.status !== "all";
+  const needMeta = f.needsReview || f.machine || f.status !== "all" || !!f.tooLong;
   const rows: Row[] = [];
 
   const otherIds = otherKeys(data.keyOrder);
@@ -55,17 +57,19 @@ export function buildRows(s: ProjectSession, f: RowFilter): Row[] {
       let review = !f.needsReview;
       let machine = !f.machine;
       let status = f.status === "all";
+      let tooLong = !f.tooLong;
       for (const l of f.locales) {
         if (!isApplicable(data, id, l)) continue;
         if (!missing && !isTranslated(cells?.get(l))) missing = true;
-        if (needMeta && !(review && machine && status)) {
+        if (needMeta && !(review && machine && status && tooLong)) {
           const m = s.meta(id, l);
           if (m.needsReview) review = true;
           if (m.machine) machine = true;
           if (f.status !== "all" && m.status === f.status) status = true;
+          if (!tooLong && s.fitOf(id, l)?.v === "too-long") tooLong = true;
         }
       }
-      if (!(missing && review && machine && status)) continue;
+      if (!(missing && review && machine && status && tooLong)) continue;
     }
 
     const row: Row = { id, ns, key };

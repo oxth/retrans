@@ -67,6 +67,17 @@ describe("buildRows", () => {
     expect(ids(buildRows(s, F({ needsReview: true, machine: true })))).toEqual([]);
   });
 
+  it("tooLong filter keeps rows a designer marked too long in a visible language", async () => {
+    const s = await basic();
+    const { hashValue } = await import("./hash");
+    s.setFit(c("Title"), "th", { v: "too-long", h: hashValue(s.value(c("Title"), "th")) });
+    s.setFit(c("bye"), "th", { v: "fits", h: hashValue(s.value(c("bye"), "th")) });
+    expect(ids(buildRows(s, F({ tooLong: true })))).toEqual(["Title"]);
+    expect(ids(buildRows(s, F({ tooLong: true, locales: ["ja"] })))).toEqual([]);
+    s.setText(c("Title"), "th", "สวัสดีครับ");
+    expect(ids(buildRows(s, F({ tooLong: true })))).toEqual([]);
+  });
+
   it("plural variants are adjacent and carry pluralGroup/category", async () => {
     const p = await open({
       "en/common.json": { a: "A", items_one: "1", items_other: "n", z: "Z" },

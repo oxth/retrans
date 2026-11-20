@@ -56,6 +56,44 @@ const nested = () => loadFixtureDir(FIX + "next-nested");
 beforeEach(() => prefs.clear());
 afterEach(cleanup);
 
+describe("designer verdicts", () => {
+  const TITLE = "common::title";
+  const mark = async (s: ProjectSession, v: "fits" | "too-long", note?: string) => {
+    const { hashValue } = await import("../core/hash");
+    act(() => s.setFit(TITLE, "th", { v, h: hashValue(s.value(TITLE, "th")), ...(note ? { note } : {}) }));
+  };
+
+  it("shows a Too long badge with the designer's note", async () => {
+    const s = await open(nested());
+    await mark(s, "too-long", "wraps to 2 lines");
+    const badge = await screen.findByText("Too long", { selector: "[data-fit]" });
+    expect(badge).toHaveAccessibleDescription(/wraps to 2 lines/);
+  });
+
+  it("shows a quiet mark for Fits", async () => {
+    const s = await open(nested());
+    await mark(s, "fits");
+    expect(await screen.findByLabelText("Designer: fits")).toBeInTheDocument();
+  });
+
+  it("hides the mark once the text is edited", async () => {
+    const s = await open(nested());
+    await mark(s, "too-long");
+    act(() => s.setText(TITLE, "th", "สวัสดีครับ"));
+    await waitFor(() => expect(screen.queryByText("Too long", { selector: "[data-fit]" })).toBeNull());
+  });
+
+  it("the Too long chip filters the rows", async () => {
+    const s = await open(nested());
+    await mark(s, "too-long");
+    const chip = screen.getByRole("button", { name: "Too long" });
+    await userEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(screen.queryByText("หน้าแรก")).toBeNull());
+    expect(screen.getByText("สวัสดี")).toBeInTheDocument();
+  });
+});
+
 describe("views", () => {
   it("toggle switches between list and table and persists per project", async () => {
     await open(nested());

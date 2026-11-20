@@ -9,6 +9,6 @@ export interface TabUi {
   hidden: string[];
 }
 
-export const INITIAL_FILTER: FilterState = { search: "", ns: "all", missing: false, needsReview: false, machine: false, status: "all" };
+export const INITIAL_FILTER: FilterState = { search: "", ns: "all", missing: false, needsReview: false, machine: false, status: "all", tooLong: false };
 
 export const defaultTabUi = (): TabUi => ({ page: "translations", filter: { ...INITIAL_FILTER }, hidden: [] });

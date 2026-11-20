@@ -150,6 +150,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
   const meta = session.meta(id, locale);
   const reviewable = !isBase && (meta.status !== "reviewed" || meta.needsReview);
   const warnings = session.warnings(id, locale);
+  const fit = isBase ? null : session.fitOf(id, locale);
   const statusLabel = `${STATUS_TEXT[meta.status]}${meta.needsReview ? `; ${NEEDS_REVIEW_TEXT}` : ""}`;
   return (
     <div
@@ -169,9 +170,25 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
       )}
       {/* The marks float top-right so the text wraps around them and uses the full width below, even in a narrow table column. */}
       <div className="min-w-0 flex-1">
-        {(reviewable || warnings.length > 0) && (
+        {(reviewable || warnings.length > 0 || fit) && (
           <span className="float-right ml-2 flex items-center gap-1.5">
             <Warnings warnings={warnings} />
+            {fit?.v === "too-long" && (
+              <span
+                data-fit="too-long"
+                aria-describedby={`fit-${id}-${locale}`}
+                className="rounded bg-warn-soft px-1.5 text-[11px] font-medium leading-5 text-warn"
+                title={fit.note ? `Designer: ${fit.note}` : "A designer found this too long in the Figma preview."}
+              >
+                Too long
+                <span id={`fit-${id}-${locale}`} hidden>{fit.note ? `Designer: ${fit.note}` : "A designer found this too long in the Figma preview."}</span>
+              </span>
+            )}
+            {fit?.v === "fits" && (
+              <span role="img" aria-label="Designer: fits" title="A designer checked this fits in the Figma preview." className="flex text-ok">
+                <Icon name="check" size={13} />
+              </span>
+            )}
             {reviewable && (
               <>
                 {meta.needsReview && (
