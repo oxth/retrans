@@ -18,6 +18,8 @@
   --c-faint: #8a8f9e;
   --c-line: #e3e5ee;
   --c-line-strong: #cfd3df;
+  /* Field and outlined-button edges: at least 3:1 on surface, panel and sunken (WCAG 1.4.11). */
+  --c-field-line: #7c8194;
   --c-brand: #4f46e5;
   --c-brand-hover: #4338ca;
   --c-on-brand: #ffffff;
@@ -39,8 +41,8 @@
   --c-info-soft: #f5f3ff;
   --c-scrim: rgb(15 17 23 / 0.4);
   --c-st-missing: #ef4444;
-  /* Status dots are the only cue on a cell: at least 3:1 on white (WCAG 1.4.11). */
-  --c-st-translated: #d97706;
+  /* Status dots are the only cue on a cell: at least 3:1 on white, panel and hovered rows (WCAG 1.4.11). */
+  --c-st-translated: #c26a05;
   --c-st-reviewed: #0d9488;
   --shadow-pop: 0 1px 2px rgb(15 17 23 / 0.06), 0 8px 24px rgb(15 17 23 / 0.12);
   /* The select arrow, in --c-muted. */
@@ -60,6 +62,7 @@
     --c-faint: #6e7487;
     --c-line: #262a39;
     --c-line-strong: #363c50;
+    --c-field-line: #6e7487;
     --c-brand: #8b85ff;
     --c-brand-hover: #a39eff;
     --c-on-brand: #0f1117;
@@ -100,6 +103,7 @@
   --c-faint: #6e7487;
   --c-line: #262a39;
   --c-line-strong: #363c50;
+  --c-field-line: #6e7487;
   --c-brand: #8b85ff;
   --c-brand-hover: #a39eff;
   --c-on-brand: #0f1117;
@@ -142,6 +146,7 @@
   --color-faint: var(--c-faint);
   --color-line: var(--c-line);
   --color-line-strong: var(--c-line-strong);
+  --color-field-line: var(--c-field-line);
   --color-brand: var(--c-brand);
   --color-brand-hover: var(--c-brand-hover);
   --color-on-brand: var(--c-on-brand);

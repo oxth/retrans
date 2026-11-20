@@ -155,7 +155,7 @@ export function WhatsNew() {
                     className={`flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm ${active ? "bg-hover font-medium text-fg" : "text-fg-2 hover:bg-hover"}`}>
                     <span className="font-mono">{r.version}</span>
                     {r.version === installed ? (
-                      <span className="rounded border border-line-strong px-1.5 text-[11px] leading-4 text-fg-2">Installed</span>
+                      <span className="rounded border border-line-strong px-1.5 text-[0.6875rem] leading-4 text-fg-2">Installed</span>
                     ) : (
                       <span className="text-xs text-muted">{shortDate(r.date)}</span>
                     )}

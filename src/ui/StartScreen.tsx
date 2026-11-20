@@ -351,7 +351,7 @@ export function StartScreen() {
                         <span className={`block font-medium ${isGone ? "text-muted" : ""}`}>{r.name}</span>
                         <span className={`block truncate font-mono text-xs text-muted ${isGone ? "line-through" : ""}`}>{r.root}</span>
                       </span>
-                      {isGone && <span className="shrink-0 rounded bg-warn-soft px-1.5 py-0.5 text-[11px] font-medium text-warn">Folder not found</span>}
+                      {isGone && <span className="shrink-0 rounded bg-warn-soft px-1.5 py-0.5 text-[0.6875rem] font-medium text-warn">Folder not found</span>}
                     </button>
                     <button
                       aria-label={`Remove ${r.name} from recent projects`}

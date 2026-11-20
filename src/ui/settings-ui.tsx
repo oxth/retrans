@@ -111,11 +111,11 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
 
 /** Inputs and selects that sit on the right of a row. */
 export const fieldBase =
-  "rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm text-fg hover:border-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand-line disabled:opacity-50";
+  "rounded-md border border-field-line bg-surface px-2.5 py-1.5 text-sm text-fg hover:border-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50";
 export const fieldCls = `${fieldBase} w-60`;
 /** Compact buttons that sit beside a field in a row. */
 export const btnRow =
-  "inline-flex items-center justify-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm font-medium text-fg hover:bg-hover disabled:opacity-50";
+  "inline-flex items-center justify-center gap-1.5 rounded-md border border-field-line bg-surface px-2.5 py-1.5 text-sm font-medium text-fg hover:bg-hover disabled:opacity-50";
 
 /**
  * Lets a section with a Save button tell the Settings window it has unsaved edits, so leaving the

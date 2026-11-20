@@ -78,7 +78,7 @@ export function ListView({ session, rows, locales, version, editing, actions, on
             >
               <div className="w-1/3 min-w-48 max-w-sm shrink-0 pl-4 pr-3">
                 <div className="flex items-start gap-1">
-                  <div className="min-w-0 flex-1 break-all pt-1 font-mono text-[13px] font-medium text-fg">{row.key}</div>
+                  <div className="min-w-0 flex-1 break-all pt-1 font-mono text-[0.8125rem] font-medium text-fg">{row.key}</div>
                   {onRowAction && (
                     <RowMenu
                       name={row.key}
@@ -90,7 +90,7 @@ export function ListView({ session, rows, locales, version, editing, actions, on
                     />
                   )}
                 </div>
-                <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted">
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-[0.6875rem] text-muted">
                   {row.ns && <span>{row.ns}</span>}
                   {row.pluralGroup && (
                     <span className="rounded bg-brand-soft px-1.5 text-brand-ink">plural · {row.pluralCategory}</span>

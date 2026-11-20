@@ -55,7 +55,7 @@ export function Sidebar({
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-1.5">
                     <span className="font-semibold uppercase text-fg">{l}</span>
-                    {l === base && <span className="rounded bg-sunken px-1 text-[11px] text-muted">base</span>}
+                    {l === base && <span className="rounded bg-sunken px-1 text-[0.6875rem] text-muted">base</span>}
                   </span>
                   <span className="tabular-nums text-muted">{pct}%</span>
                 </div>
@@ -86,7 +86,7 @@ export function Sidebar({
               {SOURCE_CHANGED}
             </li>
           </ul>
-          <dl className="mt-2.5 space-y-1.5 text-[11px] leading-4 text-muted">
+          <dl className="mt-2.5 space-y-1.5 text-[0.6875rem] leading-4 text-muted">
             <div>
               <dt className="inline font-medium text-fg-2">Not reviewed:</dt> <dd className="inline">translated, but nobody has checked it yet.</dd>
             </div>

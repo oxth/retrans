@@ -91,7 +91,7 @@ export function SuggestionBox({ state, onAccept }: { state: SuggestionState; onA
           >
             Accept
           </button>
-          <kbd className="shrink-0 rounded border border-brand-line px-1 font-sans text-[11px] text-muted">⌘/Ctrl+Enter</kbd>
+          <kbd className="shrink-0 rounded border border-brand-line px-1 font-sans text-[0.6875rem] text-muted">⌘/Ctrl+Enter</kbd>
         </>
       )}
       {state.status === "unsafe" && <span>Couldn't translate safely</span>}

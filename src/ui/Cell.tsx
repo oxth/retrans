@@ -179,7 +179,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
               <span
                 data-fit="too-long"
                 aria-describedby={fitNoteId}
-                className="rounded bg-warn-soft px-1.5 text-[11px] font-medium leading-5 text-warn"
+                className="rounded bg-warn-soft px-1.5 text-[0.6875rem] font-medium leading-5 text-warn"
                 title={fit.note ? `Designer: ${fit.note}` : "A designer found this too long in the Figma preview."}
               >
                 Too long
@@ -195,7 +195,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
               <>
                 {meta.needsReview && (
                   <span
-                    className="rounded bg-warn-soft px-1.5 text-[11px] font-medium leading-5 text-warn"
+                    className="rounded bg-warn-soft px-1.5 text-[0.6875rem] font-medium leading-5 text-warn"
                     title="The base text changed after this was translated. Check the translation still fits, then mark it reviewed."
                   >
                     {SOURCE_CHANGED}

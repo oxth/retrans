@@ -62,8 +62,8 @@ function ModelCard({ model, onDownload, selected, onSelect }: { model: CatalogMo
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">{model.name}</span>
-            {model.recommended && <span className="rounded bg-brand-soft px-1.5 py-0.5 text-[11px] font-medium text-brand-ink">Recommended</span>}
-            {complete && s.settings.modelId === model.id && <span className="rounded bg-ok-soft px-1.5 py-0.5 text-[11px] font-medium text-ok">In use</span>}
+            {model.recommended && <span className="rounded bg-brand-soft px-1.5 py-0.5 text-[0.6875rem] font-medium text-brand-ink">Recommended</span>}
+            {complete && s.settings.modelId === model.id && <span className="rounded bg-ok-soft px-1.5 py-0.5 text-[0.6875rem] font-medium text-ok">In use</span>}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
             <span>Download: {formatBytes(model.sizeBytes)}</span>

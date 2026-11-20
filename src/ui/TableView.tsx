@@ -162,7 +162,7 @@ export function TableView({ session, rows, locales, version, editing, actions, o
                 >
                   <div className="shrink-0 border-r border-line bg-surface px-3 py-1.5" style={{ width: keyW, ...pin(0) }}>
                     <div className="flex items-start gap-1">
-                      <div className="min-w-0 flex-1 break-all pt-1 font-mono text-[13px] font-medium text-fg">{row.key}</div>
+                      <div className="min-w-0 flex-1 break-all pt-1 font-mono text-[0.8125rem] font-medium text-fg">{row.key}</div>
                       {onRowAction && (
                         <RowMenu
                           name={row.key}
@@ -174,8 +174,8 @@ export function TableView({ session, rows, locales, version, editing, actions, o
                         />
                       )}
                     </div>
-                    {row.ns && <div className="mt-0.5 text-[11px] text-muted">{row.ns}</div>}
-                    <div className="mt-0.5 text-[11px]">
+                    {row.ns && <div className="mt-0.5 text-[0.6875rem] text-muted">{row.ns}</div>}
+                    <div className="mt-0.5 text-[0.6875rem]">
                       {figmaRow && <NoCodeKeyBadge />}
                       <RowWarnings duplicateOf={duplicateGroups(session, row.id)} removedInSource={removed} />
                     </div>

@@ -58,12 +58,12 @@ const btn = "inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-
 /** The one main action of a dialog or page. */
 export const btnPrimary = `${btn} bg-brand text-on-brand hover:bg-brand-hover`;
 /** A visible, bordered action that isn't the main one. */
-export const btnSecondary = `${btn} border border-line-strong bg-surface text-fg hover:bg-hover`;
+export const btnSecondary = `${btn} border border-field-line bg-surface text-fg hover:bg-hover`;
 /** Low-emphasis actions: Cancel, Close, Later. */
 export const btnGhost = `${btn} text-fg-2 hover:bg-hover`;
 /** Confirms something that deletes. */
 export const btnDanger = `${btn} bg-danger-solid text-white hover:opacity-90`;
 export const inputCls =
-  "w-full rounded-md border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg hover:border-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand-line";
+  "w-full rounded-md border border-field-line bg-surface px-3 py-1.5 text-sm text-fg hover:border-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand";
 /** Small uppercase label above a group of controls. */
 export const sectionLabel = "text-xs font-semibold uppercase tracking-wide text-muted";

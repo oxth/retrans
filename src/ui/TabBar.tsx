@@ -77,7 +77,7 @@ export function TabBar() {
                 </button>
                 <button
                   aria-label={`Close tab ${t.name}`}
-                  className={`mr-1 rounded p-0.5 text-muted hover:bg-sunken hover:text-fg focus-visible:opacity-100 ${active ? "opacity-70 group-hover:opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                  className={`mr-1 rounded p-1.5 text-muted hover:bg-sunken hover:text-fg focus-visible:opacity-100 ${active ? "opacity-70 group-hover:opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                   onClick={() => void closeTab(t.id)}
                 >
                   <Icon name="x" size={13} />

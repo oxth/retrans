@@ -94,6 +94,12 @@ describe("TabBar", () => {
     expect(screen.getByRole("tab", { name: /beta/ })).toContainElement(screen.getByLabelText("Working"));
   });
 
+  it("× is a 24px target: 13px icon plus 6px padding on each side (WCAG 2.2 target size)", async () => {
+    await twoProjects();
+    render(<TabBar />);
+    expect(screen.getByRole("button", { name: "Close tab alpha" }).className).toMatch(/\bp-1\.5\b/);
+  });
+
   it("× closes that tab", async () => {
     await twoProjects();
     render(<TabBar />);
