@@ -39,8 +39,9 @@ export function AppShell() {
   const setUi = useApp((s) => s.setUi);
   const setPage = useCallback((p: Page) => setUi({ page: p }), [setUi]);
   const [viewMode, setMode] = useState<"list" | "table">("list");
-  // "Added N designer verdicts." after the live link's results are applied (same wording as Settings).
-  const [liveNote, setLiveNote] = useState<string | null>(null);
+  // "Added N designer verdicts." after the live link's results are applied; the note belongs to the tab
+  // its results were applied on (same wording as Settings).
+  const [liveNote, setLiveNote] = useState<{ tabId: string; text: string } | null>(null);
   const root = session?.data.root;
   const [dialog, setDialog] = useState<
     { kind: "add" | "translate" | "export" } | { kind: "rename" | "delete" | "code-key" | "link"; row: Row } | null
@@ -195,9 +196,9 @@ export function AppShell() {
             </span>
           )}
           </span>
-          {liveNote && (
+          {liveNote && liveNote.tabId === activeId && (
             <span role="status" className="text-xs text-ok">
-              {liveNote}
+              {liveNote.text}
             </span>
           )}
           <div className="ml-auto flex items-center gap-2">
@@ -280,8 +281,8 @@ export function AppShell() {
           diff={previewResults.diff}
           onClose={() => useApp.setState({ previewResults: null })}
           onApplied={(n) => {
+            setLiveNote({ tabId: previewResults.tabId, text: `Added ${n} designer ${n === 1 ? "verdict" : "verdicts"}. Review and save.` });
             useApp.setState({ previewResults: null });
-            setLiveNote(`Added ${n} designer ${n === 1 ? "verdict" : "verdicts"}. Review and save.`);
           }}
         />
       )}

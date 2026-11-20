@@ -111,6 +111,29 @@ describe("live link wiring", () => {
     expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
   });
 
+  it("the applied-verdicts note belongs to its tab", async () => {
+    const { figma, plain } = await twoTabs();
+    render(<AppShell />);
+    const session = useApp.getState().tabs.find((t) => t.id === figma.id)!.snap!.session;
+    await act(async () => {
+      await onPreviewRequest({
+        id: 1, kind: "results", params: { project: figma.id }, body: results(session, [[WARRANTY, "fits"]]),
+      });
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await screen.findByText("Added 1 designer verdict. Review and save.");
+
+    await act(async () => {
+      await useApp.getState().switchTab(plain.id);
+    });
+    expect(screen.queryByText("Added 1 designer verdict. Review and save.")).toBeNull();
+
+    await act(async () => {
+      await useApp.getState().switchTab(figma.id);
+    });
+    expect(screen.getByText("Added 1 designer verdict. Review and save.")).toBeInTheDocument();
+  });
+
   it("a second results request replaces the open dialog", async () => {
     const { figma } = await twoTabs();
     render(<AppShell />);
