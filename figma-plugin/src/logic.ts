@@ -16,7 +16,12 @@ export interface PluginState {
   rows: Array<{ key: string; text: string; flag: PreviewFlag; found: boolean; verdict: Verdict | null; note?: string }>;
   /** The frame being previewed now and how much of its text the drafts reach; absent with no preview. */
   preview?: PreviewInfo;
+  /** Marks per language, kept when switching away so switching back brings them back. */
+  marks?: Record<string, Record<string, SavedMark>>;
 }
+
+/** A mark, with the text it was given for: it only comes back while the text is unchanged. */
+export interface SavedMark { text: string; verdict: Verdict; note?: string }
 
 export interface PreviewInfo { frameName: string; textLayers: number; linked: number }
 export interface SelectedNode { id: string; topFrameId: string | null; inPreview: boolean }
@@ -30,6 +35,7 @@ export function frameToPreview(selection: SelectedNode[]): string | "keep" {
 
 /** How much of the previewed frame the drafts reach, as information; null when all of it. */
 export function linkNote(p: PreviewInfo): string | null {
+  if (p.textLayers === 0) return "This frame has no text layers.";
   if (p.linked >= p.textLayers) return null;
   if (p.linked === 0) {
     return `This frame's text isn't linked to these drafts: none of its ${p.textLayers} text layers use the variables you imported into Retrans.`;
@@ -38,6 +44,34 @@ export function linkNote(p: PreviewInfo): string | null {
 }
 
 type Row = PluginState["rows"][number];
+
+/**
+ * The frame to preview now, or null to leave things as they are. A copy deleted by hand is remade
+ * when its frame is selected again; `force` (new drafts) re-previews the current frame.
+ */
+export function previewNeeded(target: string | "keep", current: { sourceId: string | null; copyAlive: boolean }, force: boolean): string | null {
+  const frame = target === "keep" ? (force ? current.sourceId : null) : target;
+  if (!frame) return null;
+  if (frame === current.sourceId && current.copyAlive && !force) return null;
+  return frame;
+}
+
+/** Loads new drafts: marks for the language being left are kept, marks for the new one come back. */
+export function switchDrafts(prev: PluginState, bundle: PreviewBundle, fileName: string, projectId?: string): PluginState {
+  const marks = { ...(prev.marks ?? {}) };
+  if (prev.bundle) {
+    const kept: Record<string, SavedMark> = {};
+    for (const r of prev.rows) if (r.verdict) kept[r.key] = { text: r.text, verdict: r.verdict, ...(r.note ? { note: r.note } : {}) };
+    marks[prev.bundle.locale] = kept;
+  }
+  const saved = marks[bundle.locale] ?? {};
+  const rows = bundle.strings.map((str) => {
+    const m = saved[str.key];
+    const keep = m && m.text === str.text;
+    return { key: str.key, text: str.text, flag: null, found: false, verdict: keep ? m.verdict : null, ...(keep && m.note ? { note: m.note } : {}) };
+  });
+  return { bundle, fileName, ...(projectId ? { projectId } : {}), rows, marks };
+}
 
 /** Where the designer is: getting drafts, selecting a frame, or checking its strings. */
 export function currentStep(state: PluginState): "drafts" | "select" | "check" {

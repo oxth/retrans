@@ -242,6 +242,8 @@ app.addEventListener("click", async (e) => {
   } else if (t.id === "refresh") await live(loadProjects);
   else if (t.id === "use-file") {
     useFile = true;
+    // From steps 2 and 3 too: go to step 1, where the file route is.
+    choosing = !!state.bundle;
     render();
   } else if (t.id === "use-live") {
     useFile = false;

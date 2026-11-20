@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PreviewBundle } from "../../src/preview/format";
-import { type Box, copyPlacement, currentStep, frameToPreview, linkNote, markRestFits, nothingLinked, progress, resultsKey, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
+import { type Box, copyPlacement, currentStep, frameToPreview, linkNote, previewNeeded, switchDrafts, markRestFits, nothingLinked, progress, resultsKey, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
 
 const box = (width: number, height: number, x = 0, y = 0): Box => ({ x, y, width, height });
 const shape = (autoResize: TextShape["autoResize"], b: Box, needed: Box = b): TextShape => ({ box: b, autoResize, needed });
@@ -142,6 +142,10 @@ describe("the guided steps", () => {
     expect(linkNote(preview(3))).toBe("3 of 8 text layers are linked.");
     expect(linkNote(preview(8))).toBeNull();
   });
+
+  it("says so when the frame has no text at all, instead of an empty step", () => {
+    expect(linkNote(preview(0, 0))).toBe("This frame has no text layers.");
+  });
 });
 
 describe("frameToPreview", () => {
@@ -155,5 +159,54 @@ describe("frameToPreview", () => {
   });
   it("keeps the current preview for a node that isn't in any frame", () => {
     expect(frameToPreview([{ id: "r", topFrameId: null, inPreview: false }])).toBe("keep");
+  });
+});
+
+describe("previewNeeded", () => {
+  it("keeps the current preview while its copy is still there", () => {
+    expect(previewNeeded("keep", { sourceId: "A", copyAlive: true }, false)).toBeNull();
+    expect(previewNeeded("A", { sourceId: "A", copyAlive: true }, false)).toBeNull();
+  });
+  it("remakes it when the copy was deleted by hand", () => {
+    expect(previewNeeded("A", { sourceId: "A", copyAlive: false }, false)).toBe("A");
+  });
+  it("previews another frame, and re-previews the same one when forced (new drafts)", () => {
+    expect(previewNeeded("B", { sourceId: "A", copyAlive: true }, false)).toBe("B");
+    expect(previewNeeded("keep", { sourceId: "A", copyAlive: true }, true)).toBe("A");
+    expect(previewNeeded("keep", { sourceId: null, copyAlive: false }, true)).toBeNull();
+  });
+});
+
+describe("switchDrafts", () => {
+  const strings = (locale: string, texts: string[]): PreviewBundle => ({
+    retransPreview: 1, sourceProjectId: "p", exportedAt: "x", baseLocale: "en", locale,
+    strings: texts.map((t, i) => ({ key: `k${i}`, base: "b", text: t, hash: "h", status: "translated", machine: true })),
+  });
+  const de = strings("de", ["Warenkorb", "Kasse"]);
+  const fr = strings("fr", ["Panier", "Caisse"]);
+  const empty: PluginState = { bundle: null, fileName: null, rows: [] };
+  const mark = (st: PluginState, key: string, verdict: "fits" | "too-long", note?: string): PluginState =>
+    ({ ...st, rows: st.rows.map((r) => (r.key === key ? { ...r, verdict, ...(note ? { note } : {}) } : r)) });
+
+  it("starts with no marks and doesn't carry marks to another language", () => {
+    const a = mark(switchDrafts(empty, de, "shop"), "k0", "too-long", "cut");
+    const b = switchDrafts(a, fr, "shop");
+    expect(b.rows.map((r) => r.verdict)).toEqual([null, null]);
+  });
+  it("brings the marks back when you switch back to that language", () => {
+    const a = mark(switchDrafts(empty, de, "shop"), "k0", "too-long", "cut");
+    const back = switchDrafts(switchDrafts(a, fr, "shop"), de, "shop");
+    expect(back.rows[0]).toMatchObject({ verdict: "too-long", note: "cut" });
+  });
+  it("drops a mark whose text changed since", () => {
+    const a = mark(switchDrafts(empty, de, "shop"), "k0", "fits");
+    const changed = switchDrafts(a, strings("de", ["In den Warenkorb", "Kasse"]), "shop");
+    expect(changed.rows[0].verdict).toBeNull();
+  });
+  it("keeps the project id from Retrans and clears the preview", () => {
+    const a = { ...switchDrafts(empty, de, "shop", "tab-1"), preview: { frameName: "Card", textLayers: 2, linked: 2 } };
+    const b = switchDrafts(a, fr, "shop", "tab-1");
+    expect(b.projectId).toBe("tab-1");
+    expect(b.preview).toBeUndefined();
   });
 });
