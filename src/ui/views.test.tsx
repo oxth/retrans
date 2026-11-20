@@ -138,15 +138,18 @@ describe("designer verdicts", () => {
 });
 
 describe("views", () => {
-  it("names each language on one line and its code on the next, in the table header and the sidebar", async () => {
+  it("names each language with its code: one line in the table header (the code never cut), name then code in the sidebar", async () => {
     await open(nested());
     await userEvent.click(screen.getByRole("button", { name: "table" }));
-    const header = (await screen.findByTestId("table-scroll")).querySelector<HTMLElement>('[title="Thai (th)"]')!;
-    expect(header.children[0]).toHaveTextContent("Thai");
-    expect(header.children[1]).toHaveTextContent("th");
-    expect(screen.getByTestId("table-scroll").querySelector('[title="English (en)"]')!.children[1]).toHaveTextContent("en · base");
-    // The sidebar: the name, then the code with the percentage.
-    expect(screen.getByRole("complementary", { name: "Sidebar" }).querySelector('[title="Thai (th)"]')).toHaveTextContent(/^Thai$/);
+    const table = await screen.findByTestId("table-scroll");
+    const th = table.querySelector<HTMLElement>('[title="Thai (th)"]')!;
+    expect([...th.children].map((c) => c.textContent)).toEqual(["Thai", "th"]);
+    expect(th.children[1]).toHaveClass("shrink-0"); // the name gives way, the code doesn't
+    // The base tag sits with the name.
+    expect([...table.querySelector<HTMLElement>('[title="English (en)"]')!.children].map((c) => c.textContent)).toEqual(["English", "base", "en"]);
+    const side = screen.getByRole("complementary", { name: "Sidebar" });
+    expect(side.querySelector('[title="English (en)"]')).toHaveTextContent(/^Englishbase$/);
+    expect(side.querySelector('[title="Thai (th)"]')).toHaveTextContent(/^Thai$/);
     expect(screen.queryByText("TH")).toBeNull();
   });
 

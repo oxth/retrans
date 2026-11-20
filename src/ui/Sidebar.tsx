@@ -53,13 +53,13 @@ export function Sidebar({
             const pct = s.total ? Math.round((s.done / s.total) * 100) : 100;
             return (
               <div key={l}>
-                {/* The name may be cut off; the code and percentage below it always fit. */}
-                <div className="truncate font-semibold text-fg" title={languageWithCode(l)}>{localeLabel(l)}</div>
+                {/* The name (with the base tag) may be cut off; the code and percentage below it always fit. */}
+                <div className="flex min-w-0 items-center gap-1.5" title={languageWithCode(l)}>
+                  <span className="truncate font-semibold text-fg">{localeLabel(l)}</span>
+                  {l === base && <span className="shrink-0 rounded bg-sunken px-1 text-xs font-normal text-fg-2">base</span>}
+                </div>
                 <div className="mt-0.5 flex items-center justify-between gap-2 text-muted">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="font-mono">{l}</span>
-                    {l === base && <span className="rounded bg-sunken px-1 text-xs font-normal text-fg-2">base</span>}
-                  </span>
+                  <span className="font-mono">{l}</span>
                   <span className="tabular-nums">{pct}%</span>
                 </div>
                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-sunken">
