@@ -112,7 +112,7 @@ describe("Import designer results", () => {
     dlg.openValue = "/in/r.retrans-results.json";
     render(<FigmaSettings session={session} />);
     await userEvent.click(screen.getByRole("button", { name: "Import designer results…" }));
-    expect(await screen.findByText("0 fit · 1 too long")).toBeInTheDocument();
+    expect(await screen.findByText("0 fit · 1 too long · 1 with a note")).toBeInTheDocument();
     expect(screen.getByText("1 changed since checked (skipped)")).toBeInTheDocument();
     expect(screen.queryByText(/couldn't be read/)).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));

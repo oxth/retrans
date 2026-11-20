@@ -70,6 +70,28 @@ describe("designer verdicts", () => {
     expect(badge).toHaveAccessibleDescription(/wraps to 2 lines/);
   });
 
+  it("shows the designer's note on the cell, without hovering", async () => {
+    const s = await open(nested());
+    await mark(s, "too-long", "wraps to 2 lines");
+    const note = await screen.findByText("Designer: wraps to 2 lines");
+    expect(note).toBeVisible();
+    expect(note.closest('[data-cell="value"]')).not.toBeNull();
+  });
+
+  it("shows a note given with Fits too", async () => {
+    const s = await open(nested());
+    await mark(s, "fits", "fine at 360px, tight at 320px");
+    expect(await screen.findByText("Designer: fine at 360px, tight at 320px")).toBeVisible();
+    expect(screen.getByLabelText("Designer: fits")).toBeInTheDocument();
+  });
+
+  it("shows no note line for a mark without a note", async () => {
+    const s = await open(nested());
+    await mark(s, "too-long");
+    await screen.findByText("Too long", { selector: "[data-fit]" });
+    expect(screen.queryByText(/^Designer: /)).toBeNull();
+  });
+
   it("the note reaches keyboard users: the focusable cell is described by it", async () => {
     const s = await open(nested());
     await mark(s, "too-long", "wraps to 2 lines");
