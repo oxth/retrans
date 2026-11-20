@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Fetch, LinkError, draftsTarget, findRetrans, linkAfterError, liveApi, pickProject, pair, sendResults } from "./live";
+import { type Fetch, LinkError, draftsProject, draftsTarget, findRetrans, linkAfterError, liveApi, pickProject, pair, sendResults } from "./live";
 
 const json = (status: number, body: unknown): Response =>
   ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body), json: async () => body }) as Response;
@@ -199,5 +199,20 @@ describe("draftsTarget", () => {
   });
   it("stops instead of switching language when the picked one is gone", () => {
     expect(() => draftsTarget(list, "tab-a", "fr")).toThrow("Shop no longer has fr. Pick a language and try again.");
+  });
+});
+
+describe("draftsProject", () => {
+  const list = [
+    { id: "tab-new", name: "Shop", projectId: "proj-1", baseLocale: "en", locales: ["en", "th"] },
+    { id: "tab-other", name: "Blog", projectId: "proj-2", baseLocale: "en", locales: ["en", "de", "fr"] },
+  ];
+  it("finds the drafts' project by its stable id, even after Retrans reopened it under a new tab id", () => {
+    expect(draftsProject(list, "tab-old", "proj-1")?.id).toBe("tab-new");
+  });
+  it("falls back to the tab id, and is undefined when the project isn't open", () => {
+    expect(draftsProject(list, "tab-other", undefined)?.id).toBe("tab-other");
+    expect(draftsProject(list, "tab-gone", "proj-9")).toBeUndefined();
+    expect(draftsProject(list, undefined, undefined)).toBeUndefined();
   });
 });

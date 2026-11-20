@@ -148,6 +148,14 @@ export function pickProject(projects: RetransProject[], current: string, sourceP
 }
 
 /**
+ * The open Retrans project the loaded drafts came from: by its stable id first (tab ids change when
+ * Retrans reopens a project), else by the tab id they were fetched from.
+ */
+export function draftsProject(projects: RetransProject[], tabId: string | undefined, sourceProjectId: string | undefined): RetransProject | undefined {
+  return (sourceProjectId ? projects.find((p) => p.projectId === sourceProjectId) : undefined) ?? projects.find((p) => p.id === tabId);
+}
+
+/**
  * The project and language Get drafts asks for, after the project list was reloaded. Stops rather
  * than quietly fetching another project or language than the one the designer picked.
  */

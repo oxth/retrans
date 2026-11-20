@@ -5,7 +5,7 @@
 import { parseBundle, serializePreview } from "../../src/preview/format";
 import { renderKeepingNote } from "./keep-focus";
 import { currentStep, linkNote, nothingLinked, type PluginState, progress, resultsKey, toResults } from "./logic";
-import { LinkError, type RetransProject, draftsTarget, findRetrans, linkAfterError, liveApi, pair, pickProject, sendResults } from "./live";
+import { LinkError, type RetransProject, draftsProject, draftsTarget, findRetrans, linkAfterError, liveApi, pair, pickProject, sendResults } from "./live";
 import type { ToCode, ToUi } from "./protocol";
 
 const app = document.getElementById("app")!;
@@ -108,14 +108,22 @@ function draftsHtml(): string {
 /** The loaded drafts, with a quick way to switch language (Retrans) or file. */
 function loadedHtml(): string {
   const b = state.bundle!;
-  const fromRetrans = connected() && !!state.projectId && projects.some((p) => p.id === state.projectId);
-  const langs = fromRetrans ? projects.find((p) => p.id === state.projectId)!.locales.filter((l) => l !== b.baseLocale) : [];
-  const language = fromRetrans && langs.length > 1
-    ? `<select id="draft-locale" aria-label="Language" ${dis(busy)}>${langs.map((l) => `<option value="${esc(l)}" ${l === b.locale ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`
-    : `<span>${esc(b.locale)}</span>`;
-  return `<div class="loaded"><strong>${esc(state.fileName ?? "")}</strong> · ${language} · ${plural(b.strings.length, "string", "strings")}
-    ${fromRetrans ? "" : `<button class="link" id="load">Load another file</button>`}
-    <button class="link" id="change">Change</button></div>`;
+  const fromRetrans = !!state.projectId;
+  const project = fromRetrans && connected() ? draftsProject(projects, state.projectId, b.sourceProjectId) : undefined;
+  const langs = project ? project.locales.filter((l) => l !== project.baseLocale) : [];
+  let language: string;
+  if (project) {
+    // Always the picker for drafts from Retrans, even with one language, so switching is where you expect it.
+    language = `<label class="lang">Language <select id="draft-locale" aria-label="Language" ${dis(busy)}>${langs
+      .map((l) => `<option value="${esc(l)}" ${l === b.locale ? "selected" : ""}>${esc(l)}</option>`)
+      .join("")}</select></label>`;
+  } else if (fromRetrans) {
+    language = `Language <strong>${esc(b.locale)}</strong> <span class="muted">(connect to Retrans to switch)</span>`;
+  } else {
+    language = `Language <strong>${esc(b.locale)}</strong> <span class="muted">from a file</span> · <button class="link" id="load">Load another language</button>`;
+  }
+  return `<div class="loaded"><div><strong>${esc(state.fileName ?? "")}</strong> · ${plural(b.strings.length, "string", "strings")} · <button class="link" id="change">Change</button></div>
+    <div class="lang-row">${language}</div></div>`;
 }
 
 /** Step 2: select a frame; the preview follows the selection. */
@@ -320,7 +328,10 @@ app.addEventListener("change", async (e) => {
     locale = targetLocales()[0] ?? "";
     render();
   } else if (t.id === "locale") locale = t.value;
-  else if (t.id === "draft-locale" && state.projectId) await fetchDrafts(state.projectId, t.value);
+  else if (t.id === "draft-locale" && state.bundle) {
+    const project = draftsProject(projects, state.projectId, state.bundle.sourceProjectId);
+    if (project) await fetchDrafts(project.id, t.value);
+  }
   else if (t.id === "reviewed") includeReviewed = t.checked;
   else if (t.id === "file") {
     const f = t.files?.[0];
