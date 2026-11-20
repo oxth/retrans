@@ -64,9 +64,11 @@ A workspace can also be exported to i18next JSON or Paraglide, and **New project
 - **Review status that travels.** Every translation is missing, waiting for review or reviewed. When the base text changes, even in your editor or through a `git pull`, the cell says **Source changed**. Status lives in `.retrans/` and is shared through git.
 - **Local or cloud AI.** A built-in model (TranslateGemma or Qwen) runs entirely on your computer. You can also use OpenAI, Claude, any OpenAI-compatible API (OpenRouter, Groq, DeepSeek, Ollama, LM Studio…), or an AI agent you already have through ACP (Claude Code, Codex, Gemini CLI).
 - **Many languages in one run.** Translate every missing string in all your languages at once, with your own instructions for tone and terms, per project or per language.
-- **Designer preview in Figma.** A designer loads your AI drafts into copies of the real frames with the Retrans Preview plugin, marks what's too long, and sends the marks back to Retrans.
+<!-- FIGMA_COMMUNITY_URL: Retrans Preview is in review by Figma. When it's approved, link the Community page here and drop "coming soon". -->
+- **Designer preview in Figma.** A designer loads your AI drafts into copies of the real frames with the Retrans Preview plugin, marks what's too long, and sends the marks back to Retrans. The plugin is in review by Figma and coming soon to the Figma Community.
 - **Translator packages.** Send a translator a `.zip`. They open it in Retrans and send it back, and you import their work with a clear view of what changed and any conflicts.
 - **Tabs, auto-save and undo.** Keep several projects open, never lose an edit (even after a crash), and undo anything, including a whole AI translation run.
+- **A guided start.** Getting started, a sample project with every kind of status, and a tour of the screen (**Help → Tour of This Screen**).
 - **Light and dark mode,** following your system.
 
 The [guide](docs/guide.md) covers each of these in detail.

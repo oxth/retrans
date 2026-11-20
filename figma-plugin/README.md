@@ -1,5 +1,8 @@
 # Retrans Preview (Figma plugin)
 
+<!-- FIGMA_COMMUNITY_URL: Retrans Preview is in review by Figma. When it's approved, link the Community page here and drop "coming soon". -->
+> **Status:** in review by Figma, coming soon to the Figma Community. Until then, build it and import it from the manifest (below).
+
 Shows Retrans draft translations in copies of real Figma frames, so a designer can mark each string
 *Fits* or *Too long* before the drafts are accepted. It works with files: Retrans exports a
 `.retrans-preview.json`, the plugin saves a `.retrans-results.json` that Retrans imports. The plugin

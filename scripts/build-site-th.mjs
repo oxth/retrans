@@ -123,6 +123,12 @@ const pairs = [
     "<p>Open Figma <code>.tokens.json</code> exports, translate them, link them to your code keys, and export back. Only the text changes.</p>",
     "<p>เปิดไฟล์ <code>.tokens.json</code> ที่ส่งออกจาก Figma แปล เชื่อมกับคีย์ในโค้ด แล้วส่งออกกลับไป โดยเปลี่ยนเฉพาะข้อความเท่านั้น</p>",
   ],
+  ["<h3>Designer preview in Figma ", "<h3>ให้นักออกแบบตรวจใน Figma "],
+  ['<span class="tag">Coming soon</span>', '<span class="tag">เร็ว ๆ นี้</span>'],
+  [
+    "<p>A designer checks your drafts in copies of the real frames with the Retrans Preview plugin, marks what's too long, and sends the marks back. The plugin is in review by Figma.</p>",
+    "<p>นักออกแบบตรวจคำแปลฉบับร่างในสำเนาของเฟรมจริงด้วยปลั๊กอิน Retrans Preview ทำเครื่องหมายข้อความที่ยาวเกิน แล้วส่งผลกลับมาให้ ปลั๊กอินอยู่ระหว่างการตรวจสอบของ Figma</p>",
+  ],
   ["<h3>Local or cloud AI ", "<h3>AI ในเครื่องหรือบนคลาวด์ "],
   [
     "<p>A built-in model runs entirely on your computer. Or use OpenAI, Claude, any OpenAI-compatible API, or an AI agent you already have (Claude Code, Codex, Gemini CLI).</p>",

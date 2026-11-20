@@ -2,11 +2,19 @@
 
 How to use Retrans beyond opening a project. For download and install, see the [README](../README.md).
 
+- [First steps](#first-steps)
 - [AI translation](#ai-translation)
 - [Working with a translator](#working-with-a-translator)
 - [TypeScript translations and workspaces](#typescript-translations-and-workspaces)
 - [Figma Variables](#figma-variables)
 - [Keyboard shortcuts](#keyboard-shortcuts)
+
+## First steps
+
+- **Getting started.** The first time you open Retrans, a short welcome explains what it does and where to start. Open it again from **Help → Getting Started**, or **New here? Get started** on the start screen.
+- **Try the sample project.** On the start screen, **Try a sample project** opens a small app in English, French and Japanese with a bit of every status: missing, not reviewed, reviewed, AI-made and source changed. It's made in `Documents/Retrans`, so you can experiment freely.
+- **Tour of the screen.** A step-by-step tour points out the parts of a project: missing cells, **Review**, the filters, **Translate missing…**, the sidebar and saving. It starts by itself the first time you open the sample project; **Help → Tour of This Screen** starts it on any project.
+- **Reading a cell.** A red dot is missing, a hollow ring is translated but not reviewed yet, and a filled teal dot is reviewed. **Review** appears when you hover or select a translation, and stays in view on cells marked **Source changed**. The sidebar's **Status key** explains each one.
 
 ## AI translation
 
@@ -81,23 +89,26 @@ Retrans reads the `.tokens.json` files Figma exports for Variables.
 
 ### Designer preview
 
-Before you accept AI drafts, a designer can check they fit the real design. The designer needs the **Retrans Preview** Figma plugin; until it's published in the Figma Community, build it from the [`figma-plugin`](../figma-plugin/README.md) folder of this repository.
+<!-- FIGMA_COMMUNITY_URL: Retrans Preview is in review by Figma. When it's approved, link the Community page here and drop "coming soon". -->
+Before you accept AI drafts, a designer can check they fit the real design. The designer needs the **Retrans Preview** Figma plugin. **It's in review by Figma and coming soon to the Figma Community.** Until then, build it from the [`figma-plugin`](../figma-plugin/README.md) folder of this repository.
+
+The plugin guides the designer through three steps: **Get drafts**, **Select a frame**, **Check & send**.
 
 1. In **Settings → Figma**, click **Export preview for a designer…**, pick a language and save the file. It holds that language's drafts that aren't reviewed yet and are linked to a Figma variable (tick **Include reviewed translations** to add the rest).
-2. The designer opens the **Retrans Preview** plugin in Figma, loads the file, selects the frames to check and clicks **Make preview copies**. The copies appear next to the originals with the drafts in place; the originals are never changed.
-3. The plugin flags text that may overflow (⚠) or uses a font that isn't installed. The designer marks each string **Fits** or **Too long**, adds a note if useful, and clicks **Save results**. If saving a file doesn't work, **Copy results** puts the same text on the clipboard: paste it into a new file whose name ends in `.retrans-results.json`.
+2. The designer opens the **Retrans Preview** plugin in Figma, clicks **Load preview file…** and selects a frame (or any layer in it). A temporary copy with the drafts in place appears next to it; selecting another frame moves the preview there, and closing the plugin removes it. The designer's frames are never changed.
+3. The plugin flags text that may overflow (⚠) or uses a font that isn't installed, and lists those first. The designer marks each string **Fits** or **Too long** (or **Mark the rest as Fits**), adds a note if useful, and clicks **Save results**. If saving a file doesn't work, **Copy results** puts the same text on the clipboard: paste it into a new file whose name ends in `.retrans-results.json`.
 4. Back in Retrans, **Import designer results…** shows how many fit and how many are too long, then adds the marks. **Too long** shows on the cell with the designer's note, and the **Too long** filter lists them.
 5. Shorten what's too long and review as usual. A mark belongs to the exact text the designer saw: editing the text clears it, and a results file for text that changed since is skipped.
 
-Marks are saved in `.retrans/state.json`, so they reach your team through git like review status. **Remove copies** in the plugin deletes only the copies it made.
+Marks are saved in `.retrans/state.json`, so they reach your team through git like review status. Marks are kept per language in the plugin, so switching language and back brings them back while the text is unchanged.
 
 #### Live link (same computer)
 
 If Retrans and Figma run on the same computer, the plugin can fetch drafts and send results directly, without files. Files still work, including for designers without Retrans.
 
 1. **Pair once.** In **Settings → Figma plugin**, under **Live link with Figma**, click **Pair a plugin**. Retrans shows a 6-digit code with an **Expires in m:ss** countdown. The code works for 5 minutes and only once; 5 wrong tries cancel it. In the plugin, under **Connect to Retrans**, type the code and click **Connect**. The switch **Live link with the Figma plugin** is off until you pair. The status line reads **Paired · listening on port 47321**, **Not paired** or **Couldn't start: …**. Pairing is per computer: the plugin remembers it in every Figma file on this computer.
-2. In the plugin, pick a project (only projects linked to Figma open in Retrans) and a language, optionally tick **Include reviewed**, and click **Get drafts**. If Retrans isn't found the plugin says **Open Retrans to connect**; the file buttons still work. Click **Try again** once Retrans is open. If a project you opened later isn't listed, click **Refresh**.
-3. Make preview copies and mark **Fits** / **Too long** as usual, then click **Send to Retrans**. Results go to the project the drafts came from; if it isn't open, the plugin asks you to open it, and **Save results** still works.
+2. In the plugin, pick a project (only projects linked to Figma open in Retrans) and a language, optionally tick **Include reviewed**, and click **Get drafts**. If Retrans isn't found the plugin says **Can't reach Retrans**, with **Try again** (once Retrans is open) and **Use a preview file**. If a project you opened later isn't listed, click **Refresh**. Once drafts are loaded, the language picker next to them switches language in place, and **Reload** gets the latest translations.
+3. Select a frame and mark **Fits** / **Too long** as usual, then click **Send to Retrans**. Results go to the project the drafts came from; if it isn't open, the plugin asks you to open it, and **Save results** still works.
 4. Retrans comes to the front on that project and shows the usual results summary. Nothing is added until you click **Apply**.
 
 Switch the live link off with the switch. **Forget plugin** (only shown when paired) removes the pairing, and the plugin must pair again. Privacy: Retrans listens only on this computer (`127.0.0.1` / `::1`, ports `47321–47325`), answers only the paired plugin (the key is kept in the system keychain), and only while the switch is on.
@@ -111,6 +122,8 @@ macOS shortcuts are shown; on Windows use Ctrl in place of ⌘.
 | Save a cell | Enter |
 | Save a cell and mark it reviewed | ⌘⇧R |
 | Next missing cell | Tab |
+| Previous missing cell | ⇧Tab |
+| Edit the selected cell | Enter or F2 |
 | Cancel editing | Esc |
 | Accept an AI suggestion | ⌘Enter |
 | Undo / redo | ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y) |

@@ -4,6 +4,15 @@ The Figma plugin's own versions, separate from the Retrans app's. A push to `mai
 plugin releases the newest version below if it hasn't been released yet (tag `figma-plugin-v<version>`).
 To release a change, add a section for the new version at the top.
 
+## [Unreleased]
+
+### Improvements
+
+- **Keyboard focus stays where you are.** Marking **Fits** or **Too long**, **Show**, or changing a list no longer sends focus back to the top of the panel.
+- **Notes are never left out.** **Send to Retrans**, **Save results** and **Copy results** use the notes exactly as typed.
+- **A native Figma look:** a small Retrans header, the steps as tabs, Figma-sized text and controls, and **Fits** / **Too long** as one control with the note beside it. A pressed **Too long** shows as a warning.
+- **Save results confirms** where to import the file, like Send and Copy.
+
 ## [1.0.0] - 2026-11-20
 
 ### Improvements

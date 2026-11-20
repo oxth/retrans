@@ -4,6 +4,21 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Improvements
+
+- **Shift+Tab goes to the previous missing cell** while editing, as Tab goes to the next one.
+- **A calmer table.** Language columns fill the window (a width you dragged is the minimum), badges sit under the text so it keeps the full width, and **Review** shows when you hover or select a translation. It stays in view on cells marked **Source changed**.
+- **Status by shape too.** Not reviewed is a hollow ring; missing and reviewed stay filled dots. Missing cells are no longer red boxes: the red dot is enough.
+- **Translate missing… leads** when there's something to translate, and its dialog starts with every language that has gaps. After a run with failures, **Try again** sends only what's still missing.
+- **Empty states that help.** When filters hide every key, **Clear filters** brings them back; a project with no keys offers **Add key**.
+- **Start screen:** projects already open in a tab say **Open**, the actions show **Opening…** while they work, and "No translations found here" names every format Retrans reads, with **Choose another folder…**.
+- **Settings say what was saved.** App settings show **Saved ✓**; project settings say they're written when you save the project. A setting that can't be saved says so.
+- **Clearer labels everywhere:** language names with their codes (Thai (th)), distinct export buttons ("Export to code or another format…", "Export package for translator…"), and conflict buttons that say which version they keep.
+- **Keyboard:** the row menu (⋯) opens and moves with the arrow keys, radio choices in Settings move with the arrow keys, and Enter moves through New project.
+- **Retrans Preview (Figma plugin):** keyboard focus stays on the control you used, a note typed just before sending is never left out, and a native Figma look with Fits / Too long as one control. The plugin is in review by Figma.
+
 ## [1.0.0] - 2026-11-20
 
 ### Improvements
