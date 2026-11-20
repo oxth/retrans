@@ -86,6 +86,14 @@ describe("PreviewExportDialog", () => {
     expect(screen.getByText("Nothing to preview in en: no unreviewed drafts are linked to Figma.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export…" })).toBeDisabled();
   });
+
+  it("with reviewed included, doesn't say 'unreviewed' when there is nothing at all", async () => {
+    const { session } = await setup();
+    for (const id of session.data.keyOrder) if (id.startsWith("figma-")) session.setText(id, "en", null);
+    render(<PreviewExportDialog session={session} onClose={() => {}} />);
+    await userEvent.click(screen.getByLabelText("Include reviewed translations"));
+    expect(screen.getByText("Nothing to preview in en: no drafts are linked to Figma.")).toBeInTheDocument();
+  });
 });
 
 describe("Import designer results", () => {
@@ -106,9 +114,20 @@ describe("Import designer results", () => {
     await userEvent.click(screen.getByRole("button", { name: "Import designer results…" }));
     expect(await screen.findByText("0 fit · 1 too long")).toBeInTheDocument();
     expect(screen.getByText("1 changed since checked (skipped)")).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't be read/)).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
     await screen.findByText("Added 1 designer verdict. Review and save.");
     expect(session.fitOf(WARRANTY, "en")?.v).toBe("too-long");
+  });
+
+  it("says how many results in the file couldn't be read", async () => {
+    const { session, fs } = await setup();
+    const file = results(session);
+    await fs.writeTextAtomic("/in/r.json", JSON.stringify({ ...file, results: [...file.results, { key: "x", verdict: "maybe" }] }));
+    dlg.openValue = "/in/r.json";
+    render(<FigmaSettings session={session} />);
+    await userEvent.click(screen.getByRole("button", { name: "Import designer results…" }));
+    expect(await screen.findByText("1 couldn't be read (skipped)")).toBeInTheDocument();
   });
 
   it("warns about results from another project", async () => {

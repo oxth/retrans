@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useId, useRef } from "react";
 import { isApplicable } from "../core/plurals";
 import { READ_ONLY_MESSAGE, type ProjectSession } from "../core/session";
 import { acceptDraft } from "../workspace/actions";
@@ -38,6 +38,7 @@ export interface CellProps {
 /** Reads from the session; memoized on (id, locale, version, editing) so unrelated edits do not re-render every cell. */
 export const Cell = memo(function Cell({ session, id, locale, showCode, editing, actions }: CellProps) {
   const el = useRef<HTMLDivElement>(null);
+  const fitNoteId = useId();
   const refocus = useRef(false);
   useEffect(() => {
     if (editing) refocus.current = false;
@@ -159,6 +160,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
       ref={el}
       data-locale={locale}
       tabIndex={0}
+      aria-describedby={fit?.v === "too-long" ? fitNoteId : undefined}
       onClick={() => actions.start(id, locale)}
       onKeyDown={onKeyDown}
     >
@@ -176,12 +178,12 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
             {fit?.v === "too-long" && (
               <span
                 data-fit="too-long"
-                aria-describedby={`fit-${id}-${locale}`}
+                aria-describedby={fitNoteId}
                 className="rounded bg-warn-soft px-1.5 text-[11px] font-medium leading-5 text-warn"
                 title={fit.note ? `Designer: ${fit.note}` : "A designer found this too long in the Figma preview."}
               >
                 Too long
-                <span id={`fit-${id}-${locale}`} hidden>{fit.note ? `Designer: ${fit.note}` : "A designer found this too long in the Figma preview."}</span>
+                <span id={fitNoteId} hidden>{fit.note ? `Designer: ${fit.note}` : "A designer found this too long in the Figma preview."}</span>
               </span>
             )}
             {fit?.v === "fits" && (

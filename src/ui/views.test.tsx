@@ -70,6 +70,15 @@ describe("designer verdicts", () => {
     expect(badge).toHaveAccessibleDescription(/wraps to 2 lines/);
   });
 
+  it("the note reaches keyboard users: the focusable cell is described by it", async () => {
+    const s = await open(nested());
+    await mark(s, "too-long", "wraps to 2 lines");
+    const badge = await screen.findByText("Too long", { selector: "[data-fit]" });
+    const cell = badge.closest<HTMLElement>('[data-cell="value"]')!;
+    expect(cell.tabIndex).toBe(0);
+    expect(cell).toHaveAccessibleDescription(/wraps to 2 lines/);
+  });
+
   it("shows a quiet mark for Fits", async () => {
     const s = await open(nested());
     await mark(s, "fits");

@@ -59,13 +59,20 @@ describe("parseBundle", () => {
 
 describe("parseResults", () => {
   it("round-trips results", () => {
-    expect(parseResults(serializePreview(results))).toEqual({ ok: true, results });
+    expect(parseResults(serializePreview(results))).toEqual({ ok: true, results, unreadable: 0 });
   });
 
   it("drops a result with an unknown verdict", () => {
     const text = JSON.stringify({ ...results, results: [{ ...results.results[0], verdict: "maybe" }, results.results[1]] });
     const r = parseResults(text);
     expect(r.ok && r.results.results.map((x) => x.key)).toEqual(["button::cancel"]);
+  });
+
+  it("counts the results it couldn't read", () => {
+    const text = JSON.stringify({ ...results, results: [{ ...results.results[0], verdict: "maybe" }, 7, results.results[1]] });
+    const r = parseResults(text);
+    expect(r.ok && r.unreadable).toBe(2);
+    expect(parseResults(serializePreview(results)).ok && (parseResults(serializePreview(results)) as { unreadable: number }).unreadable).toBe(0);
   });
 
   it("keeps a note only when it is a non-empty string", () => {

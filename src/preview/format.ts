@@ -105,7 +105,8 @@ function parseResult(v: unknown): PreviewResult | null {
   };
 }
 
-export function parseResults(text: string): Parsed<"results", PreviewResults> {
+/** `unreadable` counts the results that were left out because they were malformed. */
+export function parseResults(text: string): ({ ok: true; results: PreviewResults; unreadable: number }) | { ok: false; error: string } {
   const json = parseJson(text);
   if (!json.ok) return json;
   const raw = json.raw;
@@ -120,7 +121,7 @@ export function parseResults(text: string): Parsed<"results", PreviewResults> {
     const p = parseResult(r);
     return p ? [p] : [];
   });
-  return { ok: true, results: { retransPreviewResults: 1, sourceProjectId, locale, checkedAt, results: list } };
+  return { ok: true, results: { retransPreviewResults: 1, sourceProjectId, locale, checkedAt, results: list }, unreadable: results.length - list.length };
 }
 
 export function serializePreview(v: PreviewBundle | PreviewResults): string {

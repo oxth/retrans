@@ -12,11 +12,13 @@ export interface ResultsDiff {
   apply: PreviewResult[];
   changedSinceChecked: number;
   missingKeys: number;
+  /** Results the file had but that couldn't be read. */
+  unreadable: number;
   tooLong: number;
   fits: number;
 }
 
-export function diffResults(session: ProjectSession, r: PreviewResults): { ok: true; diff: ResultsDiff } | { ok: false; error: string } {
+export function diffResults(session: ProjectSession, r: PreviewResults, unreadable = 0): { ok: true; diff: ResultsDiff } | { ok: false; error: string } {
   const { baseLocale, locales } = session.data;
   if (r.locale === baseLocale) return { ok: false, error: `These results are for ${r.locale}, the base language.` };
   if (!locales.includes(r.locale)) return { ok: false, error: `This project has no ${r.locale} language.` };
@@ -27,6 +29,7 @@ export function diffResults(session: ProjectSession, r: PreviewResults): { ok: t
     apply: [],
     changedSinceChecked: 0,
     missingKeys: 0,
+    unreadable,
     tooLong: 0,
     fits: 0,
   };

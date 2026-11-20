@@ -56,7 +56,7 @@ export function answerLive(
 
   const parsed = parseResults(JSON.stringify(req.body));
   if (!parsed.ok) return { status: 422, body: { error: parsed.error } };
-  const diff = diffResults(project.session, parsed.results);
+  const diff = diffResults(project.session, parsed.results, parsed.unreadable);
   if (!diff.ok) return { status: 422, body: { error: diff.error } };
   onResults(project.id, diff.diff);
   return { status: 202, body: {} };

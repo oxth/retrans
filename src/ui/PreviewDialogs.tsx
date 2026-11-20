@@ -82,7 +82,7 @@ export function PreviewExportDialog({ session, onClose }: { session: ProjectSess
             {count} {count === 1 ? "string" : "strings"} · {left} left out (no Figma variable: {built.leftOut.noVariable}, plural: {built.leftOut.complex})
           </p>
         )}
-        {built && count === 0 && <p className="text-warn">Nothing to preview in {locale}: no unreviewed drafts are linked to Figma.</p>}
+        {built && count === 0 && <p className="text-warn">Nothing to preview in {locale}: no {includeReviewed ? "" : "unreviewed "}drafts are linked to Figma.</p>}
         {(error ?? attempt?.error) && <p role="alert" className="text-danger">{error ?? attempt?.error}</p>}
         {done && <p role="status" className="text-ok">{done}</p>}
         <div className="flex justify-end gap-2">
@@ -101,7 +101,7 @@ export function PreviewResultsDialog({ session, diff, onClose, onApplied }: {
   onClose: () => void;
   onApplied: (count: number) => void;
 }) {
-  const skipped = diff.changedSinceChecked + diff.missingKeys;
+  const skipped = diff.changedSinceChecked + diff.missingKeys + diff.unreadable;
   return (
     <Dialog title="Import designer results" onClose={onClose}>
       <div className="space-y-3 text-sm">
@@ -109,6 +109,7 @@ export function PreviewResultsDialog({ session, diff, onClose, onApplied }: {
         <p>{diff.fits} fit · {diff.tooLong} too long</p>
         {diff.changedSinceChecked > 0 && <p className="text-muted">{diff.changedSinceChecked} changed since checked (skipped)</p>}
         {diff.missingKeys > 0 && <p className="text-muted">{diff.missingKeys} no longer in this project (skipped)</p>}
+        {diff.unreadable > 0 && <p className="text-muted">{diff.unreadable} couldn't be read (skipped)</p>}
         {diff.otherProject && <p className="text-warn">This file was made for another project. Check it's the right one before applying.</p>}
         {diff.apply.length === 0 && skipped > 0 && <p>Nothing left to apply.</p>}
         <div className="flex justify-end gap-2">

@@ -64,7 +64,7 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
       if (typeof picked !== "string") return;
       const parsed = parseResults(await fs.readText(picked));
       if (!parsed.ok) return setPreviewNote({ ok: false, text: parsed.error });
-      const d = diffResults(session, parsed.results);
+      const d = diffResults(session, parsed.results, parsed.unreadable);
       if (!d.ok) return setPreviewNote({ ok: false, text: d.error });
       setResults(d.diff);
     } catch (e) {
