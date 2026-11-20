@@ -104,6 +104,14 @@ describe("designer verdicts", () => {
 });
 
 describe("views", () => {
+  it("names each language with its code in the table header and the sidebar", async () => {
+    await open(nested());
+    await userEvent.click(screen.getByRole("button", { name: "table" }));
+    expect(await screen.findAllByText("Thai (th)")).not.toHaveLength(0);
+    expect(screen.getAllByText("English (en)").length).toBeGreaterThan(0);
+    expect(screen.queryByText("TH")).toBeNull();
+  });
+
   it("toggle switches between list and table and persists per project", async () => {
     await open(nested());
     expect(screen.getByTestId("list-scroll")).toBeInTheDocument();

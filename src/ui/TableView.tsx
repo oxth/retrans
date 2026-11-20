@@ -5,6 +5,7 @@ import { RowMenu } from "./RowMenu";
 import { isRemovedInSource, type ViewProps, isFigmaRow, NoCodeKeyBadge, NoMatches } from "./ListView";
 import { RowWarnings } from "./Warnings";
 import { duplicateGroups } from "../workspace/actions";
+import { languageWithCode } from "./locales";
 
 const KEY_W = 220;
 const COL_W = 260;
@@ -133,13 +134,15 @@ export function TableView({ session, rows, locales, version, editing, actions, o
             {resizer("key", "Key")}
           </div>
           <div className="shrink-0 border-r border-line bg-panel px-2 py-1.5" style={{ width: colW(base), ...pin(keyW), zIndex: 11 }}>
-            {base.toUpperCase()} <span className="font-normal normal-case text-muted">(base)</span>
-            {resizer(base, base.toUpperCase())}
+            <span className="block truncate normal-case tracking-normal" title={languageWithCode(base)}>
+              {languageWithCode(base)} <span className="font-normal text-muted">(base)</span>
+            </span>
+            {resizer(base, languageWithCode(base))}
           </div>
           {locales.map((l) => (
             <div key={l} className="relative shrink-0 border-r border-line px-2 py-1.5" style={{ width: colW(l) }}>
-              {l.toUpperCase()}
-              {resizer(l, l.toUpperCase())}
+              <span className="block truncate normal-case tracking-normal" title={languageWithCode(l)}>{languageWithCode(l)}</span>
+              {resizer(l, languageWithCode(l))}
             </div>
           ))}
         </div>
