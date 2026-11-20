@@ -116,7 +116,7 @@ describe("designer verdicts", () => {
     );
     const width = parseFloat(screen.getByTestId("list-scroll").style.getPropertyValue("--code-w"));
     expect(width).toBeGreaterThanOrEqual(5 * 0.72); // five uppercase characters at 12 px
-    expect(screen.getAllByText("zh-CN")[0]).toHaveClass("whitespace-nowrap");
+    expect(within(screen.getByTestId("list-scroll")).getAllByText("zh-CN")[0]).toHaveClass("whitespace-nowrap");
   });
 
   it("hides the mark once the text is edited", async () => {
@@ -138,11 +138,15 @@ describe("designer verdicts", () => {
 });
 
 describe("views", () => {
-  it("names each language with its code in the table header and the sidebar", async () => {
+  it("names each language on one line and its code on the next, in the table header and the sidebar", async () => {
     await open(nested());
     await userEvent.click(screen.getByRole("button", { name: "table" }));
-    expect(await screen.findAllByText("Thai (th)")).not.toHaveLength(0);
-    expect(screen.getAllByText("English (en)").length).toBeGreaterThan(0);
+    const header = (await screen.findByTestId("table-scroll")).querySelector<HTMLElement>('[title="Thai (th)"]')!;
+    expect(header.children[0]).toHaveTextContent("Thai");
+    expect(header.children[1]).toHaveTextContent("th");
+    expect(screen.getByTestId("table-scroll").querySelector('[title="English (en)"]')!.children[1]).toHaveTextContent("en · base");
+    // The sidebar: the name, then the code with the percentage.
+    expect(screen.getByRole("complementary", { name: "Sidebar" }).querySelector('[title="Thai (th)"]')).toHaveTextContent(/^Thai$/);
     expect(screen.queryByText("TH")).toBeNull();
   });
 

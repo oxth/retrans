@@ -5,12 +5,12 @@ import { RowMenu } from "./RowMenu";
 import { isRemovedInSource, type ViewProps, isFigmaRow, NoCodeKeyBadge, NoMatches } from "./ListView";
 import { RowWarnings } from "./Warnings";
 import { duplicateGroups } from "../workspace/actions";
-import { languageWithCode } from "./locales";
+import { languageWithCode, localeLabel } from "./locales";
 
 const KEY_W = 220;
 const COL_W = 260;
-/** Fixed height of the sticky header; the virtualizer needs it as scrollMargin so the visible range is right. */
-const HEADER_H = 32;
+/** Fixed height of the sticky header (two lines: name, then code); the virtualizer needs it as scrollMargin. */
+const HEADER_H = 44;
 const MIN_W = 120;
 const MAX_W = 900;
 /** Column widths the user dragged, by column ("key" or a locale code); shared by all projects. */
@@ -132,6 +132,19 @@ export function TableView({ session, rows, locales, version, editing, actions, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId, editLocale]);
   const pin = (left: number) => ({ position: "sticky" as const, left, zIndex: 1 });
+  // The name may be cut off in a narrow column; the code below it is short and always fits.
+  const head = (l: string, isBase = false) => {
+    const name = localeLabel(l);
+    return (
+      <span className="block min-w-0" title={languageWithCode(l)}>
+        <span className="block truncate text-fg-2">{name !== l ? name : l}</span>
+        <span className="block truncate font-mono text-xs font-normal text-muted">
+          {l}
+          {isBase && " · base"}
+        </span>
+      </span>
+    );
+  };
   return (
     <div ref={parent} className="h-full overflow-auto text-sm" data-testid="table-scroll">
       <div style={{ width, minWidth: "100%" }}>
@@ -141,15 +154,13 @@ export function TableView({ session, rows, locales, version, editing, actions, o
             Key
             {resizer("key", "Key")}
           </div>
-          <div className="border-r border-line bg-panel px-2 py-1.5" style={{ ...grow(base), ...pin(keyW), zIndex: 11 }}>
-            <span className="block truncate" title={languageWithCode(base)}>
-              {languageWithCode(base)} <span className="font-normal text-muted">(base)</span>
-            </span>
+          <div className="border-r border-line bg-panel px-2 py-1" style={{ ...grow(base), ...pin(keyW), zIndex: 11 }}>
+            {head(base, true)}
             {resizer(base, languageWithCode(base))}
           </div>
           {locales.map((l) => (
-            <div key={l} className="relative border-r border-line px-2 py-1.5" style={grow(l)}>
-              <span className="block truncate" title={languageWithCode(l)}>{languageWithCode(l)}</span>
+            <div key={l} className="relative border-r border-line px-2 py-1" style={grow(l)}>
+              {head(l)}
               {resizer(l, languageWithCode(l))}
             </div>
           ))}
