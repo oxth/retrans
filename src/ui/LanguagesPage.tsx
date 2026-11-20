@@ -4,7 +4,7 @@ import type { ProjectSession } from "../core/session";
 import { btnGhost, btnPrimary, Dialog, inputCls, btnSecondary, btnDanger } from "./Dialog";
 import { Icon } from "./Icon";
 import { LocalePicker } from "./LocalePicker";
-import { localeLabel } from "./locales";
+import { languageWithCode, localeLabel } from "./locales";
 import { parseKeyId } from "../core/model";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -346,9 +346,36 @@ function GroupRow({
   );
 }
 
-function AddLanguageDialog({ session, onClose, onAdded }: { session: ProjectSession; onClose: () => void; onAdded: () => void }) {
+/**
+ * Add language. `showConfig`: opened away from the Languages page (the toolbar), so the dialog itself shows
+ * the next-i18next config line to update, instead of the page's snippet panel.
+ */
+export function AddLanguageDialog({ session, onClose, onAdded, showConfig }: {
+  session: ProjectSession; onClose: () => void; onAdded: () => void; showConfig?: boolean;
+}) {
   const [sel, setSel] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [added, setAdded] = useState<{ code: string; snippet: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  if (added) {
+    return (
+      <Dialog title="Add language" onClose={onClose}>
+        <p role="status" className="text-sm">
+          Added {languageWithCode(added.code)}. Also add it to the locales list in your next-i18next config:
+        </p>
+        <pre className="mt-2 overflow-auto rounded-md bg-panel p-3 text-xs">{added.snippet}</pre>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            className={btnSecondary}
+            onClick={() => void navigator.clipboard.writeText(added.snippet).then(() => setCopied(true), () => setCopied(false))}
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
+          <button className={btnPrimary} onClick={onClose}>Done</button>
+        </div>
+      </Dialog>
+    );
+  }
   return (
     <Dialog title="Add language" onClose={onClose}>
       <LocalePicker label="Language" selected={sel} exclude={session.data.locales} onChange={setSel} />
@@ -360,9 +387,10 @@ function AddLanguageDialog({ session, onClose, onAdded }: { session: ProjectSess
           disabled={!sel.length}
           onClick={() => {
             try {
-              session.addLanguage(sel[0]);
+              const r = session.addLanguage(sel[0]);
               onAdded();
-              onClose();
+              if (showConfig && r.configSnippet) setAdded({ code: sel[0], snippet: r.configSnippet });
+              else onClose();
             } catch (e) {
               setError(msg(e));
             }

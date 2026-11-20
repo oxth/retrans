@@ -21,6 +21,8 @@ export interface ToolbarProps {
   viewMode: "list" | "table";
   onViewMode: (m: "list" | "table") => void;
   onAddKey?: () => void;
+  /** Opens Add language (the same dialog as the Languages page). */
+  onAddLanguage?: () => void;
   onTranslateMissing?: () => void;
   /** Translate missing is the screen's main action (nothing unsaved, something missing). */
   translatePrimary?: boolean;
@@ -126,14 +128,30 @@ export function Toolbar(p: ToolbarProps) {
             <Icon name="chevronDown" size={14} className="text-muted" />
           </button>
           {menu && (
-            <div role="group" aria-label="Visible languages" className="absolute right-0 z-20 mt-1 min-w-44 rounded-lg border border-line bg-surface p-1.5 shadow-pop">
+            <div role="group" aria-label="Visible languages" className="absolute right-0 z-20 mt-1 w-max min-w-44 max-w-[min(28rem,90vw)] rounded-lg border border-line bg-surface p-1.5 shadow-pop">
               {p.targetLocales.map((l) => (
                 <label key={l} className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-hover">
                   <input type="checkbox" checked={!p.hidden.has(l)} onChange={() => p.onToggleLocale(l)} />
-                  <span className="font-medium">{languageWithCode(l)}</span>
+                  <span className="truncate whitespace-nowrap font-medium">{languageWithCode(l)}</span>
                 </label>
               ))}
               {!p.targetLocales.length && <div className="px-2 py-1 text-xs text-muted">No other languages</div>}
+              {p.onAddLanguage && (
+                <>
+                  <div className="my-1 border-t border-line" />
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-hover"
+                    onClick={() => {
+                      setMenu(false);
+                      p.onAddLanguage!();
+                    }}
+                  >
+                    <Icon name="plus" size={14} className="text-muted" />
+                    Add language…
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>

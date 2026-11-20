@@ -8,7 +8,7 @@ import { LinkDialog, SetCodeKeyDialog } from "./FigmaKeyDialogs";
 import { AddKeyDialog, DeleteKeyDialog, RenameKeyDialog } from "./KeyDialogs";
 import { ConflictDialog } from "./ConflictDialog";
 import { ExportDialog } from "./ExportDialog";
-import { LanguagesPage } from "./LanguagesPage";
+import { AddLanguageDialog, LanguagesPage } from "./LanguagesPage";
 import { LoadErrors } from "./LoadErrors";
 import { PreviewResultsDialog } from "./PreviewDialogs";
 import { SharePage } from "./SharePage";
@@ -45,7 +45,7 @@ export function AppShell() {
   const [liveNote, setLiveNote] = useState<{ tabId: string; text: string } | null>(null);
   const root = session?.data.root;
   const [dialog, setDialog] = useState<
-    { kind: "add" | "translate" | "export" } | { kind: "rename" | "delete" | "code-key" | "link"; row: Row } | null
+    { kind: "add" | "add-language" | "translate" | "export" } | { kind: "rename" | "delete" | "code-key" | "link"; row: Row } | null
   >(null);
   // Translate missing appears once any provider is ready (a local model, or a cloud/agent provider set up).
   const hasModel = useMt((s) => !!session && activeTranslator(s, session.data.format, session.state.project.mtProvider) !== null);
@@ -264,6 +264,7 @@ export function AppShell() {
               viewMode={viewMode}
               onViewMode={onViewMode}
               onAddKey={() => setDialog({ kind: "add" })}
+              onAddLanguage={() => setDialog({ kind: "add-language" })}
               onTranslateMissing={hasModel ? () => setDialog({ kind: "translate" }) : undefined}
               translatePrimary={!dirty && missingCount > 0}
             />
@@ -282,6 +283,9 @@ export function AppShell() {
         )}
       </main>
       {dialog?.kind === "add" && <AddKeyDialog session={session} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "add-language" && (
+        <AddLanguageDialog session={session} showConfig onClose={() => setDialog(null)} onAdded={() => {}} />
+      )}
       {dialog?.kind === "translate" && <TranslateMissingDialog session={session} defaultLocale={visible[0]} onClose={() => setDialog(null)} />}
       {dialog?.kind === "rename" && <RenameKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}
       {dialog?.kind === "delete" && <DeleteKeyDialog session={session} row={dialog.row} onClose={() => setDialog(null)} />}

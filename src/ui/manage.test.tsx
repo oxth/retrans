@@ -225,6 +225,29 @@ describe("languages", () => {
     expect(s.data.locales).not.toContain("fr");
   });
 
+  it("a language can be added from the Translations view: Languages menu → Add language…, with the config line in the dialog", async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const s = await open(nested());
+    await userEvent.click(screen.getByRole("button", { name: "Visible languages" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add language…" }));
+    const dlg = screen.getByRole("dialog", { name: "Add language" });
+    await userEvent.type(within(dlg).getByLabelText("Language"), "fr");
+    await userEvent.click(within(dlg).getByRole("radio", { name: /^fr(?!-)/ }));
+    await userEvent.click(within(dlg).getByRole("button", { name: "Add" }));
+    expect(s.data.locales).toContain("fr");
+    // Still on Translations: the dialog says what to change in the config, with Copy.
+    expect(within(dlg).getByRole("status")).toHaveTextContent(/Added French \(fr\)/);
+    expect(within(dlg).getByText(/'fr'/)).toBeInTheDocument();
+    await userEvent.click(within(dlg).getByRole("button", { name: "Copy" }));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("fr"));
+    await userEvent.click(within(dlg).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog", { name: "Add language" })).toBeNull();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Translations");
+    // The new language shows straight away, with every cell missing.
+    expect(document.querySelectorAll('[data-locale="fr"][data-cell="missing"]').length).toBeGreaterThan(0);
+  });
+
   it("namespaces: explained, listed with their key counts and files, and one can be added (Enter works)", async () => {
     const s = await open(nested());
     await userEvent.click(screen.getByRole("button", { name: "Languages" }));
