@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <!-- Figma Community carousel slide 2 for Retrans Preview: drafts go into copies, originals untouched
+       Same style as cover.svg. Render: rsvg-convert -w 1920 -h 1080 figma-plugin/assets/slide-2.svg -o figma-plugin/assets/slide-2.png -->
+  <defs>
+    <linearGradient id="bgPage" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#15123d"/><stop offset="1" stop-color="#062b29"/></linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#0d9488"/></linearGradient>
+    <linearGradient id="bgU" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100" y2="100"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#0d9488"/></linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bgPage)"/>
+  <g transform="translate(128 120) scale(0.64)">
+    <rect width="100" height="100" rx="22.5" fill="url(#bg)"/>
+    <g fill="#ffffff"><rect x="17.5" y="25" width="22" height="11" rx="4" opacity=".55"/><rect x="44.5" y="25" width="33" height="11" rx="4"/><rect x="17.5" y="44.5" width="22" height="11" rx="4" opacity=".55"/><rect x="17.5" y="64" width="22" height="11" rx="4" opacity=".55"/><rect x="44.5" y="64" width="33" height="11" rx="4"/></g>
+    <rect x="46" y="46" width="30" height="8" rx="3" fill="none" stroke="#fca5a5" stroke-width="3" stroke-dasharray="9 4.5"/>
+    <circle cx="76.5" cy="45" r="5.5" fill="#f87171" stroke="url(#bgU)" stroke-width="3"/>
+  </g>
+  <text x="212" y="166" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#ffffff">Retrans Preview</text>
+  <text x="128" y="290" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="28" font-weight="700" fill="#5eead4" letter-spacing="2">STEP 1 OF 4</text>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" font-size="76" fill="#ffffff">
+    <text x="128" y="390">Previews go in copies,</text>
+    <text x="128" y="478" fill="#99f6e4">never your frames.</text>
+  </g>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="36" fill="#b9bdd4">
+    <text x="128" y="560">Select frames and click Make preview</text>
+    <text x="128" y="614">copies. The drafts land in copies next</text>
+    <text x="128" y="668">to the originals; remove them anytime.</text>
+  </g>
+  <rect x="1000" y="140" width="792" height="800" rx="32" fill="#1b1f2d" stroke="#2f3547" stroke-width="2"/>
+  <text x="1048" y="230" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" fill="#8f94ad">Product card</text>
+  <g transform="translate(1048 250)">
+    <rect width="320" height="360" rx="18" fill="#ffffff"/>
+    <rect x="28" y="32" width="96" height="96" rx="12" fill="#eceef4"/>
+    <rect x="140" y="40" width="150" height="18" rx="9" fill="#14161f"/>
+    <rect x="140" y="76" width="120" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="140" y="102" width="90" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="28" y="160" width="264" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="28" y="186" width="224" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="28" y="268" width="264" height="60" rx="14" fill="#4f46e5"/>
+    <text x="160" y="307" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="#ffffff">Add to cart</text>
+    
+  </g>
+  <text x="1424" y="230" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" fill="#8f94ad">Product card · Preview de</text>
+  <g transform="translate(1424 250)">
+    <rect width="320" height="360" rx="18" fill="#ffffff"/>
+    <rect x="28" y="32" width="96" height="96" rx="12" fill="#eceef4"/>
+    <rect x="140" y="40" width="150" height="18" rx="9" fill="#14161f"/>
+    <rect x="140" y="76" width="120" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="140" y="102" width="90" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="28" y="160" width="264" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="28" y="186" width="224" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="28" y="268" width="264" height="60" rx="14" fill="#4f46e5"/>
+    <text x="160" y="307" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#ffffff">In den Warenkorb</text>
+    
+  </g>
+  <path d="M1378 430 h34" stroke="#5eead4" stroke-width="4" stroke-linecap="round"/>
+  <path d="M1402 420 l12 10 l-12 10" fill="none" stroke="#5eead4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" font-weight="700">
+    <rect x="1048" y="636" width="276" height="44" rx="22" fill="#0f2624" stroke="#2dd4bf" stroke-width="2"/>
+    <text x="1186" y="665" text-anchor="middle" fill="#5eead4">✓ Original unchanged</text>
+    <rect x="1424" y="636" width="200" height="44" rx="22" fill="#1d1f33" stroke="#8b85ff" stroke-width="2"/>
+    <text x="1524" y="665" text-anchor="middle" fill="#c7c4ff">Preview copy</text>
+  </g>
+  <g transform="translate(1048 740)" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+    <rect width="696" height="152" rx="20" fill="#151824" stroke="#2f3547" stroke-width="2"/>
+    <text x="32" y="50" font-size="24" fill="#8f94ad">shop-de.retrans-preview.json · de · 16 strings</text>
+    <rect x="32" y="76" width="300" height="52" rx="12" fill="#8b85ff"/>
+    <text x="182" y="110" text-anchor="middle" font-size="24" font-weight="700" fill="#0f1117">Make preview copies</text>
+    <text x="356" y="110" font-size="24" fill="#8f94ad">3 frames selected</text>
+  </g>
+</svg>

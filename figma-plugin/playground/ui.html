@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; padding: 16px; font: 13px/1.5 Inter, system-ui, sans-serif; color: var(--figma-color-text); background: var(--figma-color-bg); }
+  button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--figma-color-border); background: var(--figma-color-bg); color: inherit; cursor: pointer; }
+  button.primary { background: var(--figma-color-bg-brand); color: var(--figma-color-text-onbrand); border-color: transparent; }
+  .bar { display: flex; gap: 8px; margin-top: 12px; }
+  .muted { color: var(--figma-color-text-secondary); }
+  .error { color: var(--figma-color-text-danger); }
+</style>
+</head>
+<body>
+<p><strong>Retrans Preview playground</strong></p>
+<p class="muted">Run this in an empty file. It makes a Playground variable collection, two frames bound to it and a note, then gives you the matching sample preview file.</p>
+<div class="bar"><button class="primary" id="build">Build playground</button></div>
+<div id="out"></div>
+<script>
+  // FNV-1a over UTF-8, 8 hex chars: the same hash Retrans uses (src/core/hash.ts hashText).
+  function hashText(s) {
+    let h = 0x811c9dc5;
+    for (const b of new TextEncoder().encode(s)) {
+      h ^= b;
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  }
+  let json = "";
+  const out = document.getElementById("out");
+  document.getElementById("build").onclick = (e) => {
+    e.target.disabled = true;
+    parent.postMessage({ pluginMessage: { type: "build" } }, "*");
+  };
+  out.onclick = async (e) => {
+    if (e.target.id === "save") {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+      a.download = "playground-de.retrans-preview.json";
+      a.click();
+    } else if (e.target.id === "copy") {
+      try { await navigator.clipboard.writeText(json); } catch {
+        const t = document.createElement("textarea"); t.value = json; document.body.append(t); t.select(); document.execCommand("copy"); t.remove();
+      }
+      e.target.textContent = "Copied";
+    }
+  };
+  window.onmessage = (e) => {
+    const msg = e.data.pluginMessage;
+    if (!msg) return;
+    if (msg.type === "error") {
+      out.innerHTML = '<p class="error"></p>';
+      out.firstChild.textContent = "Couldn't build: " + msg.message;
+      document.getElementById("build").disabled = false;
+      return;
+    }
+    for (const s of msg.bundle.strings) s.hash = hashText(s.text);
+    json = JSON.stringify(msg.bundle, null, 2) + "\n";
+    out.innerHTML = '<p>Done. Save the sample preview file and keep it with the playground.</p>' +
+      '<div class="bar"><button class="primary" id="save">Save playground-de.retrans-preview.json</button><button id="copy">Copy</button></div>';
+  };
+</script>
+</body>
+</html>

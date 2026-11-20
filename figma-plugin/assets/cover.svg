@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <!-- Figma Community cover for Retrans Preview, in the style of site/og-image.svg.
+       Render: rsvg-convert -w 1920 -h 1080 figma-plugin/assets/cover.svg -o figma-plugin/assets/cover.png -->
+  <defs>
+    <linearGradient id="bgPage" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#15123d"/>
+      <stop offset="1" stop-color="#062b29"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+    <linearGradient id="bgU" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100" y2="100">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+    <!-- The Thai draft is cut off at the button edge, as a fixed-size button shows it. -->
+    <clipPath id="btnClip"><rect x="28" y="304" width="248" height="60" rx="14"/></clipPath>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bgPage)"/>
+
+  <!-- logo + name -->
+  <g transform="translate(128 150) scale(1.44)">
+    <rect width="100" height="100" rx="22.5" fill="url(#bg)"/>
+    <g fill="#ffffff">
+      <rect x="17.5" y="25" width="22" height="11" rx="4" opacity=".55"/>
+      <rect x="44.5" y="25" width="33" height="11" rx="4"/>
+      <rect x="17.5" y="44.5" width="22" height="11" rx="4" opacity=".55"/>
+      <rect x="17.5" y="64" width="22" height="11" rx="4" opacity=".55"/>
+      <rect x="44.5" y="64" width="33" height="11" rx="4"/>
+    </g>
+    <rect x="46" y="46" width="30" height="8" rx="3" fill="none" stroke="#fca5a5" stroke-width="3" stroke-dasharray="9 4.5"/>
+    <circle cx="76.5" cy="45" r="5.5" fill="#f87171" stroke="url(#bgU)" stroke-width="3"/>
+  </g>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" fill="#ffffff">
+    <text x="320" y="246" font-size="76">Retrans Preview</text>
+  </g>
+
+  <!-- headline -->
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" font-size="88" fill="#ffffff">
+    <text x="128" y="470">See translations</text>
+    <text x="128" y="572" fill="#99f6e4">in your real frames.</text>
+  </g>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="40" fill="#b9bdd4">
+    <text x="128" y="688">Check that AI drafts fit, and flag</text>
+    <text x="128" y="742">what's too long, before anyone ships it.</text>
+    <text x="128" y="852" font-size="32" fill="#8f94ad">Figma plugin · Works with the free Retrans app</text>
+  </g>
+
+  <!-- canvas card -->
+  <rect x="1040" y="140" width="752" height="800" rx="32" fill="#1b1f2d" stroke="#2f3547" stroke-width="2"/>
+
+  <!-- frame labels -->
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" fill="#8f94ad">
+    <text x="1088" y="214">Checkout</text>
+    <text x="1432" y="214">Checkout · Preview th</text>
+  </g>
+
+  <!-- original frame -->
+  <g transform="translate(1088 234)">
+    <rect width="304" height="400" rx="18" fill="#ffffff"/>
+    <rect x="28" y="36" width="160" height="18" rx="9" fill="#14161f"/>
+    <rect x="28" y="80" width="248" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="28" y="106" width="200" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="28" y="160" width="248" height="48" rx="10" fill="#f6f7fb" stroke="#cfd3df" stroke-width="2"/>
+    <rect x="28" y="224" width="248" height="48" rx="10" fill="#f6f7fb" stroke="#cfd3df" stroke-width="2"/>
+    <rect x="28" y="304" width="248" height="60" rx="14" fill="#4f46e5"/>
+    <text x="152" y="343" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="#ffffff">Save changes</text>
+  </g>
+
+  <!-- preview copy: the Thai draft runs past its button -->
+  <g transform="translate(1432 234)">
+    <rect width="312" height="400" rx="18" fill="#ffffff"/>
+    <rect x="28" y="36" width="160" height="18" rx="9" fill="#14161f"/>
+    <rect x="28" y="80" width="248" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="28" y="106" width="200" height="12" rx="6" fill="#cfd3df"/>
+    <rect x="28" y="160" width="248" height="48" rx="10" fill="#f6f7fb" stroke="#cfd3df" stroke-width="2"/>
+    <rect x="28" y="224" width="248" height="48" rx="10" fill="#f6f7fb" stroke="#cfd3df" stroke-width="2"/>
+    <rect x="28" y="304" width="248" height="60" rx="14" fill="#4f46e5"/>
+    <text x="44" y="344" clip-path="url(#btnClip)" font-family="Thonburi, Helvetica Neue, sans-serif" font-size="25" font-weight="700" fill="#ffffff">บันทึกการเปลี่ยนแปลงทั้งหมด</text>
+    <rect x="18" y="294" width="268" height="80" rx="18" fill="none" stroke="#f87171" stroke-width="4" stroke-dasharray="14 8"/>
+  </g>
+  <!-- overflow flag -->
+  <g transform="translate(1530 652)">
+    <rect width="228" height="50" rx="25" fill="#3a1b1f" stroke="#f87171" stroke-width="2"/>
+    <text x="114" y="33" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#fca5a5">⚠ May overflow</text>
+  </g>
+
+  <!-- plugin row: the designer's verdict -->
+  <g transform="translate(1088 732)">
+    <rect width="656" height="160" rx="20" fill="#151824" stroke="#2f3547" stroke-width="2"/>
+    <text x="32" y="52" font-family="Menlo, monospace" font-size="22" fill="#8f94ad">button.save</text>
+    <text x="32" y="96" font-family="Thonburi, Helvetica Neue, sans-serif" font-size="26" fill="#e8eaf2">บันทึกการเปลี่ยนแปลงทั้งหมด</text>
+    <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" font-weight="700">
+      <rect x="32" y="114" width="96" height="34" rx="17" fill="none" stroke="#3a3f52" stroke-width="2"/>
+      <text x="80" y="138" text-anchor="middle" fill="#a0a6b8">Fits</text>
+      <rect x="140" y="114" width="140" height="34" rx="17" fill="#3a1b1f" stroke="#f87171" stroke-width="2"/>
+      <text x="210" y="138" text-anchor="middle" fill="#fca5a5">Too long</text>
+      <text x="304" y="138" font-weight="400" font-style="italic" fill="#8f94ad">“wraps to 2 lines”</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <!-- Figma Community carousel slide 5 for Retrans Preview: pairing and the live link
+       Same style as cover.svg. Render: rsvg-convert -w 1920 -h 1080 figma-plugin/assets/slide-5.svg -o figma-plugin/assets/slide-5.png -->
+  <defs>
+    <linearGradient id="bgPage" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#15123d"/><stop offset="1" stop-color="#062b29"/></linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#0d9488"/></linearGradient>
+    <linearGradient id="bgU" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100" y2="100"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#0d9488"/></linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bgPage)"/>
+  <g transform="translate(128 120) scale(0.64)">
+    <rect width="100" height="100" rx="22.5" fill="url(#bg)"/>
+    <g fill="#ffffff"><rect x="17.5" y="25" width="22" height="11" rx="4" opacity=".55"/><rect x="44.5" y="25" width="33" height="11" rx="4"/><rect x="17.5" y="44.5" width="22" height="11" rx="4" opacity=".55"/><rect x="17.5" y="64" width="22" height="11" rx="4" opacity=".55"/><rect x="44.5" y="64" width="33" height="11" rx="4"/></g>
+    <rect x="46" y="46" width="30" height="8" rx="3" fill="none" stroke="#fca5a5" stroke-width="3" stroke-dasharray="9 4.5"/>
+    <circle cx="76.5" cy="45" r="5.5" fill="#f87171" stroke="url(#bgU)" stroke-width="3"/>
+  </g>
+  <text x="212" y="166" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#ffffff">Retrans Preview</text>
+  <text x="128" y="290" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="28" font-weight="700" fill="#5eead4" letter-spacing="2">STEP 4 OF 4</text>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" font-size="76" fill="#ffffff">
+    <text x="128" y="390">Live link,</text>
+    <text x="128" y="478" fill="#99f6e4">no files.</text>
+  </g>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="36" fill="#b9bdd4">
+    <text x="128" y="560">Pair once with the code from Retrans.</text>
+    <text x="128" y="614">Then Get drafts and Send to Retrans</text>
+    <text x="128" y="668">straight from the plugin.</text>
+  </g>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+    <g transform="translate(1000 150)">
+      <rect width="792" height="330" rx="20" fill="#ffffff"/>
+      <text x="32" y="54" font-size="20" font-weight="700" fill="#5b6070" letter-spacing="1">RETRANS · SETTINGS → FIGMA PLUGIN</text>
+      <text x="32" y="104" font-size="26" font-weight="700" fill="#14161f">Live link with Figma</text>
+      <text x="32" y="150" font-size="22" fill="#3d4250">Live link with the Figma plugin</text>
+      <rect x="680" y="128" width="72" height="36" rx="18" fill="#4f46e5"/><circle cx="734" cy="146" r="14" fill="#ffffff"/>
+      <text x="32" y="210" font-size="22" fill="#3d4250">Plugin pairing</text>
+      <text x="32" y="270" font-family="Menlo, monospace" font-size="52" font-weight="700" fill="#14161f" letter-spacing="8">042917</text>
+      <text x="380" y="262" font-size="22" fill="#5b6070">Expires in 4:52</text>
+    </g>
+    <path d="M1396 498 v52" stroke="#5eead4" stroke-width="4" stroke-linecap="round"/>
+    <path d="M1384 538 l12 14 l12 -14" fill="none" stroke="#5eead4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(1000 570)">
+      <rect width="792" height="370" rx="20" fill="#1e1e1e" stroke="#383838" stroke-width="2"/>
+      <text x="32" y="54" font-size="20" font-weight="700" fill="#a0a6b8" letter-spacing="1">FIGMA · RETRANS PREVIEW</text>
+      <text x="32" y="104" font-size="26" fill="#e8eaf2"><tspan fill="#2dd4bf">●</tspan> Connected to Retrans</text>
+      <rect x="32" y="134" width="300" height="52" rx="10" fill="none" stroke="#545454" stroke-width="2"/><text x="52" y="168" font-size="22" fill="#e8eaf2">shop</text>
+      <rect x="348" y="134" width="140" height="52" rx="10" fill="none" stroke="#545454" stroke-width="2"/><text x="368" y="168" font-size="22" fill="#e8eaf2">de</text>
+      <rect x="32" y="214" width="200" height="56" rx="12" fill="#0d99ff"/><text x="132" y="250" text-anchor="middle" font-size="24" font-weight="700" fill="#ffffff">Get drafts</text>
+      <text x="252" y="250" font-size="24" fill="#8f94ad">→  check  →</text>
+      <rect x="430" y="214" width="250" height="56" rx="12" fill="none" stroke="#545454" stroke-width="2"/><text x="555" y="250" text-anchor="middle" font-size="24" font-weight="700" fill="#e8eaf2">Send to Retrans</text>
+      <text x="32" y="326" font-size="22" fill="#8f94ad">Talks only to Retrans on this computer. No account, no server.</text>
+    </g>
+  </g>
+</svg>

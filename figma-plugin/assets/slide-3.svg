@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <!-- Figma Community carousel slide 3 for Retrans Preview: the plugin panel with Fits / Too long
+       Same style as cover.svg. Render: rsvg-convert -w 1920 -h 1080 figma-plugin/assets/slide-3.svg -o figma-plugin/assets/slide-3.png -->
+  <defs>
+    <linearGradient id="bgPage" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#15123d"/><stop offset="1" stop-color="#062b29"/></linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#0d9488"/></linearGradient>
+    <linearGradient id="bgU" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100" y2="100"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#0d9488"/></linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bgPage)"/>
+  <g transform="translate(128 120) scale(0.64)">
+    <rect width="100" height="100" rx="22.5" fill="url(#bg)"/>
+    <g fill="#ffffff"><rect x="17.5" y="25" width="22" height="11" rx="4" opacity=".55"/><rect x="44.5" y="25" width="33" height="11" rx="4"/><rect x="17.5" y="44.5" width="22" height="11" rx="4" opacity=".55"/><rect x="17.5" y="64" width="22" height="11" rx="4" opacity=".55"/><rect x="44.5" y="64" width="33" height="11" rx="4"/></g>
+    <rect x="46" y="46" width="30" height="8" rx="3" fill="none" stroke="#fca5a5" stroke-width="3" stroke-dasharray="9 4.5"/>
+    <circle cx="76.5" cy="45" r="5.5" fill="#f87171" stroke="url(#bgU)" stroke-width="3"/>
+  </g>
+  <text x="212" y="166" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#ffffff">Retrans Preview</text>
+  <text x="128" y="290" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="28" font-weight="700" fill="#5eead4" letter-spacing="2">STEP 2 OF 4</text>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" font-size="76" fill="#ffffff">
+    <text x="128" y="390">Mark what</text>
+    <text x="128" y="478" fill="#99f6e4">doesn't fit.</text>
+  </g>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="36" fill="#b9bdd4">
+    <text x="128" y="560">Text that may overflow is flagged first.</text>
+    <text x="128" y="614">Mark each string Fits or Too long and</text>
+    <text x="128" y="668">add a note for the translator.</text>
+  </g>
+  <g transform="translate(1080 110)" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+    <rect width="632" height="860" rx="20" fill="#1e1e1e" stroke="#383838" stroke-width="2"/>
+    <rect width="632" height="56" rx="20" fill="#2c2c2c"/><rect y="36" width="632" height="20" fill="#2c2c2c"/>
+    <text x="24" y="37" font-size="22" font-weight="700" fill="#ffffff">Retrans Preview</text>
+    <text x="32" y="104" font-size="22" fill="#a0a6b8">shop-de.retrans-preview.json · de · 16 strings</text>
+    <text x="32" y="150" font-size="24" font-weight="700" fill="#fcd34d">⚠ 2 may overflow</text>
+    <text x="250" y="150" font-size="24" fill="#c4c8d4">·  ✓ 14 look fine</text>
+    <line x1="32" x2="600" y1="178" y2="178" stroke="#2f3547" stroke-width="2"/>
+    <text x="32" y="218" font-family="Menlo, monospace" font-size="22" fill="#e8eaf2" font-weight="700">cart.add</text>
+    <text x="560" y="218" text-anchor="end" font-size="22" font-weight="700" fill="#fcd34d">⚠ may overflow</text>
+    <text x="32" y="262" font-size="26" fill="#c4c8d4">In den Warenkorb legen</text>
+    <rect x="32" y="290" width="100" height="42" rx="10" fill="none" stroke="#3a3f52" stroke-width="2"/>
+    <text x="82" y="319" text-anchor="middle" font-size="22" font-weight="700" fill="#a0a6b8">Fits</text>
+    <rect x="144" y="290" width="140" height="42" rx="10" fill="#3a1b1f" stroke="#f87171" stroke-width="2"/>
+    <text x="214" y="319" text-anchor="middle" font-size="22" font-weight="700" fill="#fca5a5">Too long</text>
+    <text x="300" y="322" font-size="22" font-style="italic" fill="#8f94ad">“cut off at 320px”</text>
+    <line x1="32" x2="600" y1="352" y2="352" stroke="#2f3547" stroke-width="2"/>
+    <text x="32" y="392" font-family="Menlo, monospace" font-size="22" fill="#e8eaf2" font-weight="700">checkout.pay</text>
+    <text x="560" y="392" text-anchor="end" font-size="22" font-weight="700" fill="#fcd34d">⚠ may overflow</text>
+    <text x="32" y="436" font-size="26" fill="#c4c8d4">Jetzt kostenpflichtig bestellen</text>
+    <rect x="32" y="464" width="100" height="42" rx="10" fill="none" stroke="#3a3f52" stroke-width="2"/>
+    <text x="82" y="493" text-anchor="middle" font-size="22" font-weight="700" fill="#a0a6b8">Fits</text>
+    <rect x="144" y="464" width="140" height="42" rx="10" fill="#3a1b1f" stroke="#f87171" stroke-width="2"/>
+    <text x="214" y="493" text-anchor="middle" font-size="22" font-weight="700" fill="#fca5a5">Too long</text>
+    
+    <line x1="32" x2="600" y1="526" y2="526" stroke="#2f3547" stroke-width="2"/>
+    <text x="32" y="566" font-family="Menlo, monospace" font-size="22" fill="#e8eaf2" font-weight="700">nav.home</text>
+    
+    <text x="32" y="610" font-size="26" fill="#c4c8d4">Startseite</text>
+    <rect x="32" y="638" width="100" height="42" rx="10" fill="#0f2624" stroke="#2dd4bf" stroke-width="2"/>
+    <text x="82" y="667" text-anchor="middle" font-size="22" font-weight="700" fill="#5eead4">Fits</text>
+    <rect x="144" y="638" width="140" height="42" rx="10" fill="none" stroke="#3a3f52" stroke-width="2"/>
+    <text x="214" y="667" text-anchor="middle" font-size="22" font-weight="700" fill="#a0a6b8">Too long</text>
+    
+    <line x1="32" x2="600" y1="700" y2="700" stroke="#2f3547" stroke-width="2"/>
+    <rect x="32" y="732" width="170" height="52" rx="12" fill="#0d99ff"/>
+    <text x="117" y="765" text-anchor="middle" font-size="20" font-weight="700" fill="#ffffff">Save results</text>
+    <rect x="214" y="732" width="170" height="52" rx="12" fill="none" stroke="#545454" stroke-width="2"/>
+    <text x="299" y="765" text-anchor="middle" font-size="20" font-weight="700" fill="#e8eaf2">Copy results</text>
+    <rect x="396" y="732" width="204" height="52" rx="12" fill="none" stroke="#545454" stroke-width="2"/>
+    <text x="498" y="765" text-anchor="middle" font-size="20" font-weight="700" fill="#e8eaf2">Send to Retrans</text>
+    <text x="32" y="826" font-size="20" fill="#8f94ad">Flagged strings come first.</text>
+  </g>
+</svg>

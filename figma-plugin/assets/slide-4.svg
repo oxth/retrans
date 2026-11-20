@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <!-- Figma Community carousel slide 4 for Retrans Preview: the marks in Retrans
+       Same style as cover.svg. Render: rsvg-convert -w 1920 -h 1080 figma-plugin/assets/slide-4.svg -o figma-plugin/assets/slide-4.png -->
+  <defs>
+    <linearGradient id="bgPage" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#15123d"/><stop offset="1" stop-color="#062b29"/></linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#0d9488"/></linearGradient>
+    <linearGradient id="bgU" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100" y2="100"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#0d9488"/></linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bgPage)"/>
+  <g transform="translate(128 120) scale(0.64)">
+    <rect width="100" height="100" rx="22.5" fill="url(#bg)"/>
+    <g fill="#ffffff"><rect x="17.5" y="25" width="22" height="11" rx="4" opacity=".55"/><rect x="44.5" y="25" width="33" height="11" rx="4"/><rect x="17.5" y="44.5" width="22" height="11" rx="4" opacity=".55"/><rect x="17.5" y="64" width="22" height="11" rx="4" opacity=".55"/><rect x="44.5" y="64" width="33" height="11" rx="4"/></g>
+    <rect x="46" y="46" width="30" height="8" rx="3" fill="none" stroke="#fca5a5" stroke-width="3" stroke-dasharray="9 4.5"/>
+    <circle cx="76.5" cy="45" r="5.5" fill="#f87171" stroke="url(#bgU)" stroke-width="3"/>
+  </g>
+  <text x="212" y="166" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#ffffff">Retrans Preview</text>
+  <text x="128" y="290" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="28" font-weight="700" fill="#5eead4" letter-spacing="2">STEP 3 OF 4</text>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" font-size="76" fill="#ffffff">
+    <text x="128" y="390">Translators see it</text>
+    <text x="128" y="478" fill="#99f6e4">right on the cell.</text>
+  </g>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="36" fill="#b9bdd4">
+    <text x="128" y="560">Too long shows on the cell with the</text>
+    <text x="128" y="614">designer's note, and a filter lists them.</text>
+    <text x="128" y="668">Editing the text clears the mark.</text>
+  </g>
+  <g transform="translate(1000 170)" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+    <rect width="792" height="760" rx="20" fill="#ffffff"/>
+    <g font-size="20" font-weight="700">
+      <rect x="28" y="28" width="118" height="40" rx="20" fill="#ffffff" stroke="#cfd3df" stroke-width="2"/><text x="87" y="55" text-anchor="middle" fill="#3d4250">Missing</text>
+      <rect x="158" y="28" width="178" height="40" rx="20" fill="#ffffff" stroke="#cfd3df" stroke-width="2"/><text x="247" y="55" text-anchor="middle" fill="#3d4250">Source changed</text>
+      <rect x="348" y="28" width="64" height="40" rx="20" fill="#ffffff" stroke="#cfd3df" stroke-width="2"/><text x="380" y="55" text-anchor="middle" fill="#3d4250">AI</text>
+      <rect x="424" y="28" width="132" height="40" rx="20" fill="#eef0ff" stroke="#c7c9f7" stroke-width="2"/><text x="490" y="55" text-anchor="middle" fill="#4338ca">Too long</text>
+    </g>
+    <g font-size="18" font-weight="700" fill="#5b6070" letter-spacing="1"><text x="28" y="122">KEY</text><text x="210" y="122">EN</text><text x="402" y="122">DE</text></g>
+    <line x1="0" x2="792" y1="140" y2="140" stroke="#e3e5ee" stroke-width="2"/>
+    <text x="28" y="182" font-family="Menlo, monospace" font-size="20" fill="#5b6070">cart.add</text>
+    <text x="210" y="182" font-size="24" fill="#14161f">Add to cart</text>
+    <circle cx="402" cy="174" r="7" fill="#c26a05"/>
+    <text x="420" y="182" font-size="22" fill="#14161f">In den Warenkorb legen</text>
+      <rect x="668" y="160" width="100" height="30" rx="6" fill="#fffbeb"/>
+      <text x="718" y="181" text-anchor="middle" font-size="18" font-weight="700" fill="#92400e">Too long</text>
+    <line x1="0" x2="792" y1="220" y2="220" stroke="#e3e5ee" stroke-width="2"/>
+    <text x="28" y="262" font-family="Menlo, monospace" font-size="20" fill="#5b6070">checkout.pay</text>
+    <text x="210" y="262" font-size="24" fill="#14161f">Pay now</text>
+    <circle cx="402" cy="254" r="7" fill="#c26a05"/>
+    <text x="420" y="262" font-size="22" fill="#14161f">Jetzt kostenpflichtig…</text>
+      <rect x="668" y="240" width="100" height="30" rx="6" fill="#fffbeb"/>
+      <text x="718" y="261" text-anchor="middle" font-size="18" font-weight="700" fill="#92400e">Too long</text>
+    <line x1="0" x2="792" y1="300" y2="300" stroke="#e3e5ee" stroke-width="2"/>
+    <g transform="translate(330 320)">
+      <rect width="430" height="96" rx="12" fill="#14161f"/>
+      <path d="M374 0 l14 -14 l14 14 z" fill="#14161f"/>
+      <text x="24" y="40" font-size="22" font-weight="700" fill="#ffffff">Designer: cut off at 320px</text>
+      <text x="24" y="74" font-size="20" fill="#a0a6b8">Shorten it, then review as usual.</text>
+    </g>
+    <text x="28" y="500" font-size="22" fill="#5b6070">Import designer results…</text>
+    <rect x="28" y="530" width="736" height="190" rx="14" fill="#f6f7fb" stroke="#e3e5ee" stroke-width="2"/>
+    <text x="56" y="584" font-size="24" font-weight="700" fill="#14161f">Import designer results</text>
+    <text x="56" y="628" font-size="22" fill="#3d4250">14 fit · 2 too long</text>
+    <text x="56" y="664" font-size="20" fill="#5b6070">Nothing is added until you click Apply.</text>
+    <rect x="620" y="650" width="120" height="48" rx="10" fill="#4f46e5"/>
+    <text x="680" y="681" text-anchor="middle" font-size="22" font-weight="700" fill="#ffffff">Apply</text>
+  </g>
+</svg>
