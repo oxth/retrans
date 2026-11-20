@@ -42,3 +42,7 @@ This project is indexed by GitNexus as **retrans** (4345 symbols, 15500 relation
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## UI work
+Read DESIGN.md before creating or changing any UI, and take every colour, size, spacing and radius from its tokens.
+For a new screen or component, consult the UX Engine skills first (ux-intent-discovery, then the ones it names). To fix an existing screen, ux-auditor.
