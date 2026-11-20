@@ -39,8 +39,11 @@ function selectedFrames(): number {
   return figma.currentPage.selection.filter((n) => "clone" in n && n.type !== "TEXT").length;
 }
 
+/** The frame whose preview is being built right now, so the window can say so. */
+let previewing: string | null = null;
+
 function publish(): void {
-  send({ type: "state", state, selectedFrames: selectedFrames(), token });
+  send({ type: "state", state, selectedFrames: selectedFrames(), token, previewing });
 }
 
 async function save(): Promise<void> {
@@ -176,10 +179,13 @@ async function previewFrame(frameId: string): Promise<void> {
   const source = (await figma.getNodeByIdAsync(frameId)) as (SceneNode & ChildrenMixin) | null;
   if (!current()) return;
   if (!source || source.removed || !("clone" in source) || !("findAllWithCriteria" in source)) {
+    previewing = null;
     previewSource = null;
     state = { ...state, preview: undefined, rows: state.rows.map((r) => ({ ...r, found: false, flag: null })) };
     return save();
   }
+  previewing = source.name;
+  publish();
   const made = source.clone() as SceneNode & ChildrenMixin;
   const place = copyPlacement({ x: source.x, y: source.y, width: source.width, abs: boxOf(source), parentType: source.parent?.type ?? "PAGE" });
   if (place.into === "parent" && source.parent) (source.parent as ChildrenMixin).appendChild(made);
@@ -196,6 +202,7 @@ async function previewFrame(frameId: string): Promise<void> {
   const filled = await fill(made, bundle, current);
   // Superseded while filling: the newer preview already removed this copy and owns the state.
   if (!filled || !current() || state.bundle !== bundle) return;
+  previewing = null;
   state = {
     ...state,
     preview: { frameName: source.name, textLayers, linked: filled.linked },

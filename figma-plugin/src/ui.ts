@@ -25,6 +25,8 @@ let locale = "";
 let includeReviewed = false;
 let code = "";
 let busy = false;
+/** The frame whose preview the plugin is building right now. */
+let previewing: string | null = null;
 /** The marks as they were when last sent or copied, so the confirmation hides once they change. */
 let sentKey: string | null = null;
 let copiedKey: string | null = null;
@@ -53,8 +55,9 @@ function stepsHtml(step: Step): string {
 function rowHtml(r: PluginState["rows"][number]): string {
   const flag = r.flag === "overflow" ? `<span class="warn">⚠ may overflow</span>` : r.flag === "font-missing" ? `<span class="warn">⚠ font missing</span>` : "";
   return `<div class="row" data-key="${esc(r.key)}">
-    <div><strong>${esc(shortKey(r.key))}</strong> ${flag}</div>
-    <div class="text" data-focus title="Show in the preview copy">${esc(r.text)}</div>
+    <div class="row-head"><strong>${esc(shortKey(r.key))}</strong> ${flag}
+      <button class="link show" data-focus aria-label="Show ${esc(shortKey(r.key))} in the preview copy">Show</button></div>
+    <div class="text">${esc(r.text)}</div>
     <div class="bar">
       <button data-verdict="fits" aria-pressed="${r.verdict === "fits"}">Fits</button>
       <button data-verdict="too-long" aria-pressed="${r.verdict === "too-long"}">Too long</button>
@@ -130,7 +133,9 @@ function loadedHtml(): string {
 /** Step 2: select a frame; the preview follows the selection. */
 function selectHtml(): string {
   return `${loadedHtml()}
-    <p class="hint">Select a frame to preview.</p>
+    ${previewing
+      ? `<p class="hint" role="status">Previewing <strong>${esc(previewing)}</strong>…</p>`
+      : `<p class="hint">Select a frame to preview.</p>`}
     <p class="muted">A temporary copy appears next to it with the drafts in place. It moves when you select another frame and goes away when you close the plugin. Your frames are never changed.</p>`;
 }
 
@@ -138,7 +143,7 @@ function selectHtml(): string {
 function checkHtml(): string {
   const note = state.preview ? linkNote(state.preview) : null;
   const head = `${loadedHtml()}
-    <p class="previewing">Previewing <strong>${esc(state.preview!.frameName)}</strong></p>
+    <p class="previewing" role="status">${previewing ? `Previewing <strong>${esc(previewing)}</strong>…` : `Previewing <strong>${esc(state.preview!.frameName)}</strong>`}</p>
     ${note ? `<div class="info">${esc(note)}${nothingLinked(state) ? " Select another frame, or link the text in Figma first." : ""}</div>` : ""}`;
   if (nothingLinked(state)) return head;
   const p = progress(state.rows);
@@ -372,6 +377,7 @@ window.onmessage = (e: MessageEvent<{ pluginMessage: ToUi }>) => {
     const hadToken = token;
     state = msg.state;
     token = msg.token;
+    previewing = msg.previewing;
     if (!hadToken && token && link && link !== "searching" && !projects.length) void live(loadProjects);
     error = null;
   }

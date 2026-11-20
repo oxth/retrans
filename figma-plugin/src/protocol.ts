@@ -11,5 +11,5 @@ export type ToCode =
 
 /** Messages from the plugin code to the plugin window. */
 export type ToUi =
-  | { type: "state"; state: PluginState; selectedFrames: number; token: string | null }
+  | { type: "state"; state: PluginState; selectedFrames: number; token: string | null; previewing: string | null }
   | { type: "error"; message: string };

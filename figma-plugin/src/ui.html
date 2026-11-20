@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <style>
+  /* Keeps a focused field above the pinned Send / Save bar when tabbing down the list. */
+  html { scroll-padding-bottom: 64px; }
   body { margin: 0; padding: 12px; font: 12px/1.4 Inter, system-ui, sans-serif; color: var(--figma-color-text); background: var(--figma-color-bg); }
   button { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--figma-color-border); background: var(--figma-color-bg); color: inherit; cursor: pointer; }
   button.primary { background: var(--figma-color-bg-brand); color: var(--figma-color-text-onbrand); border-color: transparent; }
@@ -12,7 +14,7 @@
   .muted { color: var(--figma-color-text-secondary); }
   .warn { color: var(--figma-color-text-warning); }
   .row { padding: 8px 0; border-top: 1px solid var(--figma-color-border); }
-  .row .text { margin: 2px 0 6px; word-break: break-word; cursor: pointer; }
+  .row .text { margin: 2px 0 6px; word-break: break-word; }
   .bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
   select { font: inherit; max-width: 100%; }
   .ok { color: var(--figma-color-text-success, #14ae5c); }
@@ -20,10 +22,15 @@
   /* The three steps: done ones get a check, the current one stands out. */
   .steps { display: flex; gap: 4px; margin: 0 0 12px; padding: 0; list-style: none; }
   .steps li { flex: 1; padding: 6px 4px; border-radius: 6px; text-align: center; font-size: 11px; color: var(--figma-color-text-secondary); background: var(--figma-color-bg-secondary); }
-  .steps li.now { color: var(--figma-color-text-onbrand); background: var(--figma-color-bg-brand); font-weight: 600; }
+  /* Normal text on the pale "selected" fill, outlined in brand: readable whatever the theme's blue is. */
+  .steps li.now { color: var(--figma-color-text); background: var(--figma-color-bg-selected); box-shadow: inset 0 0 0 1px var(--figma-color-border-selected); font-weight: 600; }
   .steps li.done { color: var(--figma-color-text); }
   /* Secondary actions read as links so the one main button per step stands out. */
-  button.link { padding: 0; border: 0; background: none; color: var(--figma-color-text-brand); text-decoration: underline; }
+  /* Normal text with an underline (the brand blue can fall under 4.5:1 at 12px); blue on hover. */
+  button.link { padding: 0; border: 0; background: none; color: var(--figma-color-text); text-decoration: underline; }
+  button.link:hover:not(:disabled) { color: var(--figma-color-text-brand); }
+  .row-head { display: flex; gap: 6px; align-items: baseline; }
+  .row-head .show { margin-left: auto; }
   button.link:disabled { color: var(--figma-color-text-disabled); text-decoration: none; }
   .loaded { margin: 0 0 8px; }
   .hint { font-weight: 600; }
