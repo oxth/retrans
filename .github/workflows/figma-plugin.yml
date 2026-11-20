@@ -1,0 +1,98 @@
+name: Figma plugin
+
+# The Retrans Preview plugin builds and releases on its own, only when it changes. Its version is
+# the newest section of figma-plugin/CHANGELOG.md; its releases are tagged figma-plugin-v<version>
+# and never marked "latest", because the app's updater reads the latest release.
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'figma-plugin/**'
+      - 'src/preview/format.ts' # bundled into the plugin
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/figma-plugin.yml'
+  pull_request:
+    paths:
+      - 'figma-plugin/**'
+      - 'src/preview/format.ts'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/figma-plugin.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: figma-plugin-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test, type check and build
+        run: |
+          pnpm vitest run figma-plugin src/preview/format.test.ts
+          pnpm exec tsc --noEmit -p figma-plugin
+          pnpm build:figma-plugin
+
+      - name: Version, What's new and manifest check
+        id: plugin
+        run: node figma-plugin/release.mjs figma-release
+
+      - name: Zip
+        run: |
+          v='${{ steps.plugin.outputs.version }}'
+          (cd figma-plugin && zip -r "../figma-release/retrans-preview-$v.zip" manifest.json dist)
+          cp figma-release/whats-new.txt "figma-release/retrans-preview-$v-whats-new.txt"
+
+      # Until the manifest has the id Figma assigned, there is nothing to publish: keep the zip on
+      # this run for testers instead of using up the version number on a release.
+      - name: Keep the zip for testers (manifest id is still a placeholder)
+        if: steps.plugin.outputs.publishable != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrans-preview-${{ steps.plugin.outputs.version }}
+          path: figma-release/retrans-preview-*
+
+      - name: Say why there is no release
+        if: steps.plugin.outputs.publishable != 'true'
+        run: |
+          echo "::warning::No plugin release: ${{ steps.plugin.outputs.id_problem }} The zip is attached to this run."
+
+      - name: Release this version if it's new
+        if: >-
+          steps.plugin.outputs.publishable == 'true' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          v='${{ steps.plugin.outputs.version }}'
+          tag="figma-plugin-v$v"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "$tag is already released; add a new version to figma-plugin/CHANGELOG.md to release this change."
+            exit 0
+          fi
+          gh release create "$tag" \
+            --target "$GITHUB_SHA" \
+            --title "Retrans Preview (Figma plugin) $v" \
+            --notes-file figma-release/whats-new.txt \
+            --latest=false \
+            "figma-release/retrans-preview-$v.zip" \
+            "figma-release/retrans-preview-$v-whats-new.txt"

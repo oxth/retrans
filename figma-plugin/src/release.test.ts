@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error -- a plain Node script, imported for its pure helpers
-import { builtFilesMissing, pluginIdProblem, whatsNew } from "../release.mjs";
+import { builtFilesMissing, latestVersion, pluginIdProblem, whatsNew } from "../release.mjs";
 
 describe("pluginIdProblem", () => {
   it("accepts the numeric id Figma assigns", () => {
@@ -47,5 +47,14 @@ describe("whatsNew", () => {
   });
   it("is null when the version has no section", () => {
     expect(whatsNew(changelog, "9.9.9")).toBeNull();
+  });
+});
+
+describe("latestVersion", () => {
+  it("is the newest released section, skipping Unreleased", () => {
+    expect(latestVersion("# Changelog\n\n## [Unreleased]\n\n- x\n\n## [0.2.0] - 2026-12-01\n\n- y\n\n## [0.1.0] - 2026-11-20\n")).toBe("0.2.0");
+  });
+  it("is null when nothing is released yet", () => {
+    expect(latestVersion("# Changelog\n\n## [Unreleased]\n\n- x\n")).toBeNull();
   });
 });

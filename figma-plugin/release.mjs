@@ -1,12 +1,14 @@
-// Prepares the Retrans Preview plugin for a release: checks the manifest and the built files, and
-// writes the "What's new" text for Figma's publish form from this version's CHANGELOG.md section.
+// Prepares a Retrans Preview plugin release, separate from the app's: the plugin has its own
+// version, taken from the newest section of figma-plugin/CHANGELOG.md.
 //
-//   node figma-plugin/release.mjs <version> <out-dir>
+//   node figma-plugin/release.mjs <out-dir>
 //
-// Exits non-zero (with a GitHub Actions ::error::) when the manifest still has the placeholder id,
-// the built files are missing, or CHANGELOG.md has no section for the version.
+// Checks the built files and writes <out-dir>/whats-new.txt (that section as plain text, for Figma's
+// publish form). Reports `version`, `publishable` (whether the manifest has the id Figma assigned)
+// and `id_problem` to $GITHUB_OUTPUT when run in GitHub Actions, else prints them. Exits non-zero
+// only when something is broken: no released version in the changelog, or missing built files.
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +27,12 @@ export function builtFilesMissing(manifest, dir, exists = existsSync) {
   return [manifest.main, manifest.ui].filter((f) => typeof f === "string" && !exists(join(dir, f)));
 }
 
+/** The newest released version in a changelog (the first `## [x.y.z]` heading), or null. */
+export function latestVersion(changelog) {
+  const m = changelog.match(/^## \[(\d+\.\d+\.\d+)\]/m);
+  return m ? m[1] : null;
+}
+
 /** This version's CHANGELOG.md section as plain text, or null when there is none. */
 export function whatsNew(changelog, version) {
   const lines = changelog.split("\n");
@@ -41,9 +49,9 @@ export function whatsNew(changelog, version) {
 }
 
 async function main() {
-  const [version, outDir] = process.argv.slice(2);
-  if (!version || !outDir) {
-    console.error("usage: node figma-plugin/release.mjs <version> <out-dir>");
+  const [outDir] = process.argv.slice(2);
+  if (!outDir) {
+    console.error("usage: node figma-plugin/release.mjs <out-dir>");
     process.exit(2);
   }
   const pluginDir = dirname(fileURLToPath(import.meta.url));
@@ -51,15 +59,17 @@ async function main() {
   const missing = builtFilesMissing(manifest, pluginDir);
   if (missing.length) fail(`Built plugin files are missing: ${missing.join(", ")}. Run pnpm build:figma-plugin first.`);
 
-  const notes = whatsNew(await readFile(resolve(pluginDir, "../CHANGELOG.md"), "utf8"), version);
-  if (!notes) fail(`CHANGELOG.md has no section for ${version}.`);
+  const changelog = await readFile(join(pluginDir, "CHANGELOG.md"), "utf8");
+  const version = latestVersion(changelog);
+  if (!version) fail("figma-plugin/CHANGELOG.md has no released version yet.");
   await mkdir(outDir, { recursive: true });
-  await writeFile(join(outDir, "whats-new.txt"), notes + "\n");
-  console.log(`Wrote ${join(outDir, "whats-new.txt")}`);
+  await writeFile(join(outDir, "whats-new.txt"), whatsNew(changelog, version) + "\n");
 
-  // Last, so the zip and notes are still produced for testers while the id is a placeholder.
   const problem = pluginIdProblem(manifest);
-  if (problem) fail(problem);
+  const out = { version, publishable: problem ? "false" : "true", id_problem: problem ?? "" };
+  const lines = Object.entries(out).map(([k, v]) => `${k}=${v}`).join("\n") + "\n";
+  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, lines);
+  else process.stdout.write(lines);
 }
 
 function fail(message) {
