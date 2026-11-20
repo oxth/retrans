@@ -422,7 +422,12 @@ export class ProjectSession {
       recordCleared(this.state, id, locale);
     } else {
       this.put(id, locale, value.kind === "complex" ? { kind: "complex", raw: structuredClone(value.raw) } : { ...value });
-      if (entry) (this.state.entries[id] ??= {})[locale] = { ...entry };
+      if (entry) {
+        // A package that only reviewed the cell carries no designer mark; keep ours if it is for this text.
+        const fit = this.state.entries[id]?.[locale]?.fit;
+        const keep = !entry.fit && fit && fit.h === hashValue(value);
+        (this.state.entries[id] ??= {})[locale] = keep ? { ...entry, fit } : { ...entry };
+      }
       else recordEdit(this.data, this.state, id, locale, false);
     }
     this.stateTouched = true;

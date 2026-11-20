@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PreviewBundle } from "../../src/preview/format";
-import { type Box, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
+import { type Box, copyPlacement, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
 
 const box = (width: number, height: number, x = 0, y = 0): Box => ({ x, y, width, height });
 const shape = (autoResize: TextShape["autoResize"], b: Box, needed: Box = b): TextShape => ({ box: b, autoResize, needed });
@@ -78,5 +78,18 @@ describe("toResults", () => {
       retransPreviewResults: 1, sourceProjectId: "p1", locale: "th", checkedAt: "2026-11-20T11:00:00.000Z",
       results: [{ key: "a", hash: "h1", verdict: "too-long", note: "cut", flag: "overflow" }],
     });
+  });
+});
+
+describe("copyPlacement", () => {
+  const abs = box(100, 50, 1000, 2000);
+  it("places a top-level frame beside the original on the page", () => {
+    expect(copyPlacement({ x: 10, y: 20, width: 100, abs, parentType: "PAGE" })).toEqual({ into: "parent", x: 190, y: 20 });
+  });
+  it("places a frame in a section beside the original inside the section", () => {
+    expect(copyPlacement({ x: 10, y: 20, width: 100, abs, parentType: "SECTION" })).toEqual({ into: "parent", x: 190, y: 20 });
+  });
+  it("places a nested frame on the page, beside where it shows", () => {
+    expect(copyPlacement({ x: 10, y: 20, width: 100, abs, parentType: "FRAME" })).toEqual({ into: "page", x: 1180, y: 2000 });
   });
 });

@@ -16,6 +16,17 @@ async function open(fs: MemoryFs) {
 }
 
 describe("recovery journal", () => {
+  it("restores an unsaved designer mark", async () => {
+    const fs = loadFixtureDir(resolve(__dirname, "../test/fixtures/next-nested"));
+    const s = await open(fs);
+    s.markReviewed(c("title"), "th");
+    await s.save();
+    s.setFit(c("title"), "th", { v: "too-long", h: hashText("สวัสดี") });
+    const s2 = await open(fs);
+    s2.applyJournal(s.toJournal());
+    expect(s2.fitOf(c("title"), "th")?.v).toBe("too-long");
+  });
+
   it("journalPath hashes the root under appData/recovery", () => {
     expect(journalPath("/app", R)).toBe(`/app/recovery/${hashText(R)}.json`);
   });

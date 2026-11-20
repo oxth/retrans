@@ -37,7 +37,7 @@ export function mergeCells(base: CellMap, mine: CellMap, theirs: CellMap): { mer
 
 export function entryEqual(a?: StateEntry, b?: StateEntry): boolean {
   if (!a || !b) return a === b;
-  return a.s === b.s && a.h === b.h && !!a.m === !!b.m;
+  return a.s === b.s && a.h === b.h && !!a.m === !!b.m && a.fit?.v === b.fit?.v && a.fit?.h === b.fit?.h && a.fit?.note === b.fit?.note;
 }
 
 /**

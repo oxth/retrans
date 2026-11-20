@@ -74,6 +74,18 @@ async function openFx(name: string) {
 const TH = (o: Record<string, unknown>) => JSON.stringify(o, null, 2) + "\n";
 
 describe("ProjectSession.reloadFromDisk", () => {
+  it("keeps an unsaved designer mark when files change on disk", async () => {
+    const { fs, s } = await openFx("next-nested");
+    s.markReviewed(c("title"), "th");
+    await s.save();
+    const { hashValue } = await import("./hash");
+    s.setFit(c("title"), "th", { v: "too-long", h: hashValue(s.value(c("title"), "th")), note: "cut" });
+    await fs.writeTextAtomic(`${R}/${NEXT}/en/common.json`, TH({ title: "Hello", nav: { home: "Home", about: "About" }, extra: "Extra" }));
+    await s.reloadFromDisk();
+    expect(s.fitOf(c("title"), "th")).toMatchObject({ v: "too-long", note: "cut" });
+    expect(s.isDirty()).toBe(true);
+  });
+
   it("applies a git-pull-style change silently when there are no local edits", async () => {
     const { fs, s } = await openFx("next-nested");
     await fs.writeTextAtomic(`${R}/${NEXT}/th/common.json`, TH({ title: "สวัสดี", nav: { home: "หน้าหลัก", about: "เกี่ยวกับ" }, orphan: "เศษ" }));

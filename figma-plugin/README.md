@@ -28,3 +28,5 @@ These can't run in automated tests. Record the outcome here.
 | Making copies again replaces the earlier copies | – | – |
 | Verdicts survive closing and reopening the plugin | – | – |
 | Remove copies leaves originals | – | – |
+| A frame inside a Section, and a frame nested in another frame or auto-layout: copy lands beside it and the original layout is unchanged | – | – |
+| Two different Figma files keep their own loaded file and verdicts | – | – |

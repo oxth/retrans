@@ -678,6 +678,22 @@ describe("designer fit marks", () => {
     expect(s.meta(id, "th").status).toBe("translated");
   });
 
+  it("a translator package that only reviewed the cell keeps the mark", async () => {
+    const { s, id } = await setup();
+    const h = await hashOf("บันทึก");
+    s.setFit(id, "th", { v: "too-long", h });
+    s.importCell(id, "th", { kind: "text", text: "บันทึก" }, { s: "reviewed", h: s.state.entries[id].th.h });
+    expect(s.meta(id, "th").status).toBe("reviewed");
+    expect(s.fitOf(id, "th")?.v).toBe("too-long");
+  });
+
+  it("a translator package that changed the text drops the mark", async () => {
+    const { s, id } = await setup();
+    s.setFit(id, "th", { v: "too-long", h: await hashOf("บันทึก") });
+    s.importCell(id, "th", { kind: "text", text: "บันทึกสั้น" }, { s: "translated", h: s.state.entries[id].th.h });
+    expect(s.state.entries[id].th.fit).toBeUndefined();
+  });
+
   it("is saved to state.json and survives reopening", async () => {
     const { fs, s, id } = await setup();
     s.setFit(id, "th", { v: "too-long", h: await hashOf("บันทึก"), note: "cut off" });

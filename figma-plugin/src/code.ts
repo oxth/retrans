@@ -4,13 +4,23 @@
  * made (tagged "retransPreview") are ever changed or removed.
  */
 import type { PreviewBundle, PreviewFlag } from "../../src/preview/format";
-import { type Box, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape } from "./logic";
+import { type Box, copyPlacement, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape } from "./logic";
 import type { ToCode, ToUi } from "./protocol";
 
 const TAG = "retransPreview";
 const SOURCE = "retransSource";
-const GAP = 80;
-const storageKey = `retransPreview:${figma.fileKey ?? figma.root.id}`;
+const FILE_ID = "retransFileId";
+
+/** figma.fileKey is only given to private plugins, so each file gets its own id in the document's plugin data. */
+function fileId(): string {
+  let id = figma.root.getPluginData(FILE_ID);
+  if (!id) {
+    id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    figma.root.setPluginData(FILE_ID, id);
+  }
+  return id;
+}
+const storageKey = `retransPreview:${fileId()}`;
 
 let state: PluginState = { bundle: null, fileName: null, rows: [] };
 /** Text nodes in the copies, per string key, for "focus". Not stored: copies may be gone next time. */
@@ -132,7 +142,11 @@ async function makeCopies(): Promise<void> {
     const source = (await figma.getNodeByIdAsync(id)) as (SceneNode & ChildrenMixin) | null;
     if (!source || !("clone" in source)) continue;
     const copy = source.clone() as SceneNode & ChildrenMixin;
-    copy.x = source.x + source.width + GAP;
+    const place = copyPlacement({ x: source.x, y: source.y, width: source.width, abs: boxOf(source), parentType: source.parent?.type ?? "PAGE" });
+    if (place.into === "parent" && source.parent) (source.parent as ChildrenMixin).appendChild(copy);
+    else figma.currentPage.appendChild(copy);
+    copy.x = place.x;
+    copy.y = place.y;
     copy.name = `${source.name} · Preview ${bundle.locale}`;
     copy.setPluginData(TAG, bundle.locale);
     copy.setPluginData(SOURCE, source.id);

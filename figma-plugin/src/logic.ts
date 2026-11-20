@@ -43,6 +43,12 @@ export function planCopies(
   return { remove, copy };
 }
 
+/** Pages and sections place children freely; anywhere else (auto-layout, nested frames) the copy goes on the page. */
+export function copyPlacement(source: { x: number; y: number; width: number; abs: Box; parentType: string }, gap = 80): { into: "parent" | "page"; x: number; y: number } {
+  if (source.parentType === "PAGE" || source.parentType === "SECTION") return { into: "parent", x: source.x + source.width + gap, y: source.y };
+  return { into: "page", x: source.abs.x + source.abs.width + gap, y: source.abs.y };
+}
+
 export function toResults(state: PluginState, now: Date): PreviewResults {
   const b = state.bundle;
   if (!b) throw new Error("Load a preview file first.");
