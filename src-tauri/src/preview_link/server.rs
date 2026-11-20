@@ -263,6 +263,7 @@ impl Reply {
 fn reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
+        202 => "Accepted",
         204 => "No Content",
         400 => "Bad Request",
         401 => "Unauthorized",
@@ -270,6 +271,8 @@ fn reason(status: u16) -> &'static str {
         404 => "Not Found",
         411 => "Length Required",
         413 => "Payload Too Large",
+        415 => "Unsupported Media Type",
+        422 => "Unprocessable Entity",
         431 => "Request Header Fields Too Large",
         500 => "Internal Server Error",
         504 => "Gateway Timeout",
@@ -403,7 +406,7 @@ impl Endpoint {
                 200,
                 json!({ "app": "retrans", "version": self.version, "paired": self.paired() }),
             ),
-            ("POST", "/v1/pair") => return self.pair(reader, declared, deadline),
+            ("POST", "/v1/pair") => return self.pair(reader, request, declared, deadline),
             ("GET", "/v1/projects") => self.projects(request),
             ("GET", "/v1/bundle") => self.bundle(request, &query),
             ("POST", "/v1/results") => {
@@ -447,9 +450,33 @@ impl Endpoint {
     fn pair(
         &self,
         reader: &mut BufReader<TcpStream>,
+        request: &RequestHead,
         declared: u64,
         deadline: Instant,
     ) -> Option<Reply> {
+        // A web page in the user's browser can reach localhost too. The plugin's window has no
+        // origin ("null"), and a page can't send JSON here without a preflight, so both checks keep
+        // pages from spending the code's tries. They run before the code is looked at.
+        if request.header("origin").is_some_and(|origin| origin != "null") {
+            return Some(Reply::json(
+                403,
+                json!({ "error": "Pairing only works from the Retrans Preview plugin." }),
+            ));
+        }
+        let is_json = request.header("content-type").is_some_and(|value| {
+            value
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .eq_ignore_ascii_case("application/json")
+        });
+        if !is_json {
+            return Some(Reply::json(
+                415,
+                json!({ "error": "Send the pairing code as JSON." }),
+            ));
+        }
         let value = match self.json_body(reader, declared, deadline) {
             Ok(value) => value,
             Err(BodyRead::Rejected(reply)) => return Some(reply),
@@ -1121,6 +1148,69 @@ mod tests {
         assert_eq!(bridge.calls(), 1);
 
         server.stop();
+    }
+
+    /// A pairing server on `port` with a fresh code; returns the server, its store and the code.
+    fn pairing_server(port: u16) -> (Server, Arc<MemStore>, String) {
+        let store = Arc::new(MemStore::default());
+        let pairing = Arc::new(Mutex::new(Some(Pairing::new(Instant::now()))));
+        let code = pairing.lock().unwrap().as_ref().unwrap().code().to_string();
+        let server = start(
+            store.clone(),
+            Arc::new(FakeBridge::default()),
+            pairing,
+            "test",
+            &[port],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        (server, store, code)
+    }
+
+    /// A raw `POST /v1/pair` with the given extra header lines.
+    fn pair_request(port: u16, code: &str, extra: &str) -> Vec<u8> {
+        let body = json!({ "code": code }).to_string();
+        format!(
+            "POST /v1/pair HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n{extra}Content-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn a_website_cannot_try_pairing_codes() {
+        let port = 47412;
+        let (server, store, code) = pairing_server(port);
+        for _ in 0..6 {
+            let response = send(port, &pair_request(port, "000000", "Origin: https://evil.example\r\nContent-Type: application/json\r\n"));
+            assert_eq!(response.status, 403);
+        }
+        // The page's attempts didn't count against the code: the plugin can still pair with it.
+        let response = send(port, &pair_request(port, &code, "Origin: null\r\nContent-Type: application/json\r\n"));
+        assert_eq!(response.status, 200);
+        assert!(store.get(auth::TOKEN_ACCOUNT).unwrap().is_some());
+        server.stop();
+    }
+
+    #[test]
+    fn pairing_needs_a_json_request() {
+        let port = 47413;
+        let (server, _store, code) = pairing_server(port);
+        for _ in 0..6 {
+            let response = send(port, &pair_request(port, "000000", "Content-Type: text/plain\r\n"));
+            assert_eq!(response.status, 415);
+        }
+        let response = send(port, &pair_request(port, &code, "Content-Type: application/json; charset=utf-8\r\n"));
+        assert_eq!(response.status, 200);
+        server.stop();
+    }
+
+    #[test]
+    fn status_lines_name_the_status() {
+        assert_eq!(reason(202), "Accepted");
+        assert_eq!(reason(415), "Unsupported Media Type");
+        assert_eq!(reason(422), "Unprocessable Entity");
+        assert_eq!(reason(500), "Internal Server Error");
     }
 
     #[test]
