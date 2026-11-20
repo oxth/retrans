@@ -182,7 +182,7 @@ async function focus(key: string): Promise<void> {
 figma.ui.onmessage = async (msg: ToCode) => {
   try {
     if (msg.type === "bundle") {
-      state = { bundle: msg.bundle, fileName: msg.fileName, rows: rowsFor(msg.bundle, state) };
+      state = { bundle: msg.bundle, fileName: msg.fileName, ...(msg.projectId ? { projectId: msg.projectId } : {}), rows: rowsFor(msg.bundle, state) };
       await save();
     } else if (msg.type === "make-copies") await makeCopies();
     else if (msg.type === "remove-copies") await removeCopies();

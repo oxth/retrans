@@ -81,3 +81,8 @@ export async function pair(fetch: Fetch, base: string, code: string): Promise<st
     throw e;
   }
 }
+
+/** The Retrans project to send results to: the one drafts came from, else the picked one; null when there is none. */
+export function sendTarget(draftsProjectId: string | undefined, pickedId: string): string | null {
+  return draftsProjectId || pickedId || null;
+}

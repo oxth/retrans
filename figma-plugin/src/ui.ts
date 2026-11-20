@@ -1,7 +1,7 @@
 /** Retrans Preview, plugin window: load a preview file, list the strings, record verdicts, save results. */
 import { parseBundle, serializePreview } from "../../src/preview/format";
 import { type PluginState, toResults } from "./logic";
-import { LinkError, findRetrans, liveApi, pair } from "./live";
+import { LinkError, findRetrans, liveApi, pair, sendTarget } from "./live";
 import type { ToCode, ToUi } from "./protocol";
 
 const app = document.getElementById("app")!;
@@ -84,9 +84,10 @@ function render(): void {
       <div class="bar">
         <button class="primary" id="save" ${checked ? "" : "disabled"}>Save results</button>
         <button id="copy" ${checked ? "" : "disabled"}>Copy results</button>
-        ${link && link !== "searching" && token ? `<button id="send" ${checked && !busy ? "" : "disabled"}>Send to Retrans</button>` : ""}
+        ${link && link !== "searching" && token ? `<button id="send" ${checked && !busy && sendTarget(state.projectId, projectId) ? "" : "disabled"}>Send to Retrans</button>` : ""}
         <button id="remove">Remove copies</button>
       </div>
+      ${link && link !== "searching" && token && !sendTarget(state.projectId, projectId) ? `<p class="muted">Get drafts from Retrans first, or save results to a file.</p>` : ""}
       ${sent ? `<p class="ok" role="status">Sent. Apply them in Retrans.</p>` : ""}` : `<p class="muted">Export a preview file from Retrans (Settings → Figma → Designer preview), then load it here.</p>`}`;
 }
 
@@ -146,11 +147,11 @@ app.addEventListener("click", async (e) => {
     await live(async () => {
       const bundle = await api().bundle(projectId, locale, includeReviewed);
       sent = false;
-      post({ type: "bundle", bundle, fileName: projectNow()?.name ?? projectId });
+      post({ type: "bundle", bundle, fileName: projectNow()?.name ?? projectId, projectId });
     });
   } else if (t.id === "send") {
     await live(async () => {
-      await api().send(state.bundle?.sourceProjectId ?? projectId, toResults(state, new Date()));
+      await api().send(sendTarget(state.projectId, projectId)!, toResults(state, new Date()));
       sent = true;
     });
   } else if (t.id === "load") (document.getElementById("file") as HTMLInputElement).click();

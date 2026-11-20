@@ -8,6 +8,8 @@ export interface TextShape { box: Box; autoResize: "NONE" | "HEIGHT" | "WIDTH_AN
 export interface PluginState {
   bundle: PreviewBundle | null;
   fileName: string | null;
+  /** The Retrans project id (from /v1/projects) the drafts were fetched from; absent for a file. */
+  projectId?: string;
   rows: Array<{ key: string; text: string; flag: PreviewFlag; found: boolean; verdict: Verdict | null; note?: string }>;
 }
 

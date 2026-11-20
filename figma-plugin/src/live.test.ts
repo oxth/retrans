@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Fetch, LinkError, findRetrans, liveApi, pair } from "./live";
+import { type Fetch, LinkError, findRetrans, liveApi, pair, sendTarget } from "./live";
 
 const json = (status: number, body: unknown): Response =>
   ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body), json: async () => body }) as Response;
@@ -91,5 +91,24 @@ describe("pair", () => {
     expect(err).toBeInstanceOf(LinkError);
     expect(err.message).toBe("That code didn't work. Check it in Retrans and try again.");
     expect(err.status).toBe(403);
+  });
+});
+
+describe("sendTarget", () => {
+  it("uses the project picked at Get drafts, not the bundle's own id", () => {
+    expect(sendTarget("tab-7", "tab-9")).toBe("tab-7");
+  });
+  it("falls back to the picker for a file-loaded bundle", () => {
+    expect(sendTarget(undefined, "tab-9")).toBe("tab-9");
+  });
+  it("is null when there is no Retrans project", () => {
+    expect(sendTarget(undefined, "")).toBeNull();
+  });
+  it("posts results to the picked id", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const f = fake({ "http://localhost:47321/v1/results?project=tab-7": () => json(202, {}) }, calls);
+    const results = { retransPreviewResults: 1 as const, sourceProjectId: "uuid-not-a-tab", locale: "th", checkedAt: "x", results: [] };
+    await liveApi(f, "http://localhost:47321", "tok").send(sendTarget("tab-7", "")!, results);
+    expect(calls[0].url).toBe("http://localhost:47321/v1/results?project=tab-7");
   });
 });
