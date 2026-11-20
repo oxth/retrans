@@ -14,16 +14,35 @@ export interface PluginState {
    */
   projectId?: string;
   rows: Array<{ key: string; text: string; flag: PreviewFlag; found: boolean; verdict: Verdict | null; note?: string }>;
-  /** Frames copied by the last Make preview copies; absent until the first one. */
-  copiesMade?: number;
+  /** The frame being previewed now and how much of its text the drafts reach; absent with no preview. */
+  preview?: PreviewInfo;
+}
+
+export interface PreviewInfo { frameName: string; textLayers: number; linked: number }
+export interface SelectedNode { id: string; topFrameId: string | null; inPreview: boolean }
+
+/** The frame to preview for a selection: its first node's top-level frame; "keep" for nothing or a preview copy. */
+export function frameToPreview(selection: SelectedNode[]): string | "keep" {
+  const first = selection[0];
+  if (!first || first.inPreview || !first.topFrameId) return "keep";
+  return first.topFrameId;
+}
+
+/** How much of the previewed frame the drafts reach, as information; null when all of it. */
+export function linkNote(p: PreviewInfo): string | null {
+  if (p.linked >= p.textLayers) return null;
+  if (p.linked === 0) {
+    return `This frame's text isn't linked to these drafts: none of its ${p.textLayers} text layers use the variables you imported into Retrans.`;
+  }
+  return `${p.linked} of ${p.textLayers} text layers are linked.`;
 }
 
 type Row = PluginState["rows"][number];
 
-/** Where the designer is: getting drafts, previewing frames, or checking the strings. */
-export function currentStep(state: PluginState): "drafts" | "preview" | "check" {
+/** Where the designer is: getting drafts, selecting a frame, or checking its strings. */
+export function currentStep(state: PluginState): "drafts" | "select" | "check" {
   if (!state.bundle) return "drafts";
-  return state.copiesMade ? "check" : "preview";
+  return state.preview ? "check" : "select";
 }
 
 export function progress(rows: Row[]): { total: number; found: number; flagged: number; checked: number; missing: number } {
@@ -42,9 +61,9 @@ export function markRestFits(rows: Row[]): Row[] {
   return rows.map((r) => (r.found && !r.flag && r.verdict === null ? { ...r, verdict: "fits" } : r));
 }
 
-/** Copies were made, but no text in them is bound to a variable in the drafts. */
+/** A frame is previewed, but none of its text is bound to a variable in the drafts. */
 export function nothingLinked(state: PluginState): boolean {
-  return !!state.copiesMade && !state.rows.some((r) => r.found);
+  return state.preview?.linked === 0;
 }
 
 const EPS = 0.5;

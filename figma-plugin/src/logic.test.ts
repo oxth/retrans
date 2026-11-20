@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PreviewBundle } from "../../src/preview/format";
-import { type Box, copyPlacement, currentStep, markRestFits, nothingLinked, progress, resultsKey, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
+import { type Box, copyPlacement, currentStep, frameToPreview, linkNote, markRestFits, nothingLinked, progress, resultsKey, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
 
 const box = (width: number, height: number, x = 0, y = 0): Box => ({ x, y, width, height });
 const shape = (autoResize: TextShape["autoResize"], b: Box, needed: Box = b): TextShape => ({ box: b, autoResize, needed });
@@ -113,10 +113,12 @@ describe("the guided steps", () => {
   const row = (key: string, patch: Partial<PluginState["rows"][number]> = {}): PluginState["rows"][number] =>
     ({ key, text: key, flag: null, found: true, verdict: null, ...patch });
 
-  it("starts at getting drafts, then previewing, then checking", () => {
+  const preview = (linked: number, textLayers = 8) => ({ frameName: "Card", textLayers, linked });
+
+  it("starts at getting drafts, then selecting a frame, then checking", () => {
     expect(currentStep({ bundle: null, fileName: null, rows: [] })).toBe("drafts");
-    expect(currentStep({ bundle, fileName: "f", rows: [row("a", { found: false })] })).toBe("preview");
-    expect(currentStep({ bundle, fileName: "f", rows: [row("a")], copiesMade: 2 })).toBe("check");
+    expect(currentStep({ bundle, fileName: "f", rows: [row("a", { found: false })] })).toBe("select");
+    expect(currentStep({ bundle, fileName: "f", rows: [row("a")], preview: preview(1) })).toBe("check");
   });
 
   it("counts what was found, flagged and checked", () => {
@@ -129,9 +131,29 @@ describe("the guided steps", () => {
     expect(markRestFits(rows).map((r) => r.verdict)).toEqual([null, "fits", "too-long", null]);
   });
 
-  it("notices when copies were made but nothing in them is linked to the drafts", () => {
-    expect(nothingLinked({ bundle, fileName: "f", rows: [row("a", { found: false })], copiesMade: 1 })).toBe(true);
-    expect(nothingLinked({ bundle, fileName: "f", rows: [row("a")], copiesMade: 1 })).toBe(false);
+  it("notices when the previewed frame has nothing linked to the drafts", () => {
+    expect(nothingLinked({ bundle, fileName: "f", rows: [row("a", { found: false })], preview: preview(0) })).toBe(true);
+    expect(nothingLinked({ bundle, fileName: "f", rows: [row("a")], preview: preview(2) })).toBe(false);
     expect(nothingLinked({ bundle, fileName: "f", rows: [row("a", { found: false })] })).toBe(false);
+  });
+
+  it("describes a mismatch as information, and says nothing when every text layer is linked", () => {
+    expect(linkNote(preview(0))).toBe("This frame's text isn't linked to these drafts: none of its 8 text layers use the variables you imported into Retrans.");
+    expect(linkNote(preview(3))).toBe("3 of 8 text layers are linked.");
+    expect(linkNote(preview(8))).toBeNull();
+  });
+});
+
+describe("frameToPreview", () => {
+  it("keeps the current preview for nothing selected or a layer inside a preview copy", () => {
+    expect(frameToPreview([])).toBe("keep");
+    expect(frameToPreview([{ id: "t", topFrameId: "copy", inPreview: true }])).toBe("keep");
+  });
+  it("previews the top-level frame of the first selected node", () => {
+    expect(frameToPreview([{ id: "t1", topFrameId: "F", inPreview: false }, { id: "t2", topFrameId: "G", inPreview: false }])).toBe("F");
+    expect(frameToPreview([{ id: "F", topFrameId: "F", inPreview: false }])).toBe("F");
+  });
+  it("keeps the current preview for a node that isn't in any frame", () => {
+    expect(frameToPreview([{ id: "r", topFrameId: null, inPreview: false }])).toBe("keep");
   });
 });
