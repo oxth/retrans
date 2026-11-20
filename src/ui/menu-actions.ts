@@ -13,6 +13,14 @@ function stepTab(delta: 1 | -1): void {
   switchTab(tabs[(i + delta + tabs.length) % tabs.length].id);
 }
 
+/** Move Tab Left / Right: the active tab one place over; nothing at either end. */
+function shiftTab(delta: 1 | -1): void {
+  const { tabs, activeId, moveTab } = app();
+  const i = tabs.findIndex((t) => t.id === activeId);
+  if (i < 0 || i + delta < 0 || i + delta >= tabs.length) return;
+  moveTab(tabs[i].id, i + delta);
+}
+
 /**
  * While a dialog (or Settings) is open, menu items do nothing: their shortcuts would otherwise
  * act on the project behind it (the native menu takes the key before the page sees it).
@@ -53,6 +61,8 @@ export const MENU_ACTIONS: Record<string, () => void> = guarded({
   "view-table": () => app().requestUi("view-table"),
   "next-tab": () => stepTab(1),
   "prev-tab": () => stepTab(-1),
+  "move-tab-left": () => shiftTab(-1),
+  "move-tab-right": () => shiftTab(1),
   github: () => void openUrl("https://github.com/oxth/retrans").catch(() => {}),
 });
 

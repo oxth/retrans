@@ -127,6 +127,8 @@ export interface AppState {
   openProjectTour(): void;
   closeProjectTour(): void;
   switchTab(id: string): void;
+  /** Moves a tab to position `to` among the tabs (dragging a tab, or Move Tab Left / Right). The order is saved. */
+  moveTab(id: string, to: number): void;
   /** The "+" button: keeps every tab and shows the start screen. */
   showStart(): void;
   /** Activates the tab, then closes its project (saving first, or asking about unsaved changes). */
@@ -432,6 +434,17 @@ export const useApp = create<AppState>((set, get) => {
     if (!target?.snap) return;
     const tabs = parked(s).map((t) => (t.id === id ? { ...t, snap: null } : t));
     set({ tabs, activeId: id, ...target.snap });
+  },
+
+  moveTab(id, to) {
+    set((s) => {
+      const from = s.tabs.findIndex((t) => t.id === id);
+      if (from < 0) return {};
+      const tabs = [...s.tabs];
+      const [tab] = tabs.splice(from, 1);
+      tabs.splice(Math.max(0, Math.min(to, tabs.length)), 0, tab);
+      return tabs.every((t, i) => t === s.tabs[i]) ? {} : { tabs };
+    });
   },
 
   showStart() {

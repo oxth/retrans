@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,7 @@ vi.mock("../platform/watch", () => ({ watchDir: vi.fn(async () => async () => {}
 
 import { detectProject } from "../formats/detect";
 import { loadFixtureDir, MemoryFs } from "../platform/memory-fs";
+import { MENU_ACTIONS } from "./menu-actions";
 import { useApp } from "./store";
 import { TabBar } from "./TabBar";
 
@@ -31,6 +32,62 @@ beforeEach(async () => {
   await useApp.getState().closeAllTabs();
 });
 afterEach(cleanup);
+
+/** jsdom has no layout: tab i is 100 px wide at x = i * 104 (100 + the 4 px gap). */
+function layOutTabs() {
+  document.querySelectorAll<HTMLElement>("[data-tab-id]").forEach((el, i) => {
+    el.getBoundingClientRect = () => ({ left: i * 104, width: 100, top: 0, height: 28, right: i * 104 + 100, bottom: 28, x: i * 104, y: 0, toJSON() {} }) as DOMRect;
+  });
+}
+const names = () => useApp.getState().tabs.map((t) => t.name);
+
+describe("reordering tabs", () => {
+  it("dragging a tab past another's middle moves it there, and the order sticks", async () => {
+    await twoProjects();
+    render(<TabBar />);
+    layOutTabs();
+    expect(names()).toEqual(["alpha", "beta"]);
+    const alpha = screen.getByRole("tab", { name: /alpha/ }).closest<HTMLElement>("[data-tab-id]")!;
+    fireEvent.pointerDown(alpha, { button: 0, clientX: 50 });
+    fireEvent.pointerMove(window, { clientX: 130 }); // alpha's middle at 50 + 80 = 130: not yet past beta's (154)
+    fireEvent.pointerMove(window, { clientX: 160 }); // at 50 + 110 = 160: past it, so alpha lands after beta
+    expect(alpha.style.transform).toBe("translateX(110px)");
+    fireEvent.pointerUp(window);
+    expect(names()).toEqual(["beta", "alpha"]);
+  });
+
+  it("a press that barely moves is a click, not a drag", async () => {
+    await twoProjects();
+    render(<TabBar />);
+    layOutTabs();
+    const alpha = screen.getByRole("tab", { name: /alpha/ }).closest<HTMLElement>("[data-tab-id]")!;
+    fireEvent.pointerDown(alpha, { button: 0, clientX: 50 });
+    fireEvent.pointerMove(window, { clientX: 53 });
+    fireEvent.pointerUp(window);
+    expect(names()).toEqual(["alpha", "beta"]);
+  });
+
+  it("pressing a tab's close button never starts a drag", async () => {
+    await twoProjects();
+    render(<TabBar />);
+    layOutTabs();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Close tab alpha" }), { button: 0, clientX: 90 });
+    fireEvent.pointerMove(window, { clientX: 200 });
+    fireEvent.pointerUp(window);
+    expect(names()).toEqual(["alpha", "beta"]);
+  });
+
+  it("Move Tab Left / Right move the active tab one place, and stop at the ends", async () => {
+    await twoProjects(); // beta is active, last
+    act(() => MENU_ACTIONS["move-tab-right"]());
+    expect(names()).toEqual(["alpha", "beta"]);
+    act(() => MENU_ACTIONS["move-tab-left"]());
+    expect(names()).toEqual(["beta", "alpha"]);
+    act(() => MENU_ACTIONS["move-tab-left"]());
+    expect(names()).toEqual(["beta", "alpha"]);
+    expect(useApp.getState().tabs[0].name).toBe("beta"); // still the active one, now first
+  });
+});
 
 describe("TabBar", () => {
   it("shows one tab per open project with the active one selected", async () => {

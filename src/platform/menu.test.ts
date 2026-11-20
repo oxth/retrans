@@ -35,6 +35,7 @@ describe("menuSpec", () => {
     expect([acc("undo"), acc("redo"), acc("find"), acc("next-tab"), acc("prev-tab")]).toEqual([
       "CmdOrCtrl+Z", "CmdOrCtrl+Shift+Z", "CmdOrCtrl+F", "Ctrl+Tab", "Ctrl+Shift+Tab",
     ]);
+    expect([acc("move-tab-left"), acc("move-tab-right")]).toEqual(["Ctrl+Shift+PageUp", "Ctrl+Shift+PageDown"]);
     for (const p of ["Cut", "Copy", "Paste", "SelectAll"]) expect(items(spec)).toContainEqual(expect.objectContaining({ predefined: p }));
   });
 
