@@ -112,3 +112,23 @@ describe("sendTarget", () => {
     expect(calls[0].url).toBe("http://localhost:47321/v1/results?project=tab-7");
   });
 });
+
+describe("timeouts", () => {
+  const never: Fetch = () => new Promise<Response>(() => {});
+  it("findRetrans moves on from a port that never answers", async () => {
+    const f: Fetch = (url) => (url.includes(":47321/") ? never(url) : fake({ "http://localhost:47322/v1/hello": hello(false) })(url));
+    expect(await findRetrans(f, 20)).toEqual({ base: "http://localhost:47322", paired: false });
+  });
+  it("findRetrans gives up with null when no port ever answers", async () => {
+    expect(await findRetrans(never, 5)).toBeNull();
+  });
+  it("a hung call rejects with a LinkError", async () => {
+    const err = await liveApi(never, "http://localhost:47321", "tok", 20).projects().catch((e) => e);
+    expect(err).toBeInstanceOf(LinkError);
+    expect(err.status).toBe(0);
+    expect(err.message).toBe("Retrans didn't answer in time. Is it busy?");
+  });
+  it("a hung pair rejects with a LinkError", async () => {
+    await expect(pair(never, "http://localhost:47321", "123456", 20)).rejects.toBeInstanceOf(LinkError);
+  });
+});

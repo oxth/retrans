@@ -113,9 +113,10 @@ async function live(run: () => Promise<void>): Promise<void> {
       post({ type: "token", token: null });
     }
     error = err instanceof Error ? err.message : String(err);
+  } finally {
+    busy = false;
+    render();
   }
-  busy = false;
-  render();
 }
 
 async function loadProjects(): Promise<void> {
