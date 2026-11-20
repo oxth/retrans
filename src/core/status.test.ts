@@ -12,6 +12,19 @@ const mk = (): ProjectData => ({
 const st = (): StateFile => ({ version: 1, project: { baseLocale: "en" }, entries: {} });
 
 describe("status", () => {
+  it("recordReviewed keeps a designer fit mark", () => {
+    const d = mk(), s = st();
+    s.entries["c::a"] = { th: { s: "translated", h: "x", fit: { v: "too-long", h: "y" } } };
+    recordReviewed(d, s, "c::a", "th");
+    expect(s.entries["c::a"].th.s).toBe("reviewed");
+    expect(s.entries["c::a"].th.fit).toEqual({ v: "too-long", h: "y" });
+  });
+  it("recordEdit drops a designer fit mark", () => {
+    const d = mk(), s = st();
+    s.entries["c::a"] = { th: { s: "translated", h: "x", fit: { v: "fits", h: "y" } } };
+    recordEdit(d, s, "c::a", "th", false);
+    expect(s.entries["c::a"].th.fit).toBeUndefined();
+  });
   it("missing value → untranslated", () => {
     const d = mk(); d.values.get("c::a")!.delete("th");
     expect(cellMeta(d, st(), "c::a", "th")).toEqual({ status: "untranslated", needsReview: false, machine: false });

@@ -1,6 +1,9 @@
+import type { Verdict } from "../preview/format";
 import { isTranslated, type KeyId, type ProjectData } from "./model";
 
-export interface StateEntry { s: "translated" | "reviewed"; h: string; m?: true }
+/** A designer's verdict on a translation; `h` is the hash of the translation it was given for. */
+export interface FitMark { v: Verdict; h: string; note?: string }
+export interface StateEntry { s: "translated" | "reviewed"; h: string; m?: true; fit?: FitMark }
 export interface StateFile {
   version: 1;
   /**
@@ -24,6 +27,11 @@ type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function fitOf(v: unknown): FitMark | undefined {
+  if (!isRecord(v) || (v.v !== "fits" && v.v !== "too-long") || typeof v.h !== "string") return undefined;
+  return typeof v.note === "string" && v.note.trim() ? { v: v.v, h: v.h, note: v.note } : { v: v.v, h: v.h };
 }
 
 function isEntry(v: unknown): v is StateEntry {
@@ -73,6 +81,8 @@ export function parseState(text: string | null): { state: StateFile; error?: str
       for (const [loc, e] of Object.entries(cells)) {
         if (!isEntry(e)) continue;
         out[loc] = e.m ? { s: e.s, h: e.h, m: true } : { s: e.s, h: e.h };
+        const fit = fitOf(e.fit);
+        if (fit) out[loc].fit = fit;
       }
       if (Object.keys(out).length) entries[id] = out;
     }

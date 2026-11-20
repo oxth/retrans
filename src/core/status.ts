@@ -31,7 +31,8 @@ export function recordEdit(data: ProjectData, s: StateFile, id: KeyId, locale: s
 
 export function recordReviewed(data: ProjectData, s: StateFile, id: KeyId, locale: string): void {
   if (locale === data.baseLocale || !isTranslated(data.values.get(id)?.get(locale))) return;
-  (s.entries[id] ??= {})[locale] = { s: "reviewed", h: baseHash(data, id) };
+  const fit = s.entries[id]?.[locale]?.fit;
+  (s.entries[id] ??= {})[locale] = fit ? { s: "reviewed", h: baseHash(data, id), fit } : { s: "reviewed", h: baseHash(data, id) };
 }
 
 export function recordCleared(s: StateFile, id: KeyId, locale: string): void {

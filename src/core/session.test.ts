@@ -632,3 +632,59 @@ describe("renaming and deleting a namespace (group)", () => {
     expect(await fs.exists(EN("bottom"))).toBe(false);
   });
 });
+
+describe("designer fit marks", () => {
+  async function setup() {
+    const { fs, s } = await openWorkspace();
+    s.addNamespace("g");
+    const id = s.addKey("g", "save", "Save");
+    s.setText(id, "th", "บันทึก", { machine: true });
+    return { fs, s, id };
+  }
+  const hashOf = async (t: string) => (await import("./hash")).hashText(t);
+
+  it("setFit then fitOf returns the mark", async () => {
+    const { s, id } = await setup();
+    const mark = { v: "too-long" as const, h: await hashOf("บันทึก"), note: "wraps" };
+    s.setFit(id, "th", mark);
+    expect(s.fitOf(id, "th")).toEqual(mark);
+  });
+
+  it("editing the text hides the mark", async () => {
+    const { s, id } = await setup();
+    s.setFit(id, "th", { v: "fits", h: await hashOf("บันทึก") });
+    s.setText(id, "th", "บันทึกการเปลี่ยนแปลง");
+    expect(s.fitOf(id, "th")).toBeNull();
+  });
+
+  it("a mark for different text is not shown", async () => {
+    const { s, id } = await setup();
+    s.setFit(id, "th", { v: "fits", h: await hashOf("something else") });
+    expect(s.fitOf(id, "th")).toBeNull();
+  });
+
+  it("marking reviewed keeps the mark", async () => {
+    const { s, id } = await setup();
+    s.setFit(id, "th", { v: "too-long", h: await hashOf("บันทึก") });
+    s.markReviewed(id, "th");
+    expect(s.fitOf(id, "th")?.v).toBe("too-long");
+  });
+
+  it("creates a translated entry when the cell has none", async () => {
+    const { s, id } = await setup();
+    delete s.state.entries[id];
+    s.setFit(id, "th", { v: "fits", h: await hashOf("บันทึก") });
+    expect(s.state.entries[id].th.s).toBe("translated");
+    expect(s.meta(id, "th").status).toBe("translated");
+  });
+
+  it("is saved to state.json and survives reopening", async () => {
+    const { fs, s, id } = await setup();
+    s.setFit(id, "th", { v: "too-long", h: await hashOf("บันทึก"), note: "cut off" });
+    await s.save();
+    expect(await read(fs, ".retrans/state.json")).toContain('"fit"');
+    const d = (await detectProject(fs, R))!;
+    const again = await ProjectSession.open(fs, R, d, { baseLocale: "en", localesPath: d.localesPath });
+    expect(again.fitOf(id, "th")?.note).toBe("cut off");
+  });
+});

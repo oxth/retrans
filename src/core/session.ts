@@ -23,7 +23,7 @@ export interface UndoGroup {
 }
 import type { Journal } from "./recovery";
 import { planReload } from "./session-reload";
-import { parseState, reconcile, serializeState, STATE_PATH, type StateEntry, type StateFile } from "./state-file";
+import { parseState, reconcile, serializeState, STATE_PATH, type FitMark, type StateEntry, type StateFile } from "./state-file";
 import { cellMeta, recordCleared, recordEdit, recordReviewed, renameInState } from "./status";
 import {
   type Baseline, BASELINE_PATH, jsonEqual, parseBaseline, parseWorkspaceMeta, serializeBaseline, serializeWorkspaceMeta,
@@ -484,6 +484,22 @@ export class ProjectSession {
         (this.state.entries[id] ??= {})[l] = { s: "translated", h };
       }
     }
+  }
+
+  /** The designer's verdict on this cell's current text; null when there is none or the text changed since. */
+  fitOf(id: KeyId, locale: string): FitMark | null {
+    const fit = this.state.entries[id]?.[locale]?.fit;
+    return fit && fit.h === hashValue(this.value(id, locale)) ? fit : null;
+  }
+
+  /** Records a designer's verdict. Not an undo step; editing the text is what clears it. */
+  setFit(id: KeyId, locale: string, mark: FitMark): void {
+    this.requireCell(id, locale);
+    const cells = (this.state.entries[id] ??= {});
+    cells[locale] ??= { s: "translated", h: hashValue(this.data.values.get(id)?.get(this.data.baseLocale)) };
+    cells[locale].fit = { ...mark };
+    this.stateTouched = true;
+    this.emit();
   }
 
   markReviewed(id: KeyId, locale: string): void {
