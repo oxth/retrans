@@ -3,6 +3,7 @@
  * and the bridge that answers the plugin's requests from the projects open in the app.
  */
 import { invoke } from "@tauri-apps/api/core";
+import type { ProjectSession } from "../core/session";
 import { answerLive, type LiveProject, type LiveReply, type LiveRequest } from "../preview/live";
 import type { ResultsDiff } from "../preview/results";
 import { useApp } from "../ui/store";
@@ -52,12 +53,23 @@ function onResults(projectId: string, diff: ResultsDiff): void {
  * answering, including a request the plugin left incomplete, becomes a 500 reply, so the endpoint's
  * request never waits for its whole timeout.
  */
+/**
+ * Drafts carry the project's id so results can be matched back to it; a project that never needed
+ * one gets it now, as the export dialog does. It is saved with the project's next save.
+ */
+function giveProjectId(session: ProjectSession | undefined): void {
+  if (!session || session.state.project.id || session.stateMalformed) return;
+  session.setProjectSetting({ id: crypto.randomUUID() });
+}
+
 export async function onPreviewRequest(req: LiveRequest): Promise<void> {
   let reply: LiveReply;
   try {
     const params = (req as { params?: unknown }).params;
     if (typeof params !== "object" || params === null) throw new Error("The plugin sent an incomplete request.");
-    reply = answerLive(liveProjects(), req, onResults);
+    const projects = liveProjects();
+    if (req.kind === "bundle") giveProjectId(projects.find((p) => p.id === req.params.project)?.session);
+    reply = answerLive(projects, req, onResults);
   } catch (error) {
     reply = { status: 500, body: { error: error instanceof Error ? error.message : String(error) } };
   }

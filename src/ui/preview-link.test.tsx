@@ -82,6 +82,22 @@ describe("live link wiring", () => {
     expect(args.body.map((p) => p.id)).toEqual([figma.id]);
   });
 
+  it("gives a project that never had an id one, so Get drafts works instead of 'Save your changes first'", async () => {
+    const { figma } = await twoTabs();
+    const session = liveProjects().find((p) => p.id === figma.id)!.session;
+    expect(session.state.project.id).toBeUndefined();
+
+    await onPreviewRequest({ id: 11, kind: "bundle", params: { project: figma.id, locale: "en" } });
+    await onPreviewRequest({ id: 12, kind: "bundle", params: { project: figma.id, locale: "en" } });
+
+    const [first, second] = calls.map((c) => c[1] as { status: number; body: { sourceProjectId: string } });
+    expect(first.status).toBe(200);
+    expect(session.state.project.id).toMatch(/\S/);
+    expect(first.body.sourceProjectId).toBe(session.state.project.id);
+    expect(second.body.sourceProjectId).toBe(first.body.sourceProjectId); // made once, then kept
+    expect(session.isDirty()).toBe(true); // saved with the project's next save, like any other change
+  });
+
   it("replies 500 instead of leaving the request waiting when answering throws", async () => {
     await onPreviewRequest({ id: 9, kind: "projects" } as never);
     await onPreviewRequest({ id: 10, kind: "bundle" } as never);

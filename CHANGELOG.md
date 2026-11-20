@@ -10,6 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Easier to see and use for everyone.** Text fields, dropdowns and outlined buttons have a clearer edge, and a focused field shows a stronger ring. The amber "not reviewed" dot is a shade darker so it stands out on every background. Screen readers now announce each cell's status. The small labels (the **AI** tag, the **Too long** and **Source changed** badges, the sidebar counts) now grow with **Settings → Appearance → Interface size** like the rest of the text. The tab close button is bigger and easier to hit.
 
+### Fixes
+
+- **Get drafts works on every project.** In the Figma plugin, **Get drafts** said "Save your changes first" for a project that had never exported a preview or a translator package. Retrans now gives the project the id it needs on the spot.
+
 ## [0.8.0] - 2026-11-20
 
 ### What's new
