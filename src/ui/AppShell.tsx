@@ -161,6 +161,12 @@ export function AppShell() {
         setEditing(n);
         return !!n;
       },
+      prev: (id, locale) => {
+        const { session: s, rows: r, visible: v } = live.current;
+        const n = s ? nextMissing(s, r, { id, locale }, v, -1) : null;
+        setEditing(n);
+        return !!n;
+      },
       review: (id, locale) => live.current.session?.markReviewed(id, locale),
       error: (message) => useApp.setState({ error: message }),
     }),
@@ -259,6 +265,7 @@ export function AppShell() {
               onViewMode={onViewMode}
               onAddKey={() => setDialog({ kind: "add" })}
               onTranslateMissing={hasModel ? () => setDialog({ kind: "translate" }) : undefined}
+              translatePrimary={!dirty && missingCount > 0}
             />
             <div className="min-h-0 flex-1">
               {viewMode === "list" ? (

@@ -87,7 +87,9 @@ export function Sidebar({
               {SOURCE_CHANGED}
             </li>
           </ul>
-          <dl className="mt-2.5 space-y-1.5 text-xs leading-4 text-muted">
+          <details className="group mt-2.5 text-xs text-muted">
+            <summary className="cursor-pointer select-none rounded font-medium text-fg-2 hover:text-fg">What do these mean?</summary>
+          <dl className="mt-1.5 space-y-1.5 leading-4">
             <div>
               <dt className="inline font-medium text-fg-2">Not reviewed:</dt> <dd className="inline">translated, but nobody has checked it yet.</dd>
             </div>
@@ -99,6 +101,7 @@ export function Sidebar({
               Click <span className="font-medium text-fg-2">✓ Review</span> on a translation, or press ⌘⇧R while it's selected, to mark it reviewed.
             </div>
           </dl>
+          </details>
         </section>
       </div>
     </aside>

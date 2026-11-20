@@ -198,7 +198,7 @@ describe("views", () => {
     const only = document.querySelector('[data-row="common::only_en"]') as HTMLElement;
     expect(within(only).getByText(/Missing — click to translate/)).toBeInTheDocument();
     const one = document.querySelector('[data-row="common::items_one"]') as HTMLElement;
-    expect(within(one).getByText("not used in th")).toBeInTheDocument();
+    expect(within(one).getByText("not used in Thai (th)")).toBeInTheDocument();
     expect(within(one).getByText("plural · one")).toBeInTheDocument();
   });
 

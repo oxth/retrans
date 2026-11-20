@@ -20,6 +20,8 @@ export interface EditActions {
   cancel: () => void;
   /** Opens the next missing cell; returns false (and closes the editor) when there is none. */
   next: (id: KeyId, locale: string) => boolean;
+  /** Opens the previous missing cell; returns false (and closes the editor) when there is none. */
+  prev: (id: KeyId, locale: string) => boolean;
   review: (id: KeyId, locale: string) => void;
   /** Reports an error that can no longer be shown inline (editor already unmounted). */
   error?: (message: string) => void;
@@ -56,7 +58,7 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
     return (
       <div className="flex items-center gap-2 rounded-md bg-panel px-1.5 py-1 text-muted" data-cell="not-applicable" data-locale={locale}>
         {code}
-        <span className="italic">not used in {locale}</span>
+        <span className="italic">not used in {languageWithCode(locale)}</span>
       </div>
     );
   }
@@ -92,6 +94,9 @@ export const Cell = memo(function Cell({ session, id, locale, showCode, editing,
           onAcceptSuggestion={(t) => actions.commitMachine(id, locale, t)}
           onNextMissing={() => {
             if (!actions.next(id, locale)) refocus.current = true;
+          }}
+          onPrevMissing={() => {
+            if (!actions.prev(id, locale)) refocus.current = true;
           }}
           onMarkReviewed={isBase ? undefined : () => isTranslated(session.value(id, locale)) && actions.review(id, locale)}
           onRefocus={() => {

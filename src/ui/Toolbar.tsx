@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { RowFilter } from "../core/rows";
-import { btnSecondary } from "./Dialog";
+import { btnPrimary, btnSecondary } from "./Dialog";
 import { Icon } from "./Icon";
 import { SOURCE_CHANGED } from "./StatusDot";
 import { languageWithCode } from "./locales";
@@ -22,6 +22,8 @@ export interface ToolbarProps {
   onViewMode: (m: "list" | "table") => void;
   onAddKey?: () => void;
   onTranslateMissing?: () => void;
+  /** Translate missing is the screen's main action (nothing unsaved, something missing). */
+  translatePrimary?: boolean;
 }
 
 const chip = (on: boolean) =>
@@ -151,7 +153,7 @@ export function Toolbar(p: ToolbarProps) {
           ))}
         </div>
         {p.onTranslateMissing && (
-          <button className={btnSecondary} data-tour="translate" onClick={p.onTranslateMissing}>
+          <button className={p.translatePrimary ? btnPrimary : btnSecondary} data-tour="translate" onClick={p.onTranslateMissing}>
             <Icon name="sparkles" size={15} />
             Translate missing…
           </button>

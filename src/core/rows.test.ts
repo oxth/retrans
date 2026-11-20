@@ -121,6 +121,21 @@ describe("buildRows", () => {
     expect(nextMissing(s, rows, { id: c("a"), locale: "th" }, loc)).toBeNull();
   });
 
+  it("nextMissing with dir -1 searches backward and wraps", async () => {
+    const s = await open({
+      "en/common.json": { a: "A", b: "B", d: "D" },
+      "th/common.json": { b: "x" },
+    });
+    const loc = ["th"];
+    const rows = buildRows(s, F({ locales: loc }));
+    // missing: a/th and d/th
+    expect(nextMissing(s, rows, { id: c("d"), locale: "th" }, loc, -1)).toEqual({ id: c("a"), locale: "th" });
+    // wraps from the first row to the last
+    expect(nextMissing(s, rows, { id: c("a"), locale: "th" }, loc, -1)).toEqual({ id: c("d"), locale: "th" });
+    // from no row, backward starts at the last cell
+    expect(nextMissing(s, rows, { id: c("zz"), locale: "th" }, loc, -1)).toEqual({ id: c("d"), locale: "th" });
+  });
+
   it("buildRows over 5,000 keys × 10 locales runs under 100 ms", async () => {
     const locales = ["en", "th", "ja", "de", "fr", "es", "it", "pt", "ru", "ko"];
     const files: Record<string, unknown> = {};
