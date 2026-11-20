@@ -3585,6 +3585,7 @@ name = "retrans"
 version = "0.7.1"
 dependencies = [
  "futures-util",
+ "getrandom 0.3.4",
  "keyring",
  "llama-cpp-2",
  "llama-cpp-sys-2",
