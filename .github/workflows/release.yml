@@ -97,3 +97,57 @@ jobs:
           prerelease: false
           updaterJsonPreferNsis: true
           args: '${{ matrix.args }} --config src-tauri/tauri.release.conf.json'
+
+  # The Retrans Preview Figma plugin: built, zipped with its "What's new" text and attached to the
+  # draft release made above. Figma has no publishing API, so the last step is still Plugins →
+  # Development → Publish in the Figma desktop app (see figma-plugin/README.md).
+  figma-plugin:
+    name: figma plugin
+    needs: publish
+    # Runs even if one app build failed: the draft release exists as soon as any build uploaded to it.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the plugin
+        run: |
+          pnpm exec tsc --noEmit -p figma-plugin
+          pnpm build:figma-plugin
+
+      # Writes whats-new.txt; fails last (after the files exist) while the manifest id is a placeholder.
+      - name: Check the manifest and write What's new
+        id: check
+        continue-on-error: true
+        run: node figma-plugin/release.mjs "${GITHUB_REF_NAME#v}" figma-release
+
+      - name: Zip and attach to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#v}"
+          zip="figma-release/retrans-preview-$v.zip"
+          (cd figma-plugin && zip -r "../$zip" manifest.json dist)
+          cp figma-release/whats-new.txt "figma-release/retrans-preview-$v-whats-new.txt"
+          gh release upload "$GITHUB_REF_NAME" "$zip" "figma-release/retrans-preview-$v-whats-new.txt" --clobber
+
+      - name: Fail if the plugin can't be published yet
+        if: steps.check.outcome == 'failure'
+        run: |
+          echo "::error::The plugin zip is attached for testers, but it can't be published to the Figma Community until figma-plugin/manifest.json has the id Figma assigned."
+          exit 1

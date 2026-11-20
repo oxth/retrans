@@ -19,6 +19,26 @@ pnpm build:figma-plugin
 In the Figma desktop app: **Plugins → Development → Import plugin from manifest…** and pick
 `figma-plugin/manifest.json`.
 
+Every Retrans release also attaches `retrans-preview-<version>.zip` (the manifest and the built
+files) to its GitHub release, so testers can unzip it and import the manifest without building.
+
+## Publishing to the Figma Community
+
+Figma has no API for publishing, so this is the one manual step. The release workflow does the rest.
+
+1. **Once:** get the plugin id from Figma (create the plugin in Figma, or take the id the first
+   publish gives you) and put it in `manifest.json` as `"id"`. Every update publishes to that id.
+   Until then the release's *figma plugin* job fails on purpose with a message saying so; the zip
+   is still attached.
+2. **Each release:** download `retrans-preview-<version>.zip` and
+   `retrans-preview-<version>-whats-new.txt` from the GitHub release, unzip, import the manifest
+   (Plugins → Development → Import plugin from manifest…), then **Publish** and paste the text
+   into the version notes.
+
+The first publish is reviewed by Figma; updates after approval go out immediately. The listing's
+data disclosure: the plugin sends draft translations and the designer's marks only to the Retrans
+app on the same computer (localhost), and never anywhere else.
+
 ## Checks in real Figma (not yet run)
 
 These can't run in automated tests. Record the outcome here.

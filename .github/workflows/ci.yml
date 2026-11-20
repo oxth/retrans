@@ -64,6 +64,11 @@ jobs:
       - name: Type check
         run: pnpm exec tsc --noEmit
 
+      - name: Figma plugin type check and build
+        run: |
+          pnpm exec tsc --noEmit -p figma-plugin
+          pnpm build:figma-plugin
+
       - name: Rust tests
         working-directory: src-tauri
         run: cargo test
