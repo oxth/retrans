@@ -79,6 +79,18 @@ Retrans reads the `.tokens.json` files Figma exports for Variables.
 - **Resolve differences.** When Figma and your code disagree, you resolve it in a git-style conflict view (*From code / From Figma / Original*), or edit a final version.
 - **Export back.** Export to Figma changes only the text values, so re-importing updates your variables instead of duplicating them.
 
+### Designer preview
+
+Before you accept AI drafts, a designer can check they fit the real design. The designer needs the **Retrans Preview** Figma plugin; until it's published in the Figma Community, build it from the [`figma-plugin`](../figma-plugin/README.md) folder of this repository.
+
+1. In **Settings → Figma**, click **Export preview for a designer…**, pick a language and save the file. It holds that language's drafts that aren't reviewed yet and are linked to a Figma variable (tick **Include reviewed translations** to add the rest).
+2. The designer opens the **Retrans Preview** plugin in Figma, loads the file, selects the frames to check and clicks **Make preview copies**. The copies appear next to the originals with the drafts in place; the originals are never changed.
+3. The plugin flags text that may overflow (⚠) or uses a font that isn't installed. The designer marks each string **Fits** or **Too long**, adds a note if useful, and clicks **Save results** (or **Copy results**).
+4. Back in Retrans, **Import designer results…** shows how many fit and how many are too long, then adds the marks. **Too long** shows on the cell with the designer's note, and the **Too long** filter lists them.
+5. Shorten what's too long and review as usual. A mark belongs to the exact text the designer saw: editing the text clears it, and a results file for text that changed since is skipped.
+
+Marks are saved in `.retrans/state.json`, so they reach your team through git like review status. **Remove copies** in the plugin deletes only the copies it made.
+
 ## Keyboard shortcuts
 
 macOS shortcuts are shown; on Windows use Ctrl in place of ⌘.

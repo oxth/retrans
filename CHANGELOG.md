@@ -4,6 +4,12 @@ All notable changes to Retrans. Downloads are on the [releases page](https://git
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### What's new
+
+- **Designer preview in Figma.** A designer can check that AI drafts fit the real design before anyone accepts them. In **Settings → Figma**, **Export preview for a designer…** saves the drafts of one language to a file. The designer loads it in the new **Retrans Preview** Figma plugin, which puts the drafts into copies of the selected frames, flags text that may overflow, and lets them mark each string **Fits** or **Too long** with a note. Import their results file with **Import designer results…**: **Too long** shows on the cell, and a **Too long** filter lists them. Marks only stay on the exact text the designer saw; editing the text clears them. The plugin never changes the original frames.
+
 ## [0.7.1] - 2026-11-19
 
 ### Improvements
