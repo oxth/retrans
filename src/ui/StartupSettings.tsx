@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { getLaunchMode, type LaunchMode, setLaunchMode } from "../platform/prefs";
-import { fieldBase, Row } from "./settings-ui";
+import { fieldBase, Group, Row, useSaveNote } from "./settings-ui";
 
 /** Settings → Startup: what Retrans shows when it opens. */
 export function StartupSettings() {
   const [mode, setMode] = useState<LaunchMode>("restore");
+  const { track, footer } = useSaveNote();
   useEffect(() => {
     let live = true;
     getLaunchMode().then(
@@ -16,6 +17,7 @@ export function StartupSettings() {
     };
   }, []);
   return (
+    <Group label="Startup" footer={footer}>
     <Row label="When Retrans opens" hint="What you see each time you start the app." htmlFor="launch-mode">
       <select
         id="launch-mode"
@@ -24,12 +26,13 @@ export function StartupSettings() {
         onChange={(e) => {
           const m = e.target.value as LaunchMode;
           setMode(m);
-          void setLaunchMode(m).catch(() => {});
+          track(() => setLaunchMode(m));
         }}
       >
         <option value="restore">Reopen the projects that were open</option>
         <option value="start">Show the start screen</option>
       </select>
     </Row>
+    </Group>
   );
 }

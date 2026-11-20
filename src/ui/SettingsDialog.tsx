@@ -23,7 +23,7 @@ import { Icon, type IconName } from "./Icon";
 import { MtSettings } from "./MtSettings";
 import { useMt } from "./mt-store";
 import { ProjectMtSettings } from "./ProjectMtSettings";
-import { btnRow, fieldBase, Group, Row, Segmented, UnsavedContext } from "./settings-ui";
+import { btnRow, fieldBase, GoToSectionContext, Group, radioKeys, Row, SectionLink, Segmented, UnsavedContext, useSaveNote } from "./settings-ui";
 import { StartupSettings } from "./StartupSettings";
 import { type SettingsSection, updateUnseen, useApp } from "./store";
 import { UpdateSettings } from "./UpdateAvailableToast";
@@ -46,7 +46,7 @@ const SECTIONS: SectionDef[] = [
   { id: "appearance", label: "Appearance", hint: "Theme, interface size and layout", icon: "monitor", keywords: "theme dark light mode system size zoom font text scale default view list table" },
   { id: "mt", label: "Machine translation", hint: "Who translates: a built-in model, a cloud API or an AI agent", icon: "sparkles", keywords: "model provider api key openai anthropic claude agent gguf download" },
   { id: "instructions", label: "AI instructions", hint: "Rules sent with every translation, for all projects", icon: "message", keywords: "prompt instructions tone style" },
-  { id: "plugin", label: "Figma plugin", hint: "Live link with the Retrans Preview plugin", icon: "layers", keywords: "figma plugin live link pair pairing forget designer" },
+  { id: "plugin", label: "Figma plugin", hint: "Live link with the Retrans Preview plugin", icon: "link", keywords: "figma plugin live link pair pairing forget designer" },
   { id: "about", label: "About", hint: "Version and software updates", icon: "info", keywords: "about version update install release what's new changelog bug report problem log issue" },
 ];
 
@@ -144,6 +144,11 @@ export function SettingsDialog() {
       </button>
     );
   };
+  // Section names in footers open that section (only the ones that apply here).
+  const goTo = (id: string) => {
+    const to = sections.find((s) => s.id === id);
+    if (to && to.id !== active.id) guard(() => setCurrent(to.id));
+  };
   const projectItems = shown.filter((s) => s.project);
   const globalItems = shown.filter((s) => !s.project);
 
@@ -197,7 +202,7 @@ export function SettingsDialog() {
           <header className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-7 py-5">
             <div className="min-w-0">
               <h2 className="flex items-center gap-2 text-base font-semibold">
-                <Icon name={active.icon} size={17} className="text-brand" />
+                <Icon name={active.icon} size={17} className="text-muted" />
                 {active.label}
               </h2>
               <p className="mt-0.5 text-xs text-muted">{active.hint}</p>
@@ -209,7 +214,9 @@ export function SettingsDialog() {
           <div className="min-h-0 flex-1 overflow-auto">
             <div key={active.id} className="mx-auto flex min-h-full max-w-[44rem] flex-col gap-7 px-7 py-6">
               <UnsavedContext.Provider value={setUnsaved}>
-                <SectionBody id={active.id} session={session} version={version} />
+                <GoToSectionContext.Provider value={goTo}>
+                  <SectionBody id={active.id} session={session} version={version} />
+                </GoToSectionContext.Provider>
               </UnsavedContext.Provider>
             </div>
           </div>
@@ -249,11 +256,7 @@ function SectionBody({ id, session, version }: { id: SettingsSection; session: P
     case "appearance":
       return <AppearanceSettings />;
     case "general":
-      return (
-        <Group label="Startup">
-          <StartupSettings />
-        </Group>
-      );
+      return <StartupSettings />;
     case "mt":
       return <MtSettings session={session} />;
     case "instructions":
@@ -383,7 +386,7 @@ function ThemePicker({ value, onChange }: { value: Theme; onChange: (t: Theme) =
   const LIGHT = preview("#ffffff", "#cfd3df", "#4f46e5");
   const DARK = preview("#0f1117", "#363c50", "#8b85ff");
   return (
-    <div role="radiogroup" aria-label="Theme" className="flex flex-wrap gap-3">
+    <div role="radiogroup" aria-label="Theme" className="flex flex-wrap gap-3" onKeyDown={(e) => radioKeys(e, THEMES.map((t) => t.value), value, onChange)}>
       {THEMES.map((t) => {
         const on = t.value === value;
         return (
@@ -392,6 +395,7 @@ function ThemePicker({ value, onChange }: { value: Theme; onChange: (t: Theme) =
             type="button"
             role="radio"
             aria-checked={on}
+            tabIndex={on ? 0 : -1}
             onClick={() => onChange(t.value)}
             className="group flex flex-col items-center gap-1.5"
           >
@@ -516,6 +520,8 @@ function About({ version }: { version: string | null }) {
 /** App → AI instructions: combined with each project's and language's own. */
 function GlobalInstructions() {
   const instructions = useMt((s) => s.settings.instructions);
+  const hasProject = useApp((s) => !!s.session);
+  const { track, footer } = useSaveNote();
   const fixedPrompt = useMt((s) => {
     const { provider, modelId, custom } = s.settings;
     if ((provider ?? "local") !== "local") return false;
@@ -523,7 +529,12 @@ function GlobalInstructions() {
     return template === "translategemma";
   });
   return (
-    <Group label="All projects" footer="Each project can add its own in its Translation settings; those come after these.">
+    <Group
+      label="All projects"
+      footer={footer ?? (
+        <>Each project can add its own in its {hasProject ? <SectionLink to="translation">Translation</SectionLink> : "Translation"} settings; those come after these.</>
+      )}
+    >
       <Row
         stacked
         htmlFor="global-instructions"
@@ -537,7 +548,10 @@ function GlobalInstructions() {
           rows={4}
           placeholder="e.g. Keep translations short: this is UI text."
           defaultValue={instructions}
-          onBlur={(e) => void useMt.getState().setInstructions(e.target.value.trim())}
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            if (v !== instructions) track(() => useMt.getState().setInstructions(v));
+          }}
         />
         {fixedPrompt && <p className="text-xs text-warn">TranslateGemma uses a fixed prompt and ignores custom instructions.</p>}
       </Row>

@@ -62,8 +62,8 @@ function ModelCard({ model, onDownload, selected, onSelect }: { model: CatalogMo
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">{model.name}</span>
-            {model.recommended && <span className="rounded bg-brand-soft px-1.5 py-0.5 text-[0.6875rem] font-medium text-brand-ink">Recommended</span>}
-            {complete && s.settings.modelId === model.id && <span className="rounded bg-ok-soft px-1.5 py-0.5 text-[0.6875rem] font-medium text-ok">In use</span>}
+            {model.recommended && <span className="rounded bg-sunken px-1.5 py-0.5 text-xs font-medium text-fg-2">Recommended</span>}
+            {complete && s.settings.modelId === model.id && <span className="rounded bg-ok-soft px-1.5 py-0.5 text-xs font-medium text-ok">In use</span>}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
             <span>Download: {formatBytes(model.sizeBytes)}</span>
@@ -87,7 +87,7 @@ function ModelCard({ model, onDownload, selected, onSelect }: { model: CatalogMo
                 <input type="radio" name="mt-model" checked={selected} onChange={onSelect} />
                 Use this model
               </label>
-              <button type="button" className={btnGhost} onClick={() => setConfirmDelete(true)}>Delete model</button>
+              <button type="button" className={`${btnGhost} text-danger hover:bg-danger-soft`} onClick={() => setConfirmDelete(true)}>Delete model</button>
             </>
           )}
           {!running && !complete && !partial && dl?.state !== "error" && (
@@ -363,7 +363,7 @@ export function MtSettings({ session }: { session: ProjectSession | null }) {
   return (
     <>
       <Group label="Status" footer={!draft.enabled ? "Runs on your computer. Nothing is downloaded until you turn this on and pick a model." : undefined}>
-        <Row label="Enable machine translation" hint="Suggest translations for missing text, and translate in bulk.">
+        <Row label="Enable machine translation" hint="Suggest translations for missing text, and translate in bulk. Changes on this page apply when you press Save.">
           <Switch label="Enable machine translation" checked={draft.enabled} onChange={(v) => patch({ enabled: v })} />
         </Row>
       </Group>

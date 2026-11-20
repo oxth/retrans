@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { forgetPlugin, linkStart, linkStatus, type LinkStatus, linkStop, pairCode } from "../platform/preview-link";
 import { getLiveLink, setLiveLink } from "../platform/prefs";
-import { btnRow, Group, Row, Switch } from "./settings-ui";
+import { btnRow, Group, Row, Switch, useSaveNote } from "./settings-ui";
 
 /** A pairing code's remaining time, as m:ss. */
 const mmss = (secs: number) => `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
@@ -16,6 +16,8 @@ export function LiveLinkSettings() {
   const [startError, setStartError] = useState<string | null>(null);
   const [pairing, setPairing] = useState<{ code: string; expiresAt: number; wasPaired: boolean } | null>(null);
   const [left, setLeft] = useState(0);
+  // Turning the link on or off saves at once; only a failure needs saying.
+  const { track, footer: saveFailed } = useSaveNote();
 
   useEffect(() => {
     let live = true;
@@ -65,7 +67,7 @@ export function LiveLinkSettings() {
     setLinkOn(on);
     setStartError(null);
     if (!on) setPairing(null);
-    void setLiveLink(on).catch(() => {});
+    track(() => setLiveLink(on), { quiet: true });
     if (on) {
       void linkStart().then(refreshStatus, (e) => {
         setStartError(e instanceof Error ? e.message : String(e));
@@ -80,7 +82,7 @@ export function LiveLinkSettings() {
     try {
       const { code, expiresInMs } = await pairCode();
       setLinkOn(true);
-      void setLiveLink(true).catch(() => {});
+      track(() => setLiveLink(true), { quiet: true });
       setPairing({ code, expiresAt: Date.now() + expiresInMs, wasPaired: status?.paired ?? false });
       setLeft(Math.ceil(expiresInMs / 1000));
       refreshStatus();
@@ -100,7 +102,7 @@ export function LiveLinkSettings() {
       : "Not paired";
 
   return (
-    <Group label="Live link with Figma" footer={liveNote}>
+    <Group label="Live link with Figma" footer={saveFailed ?? liveNote}>
       <Row label="Live link" hint="Lets the Figma plugin talk to Retrans. Pairing is per computer, not per project.">
         <Switch label="Live link with the Figma plugin" checked={linkOn} onChange={toggleLink} />
       </Row>
@@ -110,7 +112,7 @@ export function LiveLinkSettings() {
       >
         {pairing ? (
           <>
-            <span className="font-mono text-2xl tracking-widest">{pairing.code}</span>
+            <span aria-live="polite" className="font-mono text-2xl tracking-widest">{pairing.code}</span>
             <span className="text-xs text-muted">Expires in {mmss(left)}</span>
           </>
         ) : (

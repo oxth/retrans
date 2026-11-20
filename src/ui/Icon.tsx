@@ -34,6 +34,7 @@ const PATHS = {
   lock: "M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4",
   info: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 16v-4M12 8h.01",
   layers: "m12 2 10 5-10 5L2 7l10-5ZM2 17l10 5 10-5M2 12l10 5 10-5",
+  link: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
 } as const;
 
 export type IconName = keyof typeof PATHS;
