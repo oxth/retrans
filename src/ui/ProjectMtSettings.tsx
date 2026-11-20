@@ -13,7 +13,7 @@ export function ProjectMtSettings({ session }: { session: ProjectSession }) {
   const global = useMt((s) => s.settings.provider);
   const override = session.state.project.mtProvider ?? "";
   const instr = session.state.project.instructions ?? {};
-  const targets = session.data.locales.filter((l) => l !== session.data.baseLocale);
+  const targets = session.displayLocales().filter((l) => l !== session.data.baseLocale);
   const provider = useSaveNote();
   const instructions = useSaveNote();
   const saveInstr = (patch: { all?: string; locale?: [string, string] }) => {

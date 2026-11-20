@@ -798,6 +798,7 @@ export class ProjectSession {
     id?: string;
     mtProvider?: string | undefined;
     instructions?: StateFile["project"]["instructions"] | undefined;
+    localeOrder?: string[] | undefined;
   }): void {
     if ("localesPath" in patch) {
       if (patch.localesPath) this.state.project.localesPath = patch.localesPath;
@@ -812,9 +813,24 @@ export class ProjectSession {
       if (i && (i.all?.trim() || Object.keys(i.byLocale ?? {}).length)) this.state.project.instructions = i;
       else delete this.state.project.instructions;
     }
+    if ("localeOrder" in patch) {
+      if (patch.localeOrder?.length) this.state.project.localeOrder = patch.localeOrder;
+      else delete this.state.project.localeOrder;
+    }
     if (patch.id) this.state.project.id = patch.id;
     this.stateTouched = true;
     this.emit();
+  }
+
+  /**
+   * The languages in the order they're shown: the base first, then the order chosen on the Languages
+   * page (project.localeOrder), then any others in their usual order (a newly added one lands at the end).
+   */
+  displayLocales(): string[] {
+    const { baseLocale, locales } = this.data;
+    const others = locales.filter((l) => l !== baseLocale);
+    const chosen = (this.state.project.localeOrder ?? []).filter((l) => others.includes(l));
+    return [...(locales.includes(baseLocale) ? [baseLocale] : []), ...chosen, ...others.filter((l) => !chosen.includes(l))];
   }
 
   addNamespace(ns: string): void {

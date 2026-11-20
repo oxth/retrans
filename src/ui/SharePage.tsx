@@ -19,7 +19,7 @@ const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function SharePage({ session }: { session: ProjectSession }) {
   const version = useSessionVersion();
   const dirty = version >= 0 && session.isDirty();
-  const targets = session.data.locales.filter((l) => l !== session.data.baseLocale);
+  const targets = session.displayLocales().filter((l) => l !== session.data.baseLocale);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);

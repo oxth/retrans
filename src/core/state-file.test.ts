@@ -31,6 +31,18 @@ describe("state-file", () => {
     expect(out.indexOf("a::y")).toBeLessThan(out.indexOf("b::x"));
     expect(out).toContain('\n  "entries"');
   });
+  it("reads project.localeOrder when it's a list of strings, ignores anything else, and writes it back", () => {
+    const file = (localeOrder: unknown) => JSON.stringify({ version: 1, project: { localeOrder }, entries: {} });
+    expect(parseState(file(["zh-CN", "th", "lo", "th"])).state.project.localeOrder).toEqual(["zh-CN", "th", "lo"]);
+    for (const bad of ["th", [1, 2], [], null, { th: 1 }]) {
+      const r = parseState(file(bad));
+      expect(r.error).toBeUndefined(); // a hand-edited value never stops the project opening
+      expect(r.state.project.localeOrder).toBeUndefined();
+    }
+    const again = parseState(serializeState(parseState(file(["th", "lo"])).state));
+    expect(again.state.project.localeOrder).toEqual(["th", "lo"]);
+  });
+
   it("parseState reports invalid JSON as an error with an empty state", () => {
     const bad = parseState("{nope");
     expect(bad.state).toEqual({ version: 1, project: {}, entries: {} });

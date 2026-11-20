@@ -14,7 +14,7 @@ const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
 /** Exports the drafts of one language as a preview file for the Retrans Preview Figma plugin. */
 export function PreviewExportDialog({ session, onClose }: { session: ProjectSession; onClose: () => void }) {
   const fs = useApp((s) => s.fs);
-  const targets = session.data.locales.filter((l) => l !== session.data.baseLocale);
+  const targets = session.displayLocales().filter((l) => l !== session.data.baseLocale);
   const [locale, setLocale] = useState(targets[0] ?? "");
   const [includeReviewed, setIncludeReviewed] = useState(false);
   const [busy, setBusy] = useState(false);

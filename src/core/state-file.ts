@@ -18,6 +18,8 @@ export interface StateFile {
     mtProvider?: string;
     /** Custom AI instructions for this project, and per language. Shared through git. */
     instructions?: { all?: string; byLocale?: Record<string, string> };
+    /** The order the languages after the base are shown in (Languages page). Display only; files aren't reordered. */
+    localeOrder?: string[];
   };
   entries: Record<KeyId, Record<string, StateEntry>>;
 }
@@ -72,6 +74,10 @@ export function parseState(text: string | null): { state: StateFile; error?: str
     ...(typeof p.id === "string" ? { id: p.id } : {}),
     ...(typeof p.mtProvider === "string" ? { mtProvider: p.mtProvider } : {}),
     ...(instructionsOf(p.instructions) ? { instructions: instructionsOf(p.instructions) } : {}),
+    // Anything but a list of strings is ignored, so a hand-edited file can't break opening the project.
+    ...(Array.isArray(p.localeOrder) && p.localeOrder.length && p.localeOrder.every((l) => typeof l === "string")
+      ? { localeOrder: [...new Set(p.localeOrder as string[])] }
+      : {}),
   };
   const entries: StateFile["entries"] = {};
   if (isRecord(raw.entries)) {

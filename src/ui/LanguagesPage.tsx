@@ -10,7 +10,7 @@ import { parseKeyId } from "../core/model";
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function LanguagesPage({ session, stats }: { session: ProjectSession; stats: Map<string, { done: number; total: number }> }) {
-  const { locales, baseLocale, format } = session.data;
+  const { baseLocale, format } = session.data;
   const isWs = !!session.workspace;
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -24,6 +24,19 @@ export function LanguagesPage({ session, stats }: { session: ProjectSession; sta
     // A workspace has no next-i18next config to update.
     setSnippet(format === "next-i18next" && !isWs ? localesSnippet(session.data.locales) : null);
   };
+  // Display order: the base stays first; ↑ / ↓ move the others, Sort A–Z goes back to the usual order.
+  const shown = session.displayLocales();
+  const others = shown.filter((l) => l !== baseLocale);
+  const custom = !!session.state.project.localeOrder?.length;
+  const move = (l: string, delta: -1 | 1) => {
+    const order = [...others];
+    const i = order.indexOf(l);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    session.setProjectSetting({ localeOrder: order });
+  };
+
   const addNs = () => {
     try {
       session.addNamespace(ns.trim());
@@ -37,15 +50,49 @@ export function LanguagesPage({ session, stats }: { session: ProjectSession; sta
   return (
     <div className="mx-auto w-full max-w-2xl p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-sm text-muted">The languages in this project and how complete each one is.</p>
+        <p className="text-sm text-muted">The languages in this project and how complete each one is. Their order here is the order of the columns.</p>
         <button className={btnPrimary} onClick={() => setAdding(true)}>Add language</button>
       </div>
+      {custom && (
+        <p className="mb-2 flex items-center justify-end gap-2 text-xs text-muted">
+          Your own order, shared through git.
+          <button className="rounded px-1.5 py-0.5 font-medium text-fg-2 underline decoration-line-strong underline-offset-2 hover:text-fg" onClick={() => session.setProjectSetting({ localeOrder: undefined })}>
+            Sort A–Z
+          </button>
+        </p>
+      )}
       <ul className="divide-y divide-line rounded-md border border-line">
-        {locales.map((l) => {
+        {shown.map((l) => {
           const s = stats.get(l) ?? { done: 0, total: 0 };
+          const at = others.indexOf(l);
           const pct = s.total ? Math.round((s.done / s.total) * 100) : 100;
           return (
             <li key={l} className="flex items-center gap-3 px-3 py-2 text-sm">
+              {/* The base is always first; the others move with ↑ / ↓. */}
+              <div className="flex w-12 shrink-0 gap-0.5">
+                {l !== baseLocale && (
+                  <>
+                    <button
+                      aria-label={`Move ${localeLabel(l)} (${l}) up`}
+                      title="Move up"
+                      disabled={at === 0}
+                      className="rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-30"
+                      onClick={() => move(l, -1)}
+                    >
+                      <Icon name="chevronDown" size={14} className="rotate-180" />
+                    </button>
+                    <button
+                      aria-label={`Move ${localeLabel(l)} (${l}) down`}
+                      title="Move down"
+                      disabled={at === others.length - 1}
+                      className="rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-30"
+                      onClick={() => move(l, 1)}
+                    >
+                      <Icon name="chevronDown" size={14} />
+                    </button>
+                  </>
+                )}
+              </div>
               <div className="w-48">
                 <span className="font-mono font-semibold">{l}</span>{" "}
                 <span className="text-muted">{localeLabel(l)}{l === baseLocale ? " (base)" : ""}</span>

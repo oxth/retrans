@@ -16,7 +16,7 @@ export function TranslateMissingDialog(p: { session: ProjectSession; onClose: ()
   const version = useSessionVersion();
   const mt = useMt();
   const { baseLocale, locales, namespaces, format } = session.data;
-  const targets = useMemo(() => locales.filter((l) => l !== baseLocale), [locales, baseLocale]);
+  const targets = useMemo(() => session.displayLocales().filter((l) => l !== baseLocale), [session, locales, baseLocale, version]);
   // Start with every language that has gaps, so the dialog never opens on "0 missing" when there's work.
   const [picked, setPicked] = useState<string[]>(() => {
     const withGaps = targets.filter((l) => missingItems(session, l, "all").length > 0);

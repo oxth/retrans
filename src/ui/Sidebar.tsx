@@ -48,7 +48,7 @@ export function Sidebar({
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-3 pt-3">
         <div className={sectionLabel}>Progress</div>
         <div className="mt-2.5 space-y-3 text-xs">
-          {session.data.locales.map((l) => {
+          {session.displayLocales().map((l) => {
             const s = stats.get(l) ?? { done: 0, total: 0 };
             const pct = s.total ? Math.round((s.done / s.total) * 100) : 100;
             return (

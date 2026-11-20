@@ -203,6 +203,30 @@ describe("keys", () => {
 });
 
 describe("languages", () => {
+  it("languages can be put in any order after the base: the columns follow, the order is saved, Sort A–Z undoes it", async () => {
+    const s = await open(nested());
+    act(() => s.addLanguage("de"));
+    expect(s.displayLocales()).toEqual(["en", "de", "th"]);
+    await userEvent.click(screen.getByRole("button", { name: "Languages" }));
+    expect(screen.getByRole("button", { name: "Move German (de) up" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Move German (de) down" }));
+    expect(s.displayLocales()).toEqual(["en", "th", "de"]);
+    expect(s.state.project.localeOrder).toEqual(["th", "de"]);
+    // A language added later goes at the end; the base never moves.
+    act(() => s.addLanguage("ja"));
+    expect(s.displayLocales()).toEqual(["en", "th", "de", "ja"]);
+    expect(screen.queryByRole("button", { name: /^Move English \(en\)/ })).toBeNull();
+    // The Translations view shows them in that order.
+    await userEvent.click(screen.getByRole("button", { name: "Translations" }));
+    const row = document.querySelector<HTMLElement>("[data-row]")!;
+    expect([...row.querySelectorAll<HTMLElement>("[data-locale]")].map((c) => c.dataset.locale)).toEqual(["en", "th", "de", "ja"]);
+    // Back on Languages, Sort A–Z goes back to the usual order.
+    await userEvent.click(screen.getByRole("button", { name: "Languages" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sort A–Z" }));
+    expect(s.state.project.localeOrder).toBeUndefined();
+    expect(s.displayLocales()).toEqual(["en", "de", "ja", "th"]);
+  });
+
   it("adding a next-i18next language shows the copyable snippet", async () => {
     const writeText = vi.fn(async () => {});
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });

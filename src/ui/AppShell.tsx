@@ -114,7 +114,7 @@ export function AppShell() {
 
   const deferredSearch = useDeferredValue(filter.search);
   const targets = useMemo(
-    () => (session ? session.data.locales.filter((l) => l !== session.data.baseLocale) : []),
+    () => (session ? session.displayLocales().filter((l) => l !== session.data.baseLocale) : []),
     [session, version],
   );
   const visible = useMemo(() => targets.filter((l) => !hidden.has(l)), [targets, hidden]);
