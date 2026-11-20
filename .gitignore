@@ -17,3 +17,4 @@ docs/superpowers/
 # Generated at deploy by .github/workflows/pages.yml
 site/th/
 site/CHANGELOG.md
+figma-plugin/dist/

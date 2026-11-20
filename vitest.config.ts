@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["src/test/setup.ts"],
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "figma-plugin/src/**/*.test.ts"],
     // Fixture projects carry their own (foreign) tests; they are data, not ours to run.
     exclude: ["**/node_modules/**", "src/test/fixtures/**"],
   },
