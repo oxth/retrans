@@ -26,6 +26,16 @@ export interface SavedMark { text: string; verdict: Verdict; note?: string }
 export interface PreviewInfo { frameName: string; textLayers: number; linked: number }
 export interface SelectedNode { id: string; topFrameId: string | null; inPreview: boolean }
 
+/** A language as "Thai (th)": its name in `display` plus the code; just the code when it has no name. */
+export function languageLabel(code: string, display: string): string {
+  try {
+    const name = new Intl.DisplayNames([display], { type: "language", fallback: "none" }).of(code);
+    return name && name !== code ? `${name} (${code})` : code;
+  } catch {
+    return code;
+  }
+}
+
 /** The frame to preview for a selection: its first node's top-level frame; "keep" for nothing or a preview copy. */
 export function frameToPreview(selection: SelectedNode[]): string | "keep" {
   const first = selection[0];

@@ -4,7 +4,7 @@
  */
 import { parseBundle, serializePreview } from "../../src/preview/format";
 import { renderKeepingNote } from "./keep-focus";
-import { currentStep, linkNote, nothingLinked, type PluginState, progress, resultsKey, toResults } from "./logic";
+import { currentStep, languageLabel, linkNote, nothingLinked, type PluginState, progress, resultsKey, toResults } from "./logic";
 import { LinkError, type RetransProject, draftsProject, draftsTarget, reloadLanguage, findRetrans, linkAfterError, liveApi, pair, pickProject, sendResults } from "./live";
 import type { ToCode, ToUi } from "./protocol";
 
@@ -41,6 +41,8 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const shortKey = (key: string) => key.slice(key.indexOf("::") + 2);
 const dis = (off: boolean) => (off ? "disabled" : "");
+/** "Thai (th)", named in the language Figma runs in. */
+const lang = (code: string) => esc(languageLabel(code, navigator.language || "en"));
 
 type Step = "drafts" | "select" | "check";
 
@@ -100,7 +102,7 @@ function draftsHtml(): string {
   return `<p class="muted"><span class="ok">●</span> Connected to Retrans</p>
     <div class="bar">
       <select id="project" aria-label="Project">${projects.map((x) => `<option value="${esc(x.id)}" ${x.id === projectId ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>
-      <select id="locale" aria-label="Language">${targetLocales().map((l) => `<option value="${esc(l)}" ${l === locale ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+      <select id="locale" aria-label="Language">${targetLocales().map((l) => `<option value="${esc(l)}" ${l === locale ? "selected" : ""}>${lang(l)}</option>`).join("")}</select>
       <button id="refresh" title="Reload the open projects" ${dis(busy)}>Refresh</button>
     </div>
     <label><input type="checkbox" id="reviewed" ${includeReviewed ? "checked" : ""}> Include reviewed</label>
@@ -118,13 +120,13 @@ function loadedHtml(): string {
   if (project) {
     // Always the picker for drafts from Retrans, even with one language, so switching is where you expect it.
     language = `<label class="lang">Language <select id="draft-locale" aria-label="Language" ${dis(busy)}>${langs
-      .map((l) => `<option value="${esc(l)}" ${l === b.locale ? "selected" : ""}>${esc(l)}</option>`)
+      .map((l) => `<option value="${esc(l)}" ${l === b.locale ? "selected" : ""}>${lang(l)}</option>`)
       .join("")}</select></label>
       <button class="link" id="reload" title="Get the latest languages and translations from Retrans" ${dis(busy)}>Reload</button>`;
   } else if (fromRetrans) {
-    language = `Language <strong>${esc(b.locale)}</strong> <span class="muted">(connect to Retrans to switch)</span>`;
+    language = `Language <strong>${lang(b.locale)}</strong> <span class="muted">(connect to Retrans to switch)</span>`;
   } else {
-    language = `Language <strong>${esc(b.locale)}</strong> <span class="muted">from a file</span> · <button class="link" id="load">Load another language</button>`;
+    language = `Language <strong>${lang(b.locale)}</strong> <span class="muted">from a file</span> · <button class="link" id="load">Load another language</button>`;
   }
   return `<div class="loaded"><div><strong>${esc(state.fileName ?? "")}</strong> · ${plural(b.strings.length, "string", "strings")} · <button class="link" id="change">Change</button></div>
     <div class="lang-row">${language}</div></div>`;

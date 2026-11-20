@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PreviewBundle } from "../../src/preview/format";
-import { type Box, copyPlacement, currentStep, frameToPreview, linkNote, previewNeeded, switchDrafts, markRestFits, nothingLinked, progress, resultsKey, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
+import { type Box, copyPlacement, currentStep, frameToPreview, languageLabel, linkNote, previewNeeded, switchDrafts, markRestFits, nothingLinked, progress, resultsKey, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
 
 const box = (width: number, height: number, x = 0, y = 0): Box => ({ x, y, width, height });
 const shape = (autoResize: TextShape["autoResize"], b: Box, needed: Box = b): TextShape => ({ box: b, autoResize, needed });
@@ -208,5 +208,19 @@ describe("switchDrafts", () => {
     const b = switchDrafts(a, fr, "shop", "tab-1");
     expect(b.projectId).toBe("tab-1");
     expect(b.preview).toBeUndefined();
+  });
+});
+
+describe("languageLabel", () => {
+  it("shows the language's name with its code", () => {
+    expect(languageLabel("th", "en")).toBe("Thai (th)");
+    expect(languageLabel("pt-BR", "en")).toBe("Brazilian Portuguese (pt-BR)");
+  });
+  it("names it in the given display language", () => {
+    expect(languageLabel("de", "fr")).toBe("allemand (de)");
+  });
+  it("falls back to the code when there's no name for it", () => {
+    expect(languageLabel("not a code", "en")).toBe("not a code");
+    expect(languageLabel("qaa", "en")).toBe("qaa");
   });
 });
