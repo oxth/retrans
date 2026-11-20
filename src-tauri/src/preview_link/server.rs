@@ -1,16 +1,16 @@
-//! The loopback HTTP endpoint the Retrans Preview plugin talks to. One thread serves 127.0.0.1 and
-//! one serves [::1]; both share the same handler. Every response carries
+//! The loopback HTTP endpoint the Retrans Preview plugin talks to. One acceptor thread serves
+//! 127.0.0.1 and one serves [::1]; both share the same handler. Every accepted connection is
+//! answered on its own short-lived thread, one request per connection, and every response carries
 //! `Access-Control-Allow-Origin: *` so the plugin's sandbox can read it.
 
-use std::io::Read;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
+use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Map, Value};
-use tiny_http::{Header, Method, Request, Response};
 
 use crate::preview_link::auth::{self, PairResult, Pairing};
 use crate::preview_link::bridge::{Bridge, BridgeError};
@@ -18,33 +18,39 @@ use crate::preview_link::lock;
 use crate::secrets::SecretStore;
 
 /// The largest request body the endpoint accepts, in bytes.
-const MAX_BODY: usize = 5_242_880;
+const MAX_BODY: u64 = 5_242_880;
 
-/// How long an idle listener thread waits before re-checking the stop flag.
-const RECV_POLL: Duration = Duration::from_secs(1);
+/// The largest request head (request line plus headers) the endpoint reads, in bytes.
+const HEAD_LIMIT: usize = 16 * 1024;
 
-/// A running endpoint: the port it bound and the handles that stop its threads.
+/// How long a connection may block on a single read or write before it is abandoned.
+const IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The most connections served at once. A connection past the cap is dropped, not queued.
+const MAX_CONNECTIONS: usize = 32;
+
+/// A running endpoint: the port it bound and the handles that stop its acceptor threads.
 pub struct Server {
     /// The loopback port the endpoint is listening on.
     pub port: u16,
-    /// Set to tell every listener thread to stop.
+    /// Set to tell every acceptor thread to stop.
     stop: Arc<AtomicBool>,
-    /// The underlying servers, kept alive until their listener threads have finished.
-    listeners: Vec<Arc<tiny_http::Server>>,
-    /// One thread per bound address.
-    threads: Vec<JoinHandle<()>>,
+    /// One bound address and one acceptor thread per bound address.
+    acceptors: Vec<(SocketAddr, JoinHandle<()>)>,
 }
 
 impl Server {
-    /// Stops the listener and waits for its threads to finish.
+    /// Stops the listeners and waits only for the acceptor threads. Connection threads are never
+    /// joined, so a request still sitting in the bridge does not hold up the stop.
     pub fn stop(self) {
         self.stop.store(true, Ordering::SeqCst);
-        // A thread waiting in recv_timeout only wakes on a request; nudge it so it sees the flag.
-        for listener in &self.listeners {
-            listener.unblock();
+        // An acceptor parked in `accept` only wakes for a connection; nudge each one awake so it
+        // re-checks the stop flag. The nudge connection is dropped by the acceptor.
+        for (address, _) in &self.acceptors {
+            let _ = TcpStream::connect_timeout(address, Duration::from_millis(200));
         }
-        for thread in self.threads {
-            let _ = thread.join();
+        for (_, handle) in self.acceptors {
+            let _ = handle.join();
         }
     }
 }
@@ -62,6 +68,9 @@ pub fn start(
     timeout: Duration,
 ) -> Result<Server, String> {
     let (port, listener) = bind_v4(ports)?;
+    let v4 = listener
+        .local_addr()
+        .map_err(|error| format!("couldn't read the live link address: {error}"))?;
 
     let endpoint = Arc::new(Endpoint {
         store,
@@ -72,30 +81,32 @@ pub fn start(
         timeout,
     });
 
-    let mut listeners = Vec::new();
-    listeners.push(Arc::new(
-        tiny_http::Server::from_listener(listener, None)
-            .map_err(|error| format!("couldn't serve 127.0.0.1:{port}: {error}"))?,
+    let stop = Arc::new(AtomicBool::new(false));
+    let connections = Arc::new(AtomicUsize::new(0));
+
+    let mut acceptors = Vec::with_capacity(2);
+    acceptors.push(spawn_acceptor(
+        v4,
+        listener,
+        endpoint.clone(),
+        stop.clone(),
+        connections.clone(),
     ));
     // IPv6 is best effort: a host that cannot bind [::1] still serves 127.0.0.1.
-    if let Some(server) = bind_v6(port) {
-        listeners.push(Arc::new(server));
-    }
-
-    let stop = Arc::new(AtomicBool::new(false));
-    let mut threads = Vec::with_capacity(listeners.len());
-    for listener in &listeners {
-        let listener = listener.clone();
-        let endpoint = endpoint.clone();
-        let stop = stop.clone();
-        threads.push(thread::spawn(move || serve(listener, endpoint, stop)));
+    if let Some((address, listener)) = bind_v6(port) {
+        acceptors.push(spawn_acceptor(
+            address,
+            listener,
+            endpoint,
+            stop.clone(),
+            connections,
+        ));
     }
 
     Ok(Server {
         port,
         stop,
-        listeners,
-        threads,
+        acceptors,
     })
 }
 
@@ -110,23 +121,82 @@ fn bind_v4(ports: &[u16]) -> Result<(u16, TcpListener), String> {
 }
 
 /// Binds [::1] on `port`, returning nothing when this host has no working IPv6 loopback.
-fn bind_v6(port: u16) -> Option<tiny_http::Server> {
+fn bind_v6(port: u16) -> Option<(SocketAddr, TcpListener)> {
     let listener = TcpListener::bind(SocketAddr::from((Ipv6Addr::LOCALHOST, port))).ok()?;
-    tiny_http::Server::from_listener(listener, None).ok()
+    let address = listener.local_addr().ok()?;
+    Some((address, listener))
 }
 
-/// Serves one bound address until the stop flag is set.
-fn serve(server: Arc<tiny_http::Server>, endpoint: Arc<Endpoint>, stop: Arc<AtomicBool>) {
-    while !stop.load(Ordering::SeqCst) {
-        match server.recv_timeout(RECV_POLL) {
-            Ok(Some(request)) => endpoint.handle(request),
-            // The poll interval elapsed, or the server was unblocked to stop; re-check the flag.
-            Ok(None) => {}
+/// Starts one acceptor thread for a bound listener, returning its address and its handle.
+fn spawn_acceptor(
+    address: SocketAddr,
+    listener: TcpListener,
+    endpoint: Arc<Endpoint>,
+    stop: Arc<AtomicBool>,
+    connections: Arc<AtomicUsize>,
+) -> (SocketAddr, JoinHandle<()>) {
+    let handle = thread::spawn(move || accept_loop(listener, endpoint, stop, connections));
+    (address, handle)
+}
+
+/// Accepts connections until the stop flag is set, handing each one to a short-lived thread.
+///
+/// The loop blocks in `accept` (never busy-spins); a stop nudge or a stop flag makes it exit.
+fn accept_loop(
+    listener: TcpListener,
+    endpoint: Arc<Endpoint>,
+    stop: Arc<AtomicBool>,
+    connections: Arc<AtomicUsize>,
+) {
+    loop {
+        let (stream, _peer) = match listener.accept() {
+            Ok(accepted) => accepted,
             Err(error) => {
+                if stop.load(Ordering::SeqCst) {
+                    break;
+                }
+                // An unexpected accept failure must not spin the thread; give up on the listener.
                 log::debug!("preview link listener stopped: {error}");
                 break;
             }
+        };
+
+        if stop.load(Ordering::SeqCst) {
+            break;
         }
+
+        if stream.set_read_timeout(Some(IO_TIMEOUT)).is_err()
+            || stream.set_write_timeout(Some(IO_TIMEOUT)).is_err()
+        {
+            continue;
+        }
+
+        // Over the cap: drop the new connection without answering it.
+        if connections.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
+            connections.fetch_sub(1, Ordering::SeqCst);
+            drop(stream);
+            continue;
+        }
+
+        let endpoint = endpoint.clone();
+        let guard = ConnectionGuard {
+            connections: connections.clone(),
+        };
+        thread::spawn(move || {
+            let _guard = guard;
+            endpoint.serve(stream);
+        });
+    }
+}
+
+/// Keeps the live connection count accurate, releasing a slot even if the handler panics.
+struct ConnectionGuard {
+    connections: Arc<AtomicUsize>,
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        self.connections.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -143,8 +213,26 @@ impl Reply {
     }
 }
 
-/// The shared handler every listener thread runs. It checks the request itself and forwards only
-/// `projects`, `bundle` and `results` to the webview.
+/// The reason phrase for a status code.
+fn reason(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        204 => "No Content",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        411 => "Length Required",
+        413 => "Payload Too Large",
+        431 => "Request Header Fields Too Large",
+        500 => "Internal Server Error",
+        504 => "Gateway Timeout",
+        _ => "OK",
+    }
+}
+
+/// The shared handler every connection thread runs. It reads the request head, checks the request
+/// itself and forwards only `projects`, `bundle` and `results` to the webview.
 struct Endpoint {
     store: Arc<dyn SecretStore>,
     bridge: Arc<dyn Bridge>,
@@ -155,49 +243,113 @@ struct Endpoint {
 }
 
 impl Endpoint {
-    /// Checks the host, answers preflights and oversized bodies, then routes the request.
-    fn handle(&self, mut request: Request) {
-        if !auth::host_allowed(header(&request, "host"), self.port) {
+    /// Serves exactly one request on `stream` and lets the connection close when it returns.
+    fn serve(&self, stream: TcpStream) {
+        let mut reader = BufReader::new(stream);
+
+        let head = match read_head(&mut reader) {
+            HeadRead::Head(head) => head,
+            HeadRead::TooLarge => {
+                self.respond(
+                    &mut reader,
+                    Reply::json(431, json!({ "error": "The request head is too large." })),
+                );
+                return;
+            }
+            // A client that stalls or leaves before finishing its head gets no answer.
+            HeadRead::Closed => return,
+        };
+
+        let request = match RequestHead::parse(&head) {
+            Some(request) => request,
+            None => {
+                self.respond(
+                    &mut reader,
+                    Reply::json(400, json!({ "error": "The request is malformed." })),
+                );
+                return;
+            }
+        };
+
+        self.dispatch(&mut reader, request);
+    }
+
+    /// Runs the checks in order (host, preflight, body framing, route) and answers the request.
+    fn dispatch(&self, reader: &mut BufReader<TcpStream>, request: RequestHead) {
+        if !auth::host_allowed(request.header("host"), self.port) {
             self.respond(
-                request,
+                reader,
                 Reply::json(403, json!({ "error": "This endpoint only answers this computer." })),
             );
             return;
         }
 
-        if request.method() == &Method::Options {
-            self.respond_preflight(request);
+        if request.method == "OPTIONS" {
+            self.respond_preflight(reader);
             return;
         }
 
-        if request.body_length().is_some_and(|length| length > MAX_BODY) {
+        // Only Content-Length bodies are accepted; a chunked request cannot be sized up front.
+        if request.header("transfer-encoding").is_some() {
             self.respond(
-                request,
-                Reply::json(413, json!({ "error": "The request body is too large." })),
+                reader,
+                Reply::json(411, json!({ "error": "Only Content-Length bodies are accepted." })),
             );
             return;
         }
 
-        let reply = self.route(&mut request);
-        self.respond(request, reply);
+        let declared = match request.header("content-length") {
+            Some(value) => match value.trim().parse::<u64>() {
+                Ok(length) => length,
+                Err(_) => {
+                    self.respond(
+                        reader,
+                        Reply::json(400, json!({ "error": "The Content-Length is not a number." })),
+                    );
+                    return;
+                }
+            },
+            None => 0,
+        };
+
+        // Answer without reading the body: the declared length must never drive an allocation. The
+        // client is still sending this body, though, so send our FIN and let the connection wind
+        // down as a clean FIN; a bare close would reset the socket and discard the 413 before the
+        // client gets to read it.
+        if declared > MAX_BODY {
+            self.respond(
+                reader,
+                Reply::json(413, json!({ "error": "The request body is too large." })),
+            );
+            let buffered = reader.buffer().len() as u64;
+            linger(reader.get_mut(), declared.saturating_sub(buffered));
+            return;
+        }
+
+        let reply = self.route(reader, &request, declared);
+        self.respond(reader, reply);
     }
 
-    /// Picks the answer for a request, after the host and preflight checks.
-    fn route(&self, request: &mut Request) -> Reply {
-        let url = request.url().to_string();
-        let (path, _) = url.split_once('?').unwrap_or((url.as_str(), ""));
-        let query: Vec<(String, String)> = query_pairs(&url).collect();
-        let method = request.method().clone();
+    /// Picks the answer for a request, after the host, preflight and size checks.
+    fn route(
+        &self,
+        reader: &mut BufReader<TcpStream>,
+        request: &RequestHead,
+        declared: u64,
+    ) -> Reply {
+        let url = request.target.as_str();
+        let (path, _) = url.split_once('?').unwrap_or((url, ""));
+        let query: Vec<(String, String)> = query_pairs(url).collect();
 
-        match (method, path) {
-            (Method::Get, "/v1/hello") => Reply::json(
+        match (request.method.as_str(), path) {
+            ("GET", "/v1/hello") => Reply::json(
                 200,
                 json!({ "app": "retrans", "version": self.version, "paired": self.paired() }),
             ),
-            (Method::Post, "/v1/pair") => self.pair(request),
-            (Method::Get, "/v1/projects") => self.projects(request),
-            (Method::Get, "/v1/bundle") => self.bundle(request, &query),
-            (Method::Post, "/v1/results") => self.results(request, &query),
+            ("POST", "/v1/pair") => self.pair(reader, declared),
+            ("GET", "/v1/projects") => self.projects(request),
+            ("GET", "/v1/bundle") => self.bundle(request, &query),
+            ("POST", "/v1/results") => self.results(reader, request, &query, declared),
             _ => Reply::json(404, json!({ "error": "No such endpoint." })),
         }
     }
@@ -212,8 +364,8 @@ impl Endpoint {
     }
 
     /// Returns a 401 reply unless the request carries the stored token.
-    fn check_token(&self, request: &Request) -> Result<(), Reply> {
-        let given = auth::bearer(header(request, "authorization"));
+    fn check_token(&self, request: &RequestHead) -> Result<(), Reply> {
+        let given = auth::bearer(request.header("authorization"));
         let stored = self.store.get(auth::TOKEN_ACCOUNT).ok().flatten();
 
         match (given, stored) {
@@ -230,8 +382,8 @@ impl Endpoint {
     }
 
     /// Handles `POST /v1/pair`: checks the shown code, stores a fresh token and spends the code.
-    fn pair(&self, request: &mut Request) -> Reply {
-        let value = match self.json_body(request) {
+    fn pair(&self, reader: &mut BufReader<TcpStream>, declared: u64) -> Reply {
+        let value = match self.json_body(reader, declared) {
             Ok(value) => value,
             Err(reply) => return reply,
         };
@@ -270,7 +422,7 @@ impl Endpoint {
     }
 
     /// Handles `GET /v1/projects`.
-    fn projects(&self, request: &Request) -> Reply {
+    fn projects(&self, request: &RequestHead) -> Reply {
         if let Err(reply) = self.check_token(request) {
             return reply;
         }
@@ -278,7 +430,7 @@ impl Endpoint {
     }
 
     /// Handles `GET /v1/bundle`, which needs a project and a locale.
-    fn bundle(&self, request: &Request, query: &[(String, String)]) -> Reply {
+    fn bundle(&self, request: &RequestHead, query: &[(String, String)]) -> Reply {
         if let Err(reply) = self.check_token(request) {
             return reply;
         }
@@ -299,14 +451,20 @@ impl Endpoint {
     }
 
     /// Handles `POST /v1/results`, which needs a project and a JSON body.
-    fn results(&self, request: &mut Request, query: &[(String, String)]) -> Reply {
+    fn results(
+        &self,
+        reader: &mut BufReader<TcpStream>,
+        request: &RequestHead,
+        query: &[(String, String)],
+        declared: u64,
+    ) -> Reply {
         if let Err(reply) = self.check_token(request) {
             return reply;
         }
         let Some(project) = query_value(query, "project") else {
             return Reply::json(400, json!({ "error": "project is required" }));
         };
-        let body = match self.json_body(request) {
+        let body = match self.json_body(reader, declared) {
             Ok(body) => body,
             Err(reply) => return reply,
         };
@@ -324,63 +482,156 @@ impl Endpoint {
         }
     }
 
-    /// Reads and parses the request body as JSON, capping the size even when it was not declared.
-    fn json_body(&self, request: &mut Request) -> Result<Value, Reply> {
+    /// Reads the declared body, growing the buffer by the bytes that actually arrive (never by the
+    /// declared length) and giving up as a 400 when the body is short of its declaration.
+    fn json_body(&self, reader: &mut BufReader<TcpStream>, declared: u64) -> Result<Value, Reply> {
         let mut bytes = Vec::new();
-        let mut reader = request.as_reader().take((MAX_BODY + 1) as u64);
-        if reader.read_to_end(&mut bytes).is_err() {
-            return Err(Reply::json(
-                400,
-                json!({ "error": "Couldn't read the request body." }),
-            ));
-        }
-        if bytes.len() > MAX_BODY {
-            return Err(Reply::json(
-                413,
-                json!({ "error": "The request body is too large." }),
-            ));
+        let mut limited = reader.take(declared);
+        match limited.read_to_end(&mut bytes) {
+            Ok(read) if read as u64 == declared => {}
+            _ => {
+                return Err(Reply::json(
+                    400,
+                    json!({ "error": "Couldn't read the request body." }),
+                ));
+            }
         }
         serde_json::from_slice(&bytes)
             .map_err(|_| Reply::json(400, json!({ "error": "The request body is not valid JSON." })))
     }
 
-    /// Sends a JSON reply with the CORS header every response carries.
-    fn respond(&self, request: Request, reply: Reply) {
-        let response = Response::from_string(reply.body.to_string())
-            .with_status_code(reply.status)
-            .with_header(header_line("Content-Type: application/json"))
-            .with_header(header_line("Access-Control-Allow-Origin: *"));
-        if let Err(error) = request.respond(response) {
-            log::debug!("preview link: couldn't answer a request: {error}");
-        }
+    /// Sends a JSON reply with the CORS header every response carries, then the connection closes.
+    fn respond(&self, reader: &mut BufReader<TcpStream>, reply: Reply) {
+        let body = reply.body.to_string();
+        let mut response = format!(
+            "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+            reply.status,
+            reason(reply.status),
+            body.len()
+        );
+        response.push_str(&body);
+        write_out(reader.get_mut(), response.as_bytes());
     }
 
-    /// Answers a CORS preflight so the plugin's sandbox is allowed to reach the endpoint.
-    fn respond_preflight(&self, request: Request) {
-        let response = Response::empty(204)
-            .with_header(header_line("Access-Control-Allow-Origin: *"))
-            .with_header(header_line("Access-Control-Allow-Methods: GET, POST"))
-            .with_header(header_line("Access-Control-Allow-Headers: Authorization, Content-Type"))
-            .with_header(header_line("Access-Control-Allow-Private-Network: true"));
-        if let Err(error) = request.respond(response) {
-            log::debug!("preview link: couldn't answer a preflight: {error}");
+    /// Answers a CORS preflight so the plugin's sandbox is allowed to reach the endpoint. A 204
+    /// carries no body, so it sends neither `Content-Type` nor `Content-Length`.
+    fn respond_preflight(&self, reader: &mut BufReader<TcpStream>) {
+        const RESPONSE: &str = "HTTP/1.1 204 No Content\r\n\
+            Access-Control-Allow-Origin: *\r\n\
+            Access-Control-Allow-Methods: GET, POST\r\n\
+            Access-Control-Allow-Headers: Authorization, Content-Type\r\n\
+            Access-Control-Allow-Private-Network: true\r\n\
+            Connection: close\r\n\r\n";
+        write_out(reader.get_mut(), RESPONSE.as_bytes());
+    }
+}
+
+/// Writes a complete response, logging a failure. The caller closes the connection afterwards.
+fn write_out(stream: &mut TcpStream, bytes: &[u8]) {
+    if stream.write_all(bytes).is_err() {
+        log::debug!("preview link: couldn't answer a request");
+    }
+    let _ = stream.flush();
+}
+
+/// Winds a rejected request down without a reset: sends our FIN, then consumes up to `remaining`
+/// bytes of the incoming body into a fixed buffer. Everything is bounded by the socket's read
+/// timeout, so a peer that stops sending is abandoned rather than waited on, and the buffer is
+/// reused rather than allocated from the declared length.
+fn linger(stream: &mut TcpStream, mut remaining: u64) {
+    let _ = stream.shutdown(Shutdown::Write);
+
+    // A trickling peer must not hold a thread: stop after IO_TIMEOUT overall or MAX_BODY bytes.
+    let deadline = Instant::now() + IO_TIMEOUT;
+    remaining = remaining.min(MAX_BODY);
+    let mut sink = [0u8; 8 * 1024];
+    while remaining > 0 && Instant::now() < deadline {
+        let want = remaining.min(sink.len() as u64) as usize;
+        match stream.read(&mut sink[..want]) {
+            Ok(0) | Err(_) => break,
+            Ok(read) => remaining -= read as u64,
         }
     }
 }
 
-/// Reads the first request header with the given name.
-fn header<'a>(request: &'a Request, name: &str) -> Option<&'a str> {
-    request
-        .headers()
-        .iter()
-        .find(|candidate| candidate.field.as_str().as_str().eq_ignore_ascii_case(name))
-        .map(|found| found.value.as_str())
+/// What reading a request head produced.
+enum HeadRead {
+    /// The head, up to but not including the terminating CRLFCRLF.
+    Head(Vec<u8>),
+    /// The head grew past `HEAD_LIMIT` without a terminator.
+    TooLarge,
+    /// The peer went away or stalled before the head was complete; there is nothing to answer.
+    Closed,
 }
 
-/// Builds a response header from a static line such as `Content-Type: application/json`.
-fn header_line(line: &str) -> Header {
-    line.parse::<Header>()
-        .expect("a response header line is always valid ASCII")
+/// Reads a request head byte by byte until CRLFCRLF, bounded by `HEAD_LIMIT`.
+///
+/// A read timeout or EOF before the terminator is a `Closed` head, which is answered by silence;
+/// bytes the buffered reader has already pulled in beyond the head stay available for the body.
+fn read_head<R: BufRead>(reader: &mut R) -> HeadRead {
+    let mut head = Vec::with_capacity(256);
+    let mut byte = [0u8; 1];
+    loop {
+        match reader.read(&mut byte) {
+            Ok(0) => return HeadRead::Closed,
+            Ok(_) => {
+                head.push(byte[0]);
+                if head.ends_with(b"\r\n\r\n") {
+                    head.truncate(head.len() - 4);
+                    return HeadRead::Head(head);
+                }
+                if head.len() > HEAD_LIMIT {
+                    return HeadRead::TooLarge;
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(_) => return HeadRead::Closed,
+        }
+    }
+}
+
+/// A parsed request line and header list. Header names are kept as written and matched
+/// case-insensitively.
+struct RequestHead {
+    method: String,
+    target: String,
+    headers: Vec<(String, String)>,
+}
+
+impl RequestHead {
+    /// Parses a request head, returning `None` when the request line or a header is malformed.
+    fn parse(head: &[u8]) -> Option<Self> {
+        let text = std::str::from_utf8(head).ok()?;
+        let mut lines = text.split("\r\n");
+
+        let mut parts = lines.next()?.split(' ');
+        let method = parts.next()?;
+        let target = parts.next()?;
+        let version = parts.next()?;
+        if method.is_empty() || target.is_empty() || !version.starts_with("HTTP/") {
+            return None;
+        }
+
+        let mut headers = Vec::new();
+        for line in lines {
+            let (name, value) = line.split_once(':')?;
+            headers.push((name.trim().to_string(), value.trim().to_string()));
+        }
+
+        Some(Self {
+            method: method.to_string(),
+            target: target.to_string(),
+            headers,
+        })
+    }
+
+    /// The first value of a header, matched case-insensitively.
+    fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(field, _)| field.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
 }
 
 /// The `key=value` pairs in a URL's query string, percent-decoded.
@@ -541,6 +792,11 @@ mod tests {
         stream.read_to_end(&mut raw).expect("read the response");
         let _ = stream.shutdown(Shutdown::Both);
 
+        parse(raw)
+    }
+
+    /// Parses a raw HTTP reply into its status, lowercased headers and body.
+    fn parse(raw: Vec<u8>) -> Response {
         let split = raw
             .windows(4)
             .position(|window| window == b"\r\n\r\n")
@@ -561,6 +817,41 @@ mod tests {
             status,
             headers,
             body: raw[split + 4..].to_vec(),
+        }
+    }
+
+    /// Opens a fresh connection, writes `request` and returns the socket still open and idle.
+    ///
+    /// The returned socket lets a test model a client that has announced a body (or sent a partial
+    /// one) and then gone quiet without closing, which is exactly what must not take the endpoint
+    /// down or hold up other clients.
+    fn hold_open(port: u16, request: &[u8]) -> TcpStream {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        stream
+            .set_write_timeout(Some(Duration::from_secs(3)))
+            .expect("write timeout");
+        stream.write_all(request).expect("write the request");
+        stream.flush().expect("flush");
+        stream
+    }
+
+    /// Sends `request` on a fresh connection and returns the reply status, failing the test when
+    /// nothing has arrived within `timeout`.
+    ///
+    /// The timeout is the point of these tests: a healthy endpoint answers promptly even while
+    /// another client is misbehaving, so a client-side read timeout is a server failure.
+    fn status_within(port: u16, request: &[u8], timeout: Duration) -> u16 {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        stream
+            .set_read_timeout(Some(timeout))
+            .expect("read timeout");
+
+        let _ = stream.write_all(request);
+
+        let mut raw = Vec::new();
+        match stream.read_to_end(&mut raw) {
+            Ok(_) => parse(raw).status,
+            Err(error) => panic!("no reply within {timeout:?}: {error}"),
         }
     }
 
@@ -888,5 +1179,246 @@ mod tests {
 
         drop(occupied);
         server.stop();
+    }
+
+    /// A request may declare a body length far beyond the cap and then send nothing. The listener
+    /// answers it and stays up: a fresh `hello` must still be served promptly. The declared length
+    /// is deliberately enormous so that any code path that materialises a buffer of that size (or
+    /// drains that many bytes on teardown) aborts the whole test process rather than failing
+    /// quietly.
+    #[test]
+    fn huge_declared_length_without_body_does_not_kill_the_server() {
+        let port = 47400;
+        let store = Arc::new(MemStore::default());
+        store.set(auth::TOKEN_ACCOUNT, "tok").unwrap();
+        let bridge = Arc::new(FakeBridge::default());
+        let pairing = Arc::new(Mutex::new(None));
+        let server = start(
+            store,
+            bridge,
+            pairing,
+            "test",
+            &[port],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        let host = format!("127.0.0.1:{port}");
+
+        // Announce a body far larger than the cap, send none of it and keep the socket open.
+        let _offender = hold_open(
+            port,
+            &build(
+                "POST",
+                "/v1/results?project=x",
+                &host,
+                Some("tok"),
+                99_999_999_999_999,
+                &[],
+            ),
+        );
+
+        let status = status_within(
+            port,
+            &build("GET", "/v1/hello", &host, None, 0, &[]),
+            Duration::from_secs(3),
+        );
+        assert_eq!(
+            status, 200,
+            "a huge declared length must not take the server down"
+        );
+
+        server.stop();
+    }
+
+    /// The same oversized-body scenario on the unauthenticated `projects` path (no stored token, so
+    /// the request would otherwise be answered 401). The endpoint must stay up regardless.
+    #[test]
+    fn a_huge_declared_length_on_the_unauthenticated_projects_path_does_not_kill_the_server() {
+        let port = 47401;
+        let store = Arc::new(MemStore::default());
+        let bridge = Arc::new(FakeBridge::default());
+        let pairing = Arc::new(Mutex::new(None));
+        let server = start(
+            store,
+            bridge,
+            pairing,
+            "test",
+            &[port],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        let host = format!("127.0.0.1:{port}");
+
+        let _offender = hold_open(
+            port,
+            &build("GET", "/v1/projects", &host, None, 1_000_000_000, &[]),
+        );
+
+        let status = status_within(
+            port,
+            &build("GET", "/v1/hello", &host, None, 0, &[]),
+            Duration::from_secs(3),
+        );
+        assert_eq!(
+            status, 200,
+            "an unauthenticated request with a huge declared length must not take the server down"
+        );
+
+        server.stop();
+    }
+
+    /// The oversized-body scenario on the authenticated `projects` path. A valid token must not
+    /// change the outcome: the endpoint stays up.
+    #[test]
+    fn a_huge_declared_length_on_the_authenticated_projects_path_does_not_kill_the_server() {
+        let port = 47402;
+        let store = Arc::new(MemStore::default());
+        store.set(auth::TOKEN_ACCOUNT, "tok").unwrap();
+        let bridge = Arc::new(FakeBridge::default());
+        let pairing = Arc::new(Mutex::new(None));
+        let server = start(
+            store,
+            bridge,
+            pairing,
+            "test",
+            &[port],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        let host = format!("127.0.0.1:{port}");
+
+        let _offender = hold_open(
+            port,
+            &build("GET", "/v1/projects", &host, Some("tok"), 1_000_000_000, &[]),
+        );
+
+        let status = status_within(
+            port,
+            &build("GET", "/v1/hello", &host, None, 0, &[]),
+            Duration::from_secs(3),
+        );
+        assert_eq!(
+            status, 200,
+            "an authenticated request with a huge declared length must not take the server down"
+        );
+
+        server.stop();
+    }
+
+    /// One client announces a body, sends part of it and then stalls with the socket open. A second
+    /// client's `hello` must still be answered within the client's own read timeout: a single
+    /// straggler must not hold up everyone else.
+    #[test]
+    fn a_stalled_body_does_not_block_other_requests() {
+        let port = 47403;
+        let store = Arc::new(MemStore::default());
+        let bridge = Arc::new(FakeBridge::default());
+        let pairing = Arc::new(Mutex::new(None));
+        let server = start(
+            store,
+            bridge,
+            pairing,
+            "test",
+            &[port],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        let host = format!("127.0.0.1:{port}");
+
+        // Client A: a 100-byte body of which only five bytes arrive, then silence, socket held.
+        let _stalled = hold_open(port, &build("POST", "/v1/pair", &host, None, 100, &[b'{'; 5]));
+
+        // Client B: a fresh connection that must be served promptly.
+        let status = status_within(
+            port,
+            &build("GET", "/v1/hello", &host, None, 0, &[]),
+            Duration::from_secs(3),
+        );
+        assert_eq!(status, 200, "a stalled body must not block another request");
+
+        server.stop();
+    }
+
+    /// The same straggler as above, with a body larger than the request head, so the endpoint reads
+    /// it on that connection's own thread while the peer stalls. A body the endpoint must consume
+    /// must not hold up another client either.
+    #[test]
+    fn a_stalled_body_that_reaches_the_endpoint_does_not_block_other_requests() {
+        let port = 47405;
+        let store = Arc::new(MemStore::default());
+        let bridge = Arc::new(FakeBridge::default());
+        let pairing = Arc::new(Mutex::new(None));
+        let server = start(
+            store,
+            bridge,
+            pairing,
+            "test",
+            &[port],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        let host = format!("127.0.0.1:{port}");
+
+        // Client A: a 4 KiB body of which only five bytes arrive, then silence, socket held.
+        let _stalled = hold_open(port, &build("POST", "/v1/pair", &host, None, 4096, &[b'{'; 5]));
+
+        // Client B: a fresh connection that must be served promptly.
+        let status = status_within(
+            port,
+            &build("GET", "/v1/hello", &host, None, 0, &[]),
+            Duration::from_secs(3),
+        );
+        assert_eq!(status, 200, "a stalled body must not block another request");
+
+        server.stop();
+    }
+
+    /// `stop()` must return promptly even while a request is sitting in the bridge. Here the fake
+    /// bridge sleeps for three seconds, so a `stop()` that waited for the in-flight request would
+    /// take at least that long.
+    #[test]
+    fn stop_does_not_wait_for_an_in_flight_request() {
+        let port = 47404;
+        let store = Arc::new(MemStore::default());
+        store.set(auth::TOKEN_ACCOUNT, "tok").unwrap();
+        let bridge = Arc::new(FakeBridge {
+            sleep: Duration::from_secs(3),
+            ..FakeBridge::default()
+        });
+        let pairing = Arc::new(Mutex::new(None));
+        let server = start(
+            store,
+            bridge.clone(),
+            pairing,
+            "test",
+            &[port],
+            Duration::from_secs(10),
+        )
+        .unwrap();
+        let host = format!("127.0.0.1:{port}");
+
+        // Start a request that will be parked in the (slow) bridge.
+        let request = build("GET", "/v1/projects", &host, Some("tok"), 0, &[]);
+        let client = thread::spawn(move || {
+            let _ = send(port, &request);
+        });
+
+        // Wait until the request has actually reached the bridge before calling stop().
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while bridge.calls() == 0 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(bridge.calls() >= 1, "the request never reached the bridge");
+
+        let started = Instant::now();
+        server.stop();
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "stop() waited for an in-flight request: {elapsed:?}"
+        );
+
+        let _ = client.join();
     }
 }

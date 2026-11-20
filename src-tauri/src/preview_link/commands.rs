@@ -135,15 +135,20 @@ pub struct PairCode {
 }
 
 /// Starts the live link and returns the port it listens on. Idempotent.
-#[tauri::command]
+///
+/// Async so a bind and its acceptors never run on the main thread. The borrowed `State` argument
+/// forces the `Result` return type; the frontend is unaffected.
+#[tauri::command(async)]
 pub fn preview_link_start(state: State<'_, LinkState>) -> Result<u16, String> {
     state.start()
 }
 
-/// Stops the live link.
-#[tauri::command]
-pub fn preview_link_stop(state: State<'_, LinkState>) {
+/// Stops the live link. Async because `stop` joins the acceptor threads, and a `State` argument on
+/// an async command requires a `Result` return type.
+#[tauri::command(async)]
+pub fn preview_link_stop(state: State<'_, LinkState>) -> Result<(), String> {
     state.stop();
+    Ok(())
 }
 
 /// Reports whether the live link is running, on which port, and whether a plugin is paired.
@@ -153,26 +158,28 @@ pub fn preview_link_status(state: State<'_, LinkState>) -> LinkStatus {
 }
 
 /// Starts the live link if needed and returns a fresh pairing code.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn preview_pair_code(state: State<'_, LinkState>) -> Result<PairCode, String> {
     state.pair_code()
 }
 
 /// Forgets the paired plugin by deleting its token.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn preview_forget(state: State<'_, LinkState>) -> Result<(), String> {
     state.forget()
 }
 
-/// Delivers a webview answer to the endpoint request that is waiting for it.
-#[tauri::command]
+/// Delivers a webview answer to the endpoint request that is waiting for it. Async so it is never
+/// blocked behind main-thread work; a `State` argument forces the `Result` return type.
+#[tauri::command(async)]
 pub fn preview_reply(
     state: State<'_, LinkState>,
     id: u64,
     status: u16,
     body: serde_json::Value,
-) {
+) -> Result<(), String> {
     state.reply(id, status, body);
+    Ok(())
 }
 
 /// Brings the main window to the front, so a designer's results are never applied unseen.
