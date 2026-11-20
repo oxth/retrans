@@ -8,6 +8,8 @@ import { useMt } from "./ui/mt-store";
 import { UpdateAvailableToast } from "./ui/UpdateAvailableToast";
 import { TabBar } from "./ui/TabBar";
 import { installMenu } from "./platform/menu";
+import { onPreviewRequest } from "./platform/preview-link";
+import type { LiveRequest } from "./preview/live";
 import { MENU_ACTIONS } from "./ui/menu-actions";
 import { launch, startTabPersistence } from "./ui/restore";
 import { UnsavedPrompt } from "./ui/UnsavedPrompt";
@@ -39,6 +41,8 @@ function useQuitGuard() {
         })
         .then(keep, () => {});
       listen("quit-requested", () => void useApp.getState().requestClose("window")).then(keep, () => {});
+      // Live link: a designer's Figma plugin asks an open project for a preview or results.
+      listen<LiveRequest>("preview-request", (e) => void onPreviewRequest(e.payload)).then(keep, () => {});
     } catch {
       /* not running inside Tauri */
     }

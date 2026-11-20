@@ -10,6 +10,7 @@ import { ConflictDialog } from "./ConflictDialog";
 import { ExportDialog } from "./ExportDialog";
 import { LanguagesPage } from "./LanguagesPage";
 import { LoadErrors } from "./LoadErrors";
+import { PreviewResultsDialog } from "./PreviewDialogs";
 import { SharePage } from "./SharePage";
 import { type Page, PAGE_LABEL, Sidebar } from "./Sidebar";
 import { btnPrimary, btnSecondary } from "./Dialog";
@@ -26,6 +27,8 @@ import { isTextField } from "./edit-commands";
 export function AppShell() {
   const version = useSessionVersion();
   const session = useApp((s) => s.session);
+  const activeId = useApp((s) => s.activeId);
+  const previewResults = useApp((s) => s.previewResults);
   const error = useApp((s) => s.error);
   const sourceMissing = useApp((s) => s.sourceMissing);
   // Page, filters and hidden languages belong to the tab: they survive switching tabs.
@@ -36,6 +39,8 @@ export function AppShell() {
   const setUi = useApp((s) => s.setUi);
   const setPage = useCallback((p: Page) => setUi({ page: p }), [setUi]);
   const [viewMode, setMode] = useState<"list" | "table">("list");
+  // "Added N designer verdicts." after the live link's results are applied (same wording as Settings).
+  const [liveNote, setLiveNote] = useState<string | null>(null);
   const root = session?.data.root;
   const [dialog, setDialog] = useState<
     { kind: "add" | "translate" | "export" } | { kind: "rename" | "delete" | "code-key" | "link"; row: Row } | null
@@ -190,6 +195,11 @@ export function AppShell() {
             </span>
           )}
           </span>
+          {liveNote && (
+            <span role="status" className="text-xs text-ok">
+              {liveNote}
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-2">
             {session.workspace && (
               <button className={btnSecondary} onClick={() => setDialog({ kind: "export" })}>
@@ -263,6 +273,18 @@ export function AppShell() {
       {dialog?.kind === "export" && <ExportDialog session={session} onClose={() => setDialog(null)} />}
       {dialog?.kind === "code-key" && <SetCodeKeyDialog session={session} row={dialog.row.id} onClose={() => setDialog(null)} />}
       {dialog?.kind === "link" && <LinkDialog session={session} row={dialog.row.id} onClose={() => setDialog(null)} />}
+      {/* Designer results from the live link: shown for the tab they belong to, cleared on apply. */}
+      {previewResults && previewResults.tabId === activeId && (
+        <PreviewResultsDialog
+          session={session}
+          diff={previewResults.diff}
+          onClose={() => useApp.setState({ previewResults: null })}
+          onApplied={(n) => {
+            useApp.setState({ previewResults: null });
+            setLiveNote(`Added ${n} designer ${n === 1 ? "verdict" : "verdicts"}. Review and save.`);
+          }}
+        />
+      )}
       <ConflictDialog />
     </div>
   );

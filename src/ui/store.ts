@@ -11,6 +11,7 @@ import { resolveFigmaConflict, syncFromFigma } from "../figma/sync";
 import { type Journal, journalPath, readJournal } from "../core/recovery";
 import { parseState, STATE_PATH } from "../core/state-file";
 import { isRelevantChange, isSourceChange } from "../core/watch-filter";
+import type { ResultsDiff } from "../preview/results";
 import { resolveSyncConflict, syncFromSource, type SyncResult } from "../workspace/sync";
 import { BASELINE_PATH, WORKSPACE_META_PATH } from "../workspace/meta";
 import { type Fs, FsError, joinPath } from "../platform/fs";
@@ -172,6 +173,13 @@ export interface AppState {
   uiRequest: { kind: UiRequestKind; n: number } | null;
   requestUi(kind: UiRequestKind): void;
   clearUiRequest(): void;
+  /**
+   * Designer results from the live link, waiting for the user to review them (null when none).
+   * `tabId` is the tab they belong to; the dialog shows only while that tab is active.
+   */
+  previewResults: { tabId: string; diff: ResultsDiff } | null;
+  /** Shows the results for a tab; a newer request replaces the open dialog. */
+  showPreviewResults(tabId: string, diff: ResultsDiff): void;
   /** Undo / redo the active tab's last step (see ProjectSession.undo). */
   undo(): void;
   redo(): void;
@@ -377,6 +385,7 @@ export const useApp = create<AppState>((set, get) => {
   notice: null,
   ...emptyFlat(),
   closePrompt: null,
+  previewResults: null,
 
   openPrefs(section) {
     set({ prefsOpen: true, prefsSection: section ?? null });
@@ -440,7 +449,7 @@ export const useApp = create<AppState>((set, get) => {
     const ids = get().tabs.map((t) => t.id);
     const rts = ids.map((id) => runtimes.get(id)).filter((r): r is TabRuntime => !!r);
     for (const id of ids) runtimes.delete(id);
-    set({ tabs: [], activeId: null, ...emptyFlat(), closePrompt: null, notice: null });
+    set({ tabs: [], activeId: null, ...emptyFlat(), closePrompt: null, notice: null, previewResults: null });
     for (const rt of rts) await teardown(rt);
   },
 
@@ -684,6 +693,10 @@ export const useApp = create<AppState>((set, get) => {
   },
   clearUiRequest() {
     set({ uiRequest: null });
+  },
+
+  showPreviewResults(tabId, diff) {
+    set({ previewResults: { tabId, diff } });
   },
 
   undo() {
