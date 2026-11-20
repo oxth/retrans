@@ -4,7 +4,7 @@ The Figma plugin's own versions, separate from the Retrans app's. A push to `mai
 plugin releases the newest version below if it hasn't been released yet (tag `figma-plugin-v<version>`).
 To release a change, add a section for the new version at the top.
 
-## [0.2.0] - 2026-11-20
+## [1.0.0] - 2026-11-20
 
 ### Improvements
 
