@@ -27,6 +27,9 @@ const platform = typeof navigator === "undefined" ? "" : navigator.userAgent;
 /** What the system calls its bin, and the button that shows a folder in the file manager. */
 const TRASH = /Windows/i.test(platform) ? "Recycle Bin" : "Trash";
 const SHOW_FOLDER = /Mac/i.test(platform) ? "Show in Finder" : /Windows/i.test(platform) ? "Show in Explorer" : "Show folder";
+/** Shown when a picked folder holds nothing Retrans can open; it names every format detection looks for. */
+export const NOTHING_FOUND =
+  "No translations found here. Retrans looks for next-i18next, Paraglide, TypeScript locale modules or Figma Variables (.tokens.json).";
 
 export function StartScreen() {
   const { fs, openProject } = useApp();
@@ -52,6 +55,19 @@ export function StartScreen() {
    */
   const [removing, setRemoving] = useState<{ r: RecentProject; trashable: boolean; inTab: boolean } | null>(null);
   const [alsoTrash, setAlsoTrash] = useState(false);
+  /** The start action that is running (picking, scanning, extracting, making the sample): the others wait. */
+  const [busy, setBusy] = useState<string | null>(null);
+  const runBusy = (key: string, fn: () => Promise<void>) => async () => {
+    if (busy) return;
+    setBusy(key);
+    try {
+      await fn();
+    } finally {
+      setBusy(null);
+    }
+  };
+  // Projects open in a tab: their recent row says so (clicking one switches to its tab).
+  const openRoots = new Set(useApp((s) => s.tabs).map((t) => normRoot(t.root)));
 
   useEffect(() => {
     let live = true;
@@ -113,7 +129,7 @@ export function StartScreen() {
     setMessage(null);
     try {
       const d = await detectProject(fs, root);
-      if (!d) setMessage("No next-i18next or Paraglide project found in this folder.");
+      if (!d) setMessage(NOTHING_FOUND);
       return d;
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
@@ -155,7 +171,7 @@ export function StartScreen() {
     }
     const modes = await figmaModesIn(fs, root);
     if (modes.length) setFigmaHere({ root, modes });
-    else setMessage("No next-i18next or Paraglide project found in this folder.");
+    else setMessage(NOTHING_FOUND);
     return null;
   };
 
@@ -267,16 +283,16 @@ export function StartScreen() {
 
   return (
     <main className="flex min-h-0 flex-1 justify-center overflow-auto bg-panel p-8 text-fg">
-      <div className="my-auto w-full max-w-2xl">
+      <div className="mb-8 mt-[12vh] w-full max-w-2xl">
         {/* Settings is the gear in the tab bar, shown on this screen too. */}
         <div className="flex items-center gap-3">
           <AppIcon size={44} />
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Retrans</h1>
-            <p className="text-sm text-muted">Edit next-i18next and Paraglide translations side by side.</p>
+            <p className="text-sm text-muted">Edit your app's translations side by side: next-i18next, Paraglide, TypeScript or Figma Variables.</p>
           </div>
           <button type="button" onClick={() => useApp.getState().openWelcome()}
-            className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted hover:bg-hover hover:text-fg">
+            className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-sm text-muted hover:bg-hover hover:text-fg">
             <Icon name="info" size={15} />
             New here? Get started
           </button>
@@ -284,36 +300,53 @@ export function StartScreen() {
         <div className="mt-8 grid gap-3 sm:grid-cols-3">
           {(
             [
-              { label: "Open project", hint: "A folder with next-i18next, Paraglide or TypeScript translations.", icon: "folder", run: chooseFolder, main: true },
-              { label: "New project", hint: "Start an empty project and pick its languages.", icon: "folderPlus", run: () => setWizard(true) },
-              { label: "Open translator package…", hint: "A .zip a developer sent you to translate.", icon: "package", run: openPackage },
+              { label: "Open project", text: "Open project…", busyText: "Opening…", hint: "A folder with next-i18next, Paraglide, TypeScript or Figma translations.", icon: "folder", run: chooseFolder, main: true },
+              { label: "New project", text: "New project…", busyText: "New project…", hint: "Start an empty project and pick its languages.", icon: "folderPlus", run: async () => setWizard(true) },
+              { label: "Open translator package…", text: "Open translator package…", busyText: "Extracting…", hint: "A .zip a developer sent you to translate.", icon: "package", run: openPackage },
             ] as const
           ).map((a, i) => (
             <button
               key={a.label}
               aria-label={a.label}
               aria-describedby={`start-hint-${i}`}
-              onClick={() => void a.run()}
-              className={`flex flex-col items-start gap-2 rounded-xl border p-4 text-left ${
+              aria-busy={busy === a.label || undefined}
+              disabled={!!busy}
+              onClick={() => void runBusy(a.label, a.run)()}
+              className={`flex flex-col items-start gap-2 rounded-xl border p-4 text-left disabled:cursor-wait ${busy && busy !== a.label ? "disabled:opacity-60" : ""} ${
                 "main" in a ? "border-brand bg-brand text-on-brand hover:bg-brand-hover" : "border-line bg-surface hover:border-line-strong hover:bg-hover"
               }`}
             >
-              <Icon name={a.icon} size={20} className={"main" in a ? "" : "text-brand"} />
-              <span className="font-semibold">{a.label}</span>
+              {busy === a.label ? (
+                <span aria-hidden="true" className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              ) : (
+                <Icon name={a.icon} size={20} className={"main" in a ? "" : "text-muted"} />
+              )}
+              <span className="font-semibold">{busy === a.label ? a.busyText : a.text}</span>
               <span id={`start-hint-${i}`} className={`text-xs ${"main" in a ? "opacity-90" : "text-muted"}`}>{a.hint}</span>
             </button>
           ))}
         </div>
-        <button type="button" onClick={() => void openSample()}
-          className="mt-3 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-sm text-muted hover:text-fg">
-          <Icon name="sparkles" size={15} className="text-brand" />
-          No translations at hand? <span className="font-medium text-brand-ink underline decoration-brand-line underline-offset-2">Try a sample project</span>
+        <button type="button" onClick={() => void runBusy("sample", openSample)()} disabled={!!busy} aria-busy={busy === "sample" || undefined}
+          className="mt-3 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-sm text-muted hover:text-fg disabled:cursor-wait">
+          <Icon name="sparkles" size={15} />
+          No translations at hand?{" "}
+          <span className="font-medium text-fg underline decoration-line-strong underline-offset-2">
+            {busy === "sample" ? "Making the sample project…" : "Try a sample project"}
+          </span>
         </button>
         {message && (
-          <p role="alert" className="mt-4 flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger">
-            <Icon name="alert" size={15} />
-            {message}
-          </p>
+          <div role="alert" className="mt-4 flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger">
+            <Icon name="alert" size={15} className="shrink-0" />
+            <span className="flex-1">{message}</span>
+            {message === NOTHING_FOUND && (
+              <button className={`${btnSecondary} shrink-0`} onClick={() => void runBusy("Open project", chooseFolder)()}>
+                Choose another folder…
+              </button>
+            )}
+            <button aria-label="Dismiss" className="shrink-0 rounded p-1 hover:bg-surface/60" onClick={() => setMessage(null)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
         )}
         {recent.length > 0 && (
           <section className="mt-10">
@@ -331,7 +364,7 @@ export function StartScreen() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Escape" && query && (e.stopPropagation(), setQuery(""))}
-                  className={`${inputCls} py-1 pl-8 text-xs`}
+                  className={`${inputCls} py-1 pl-8 text-sm`}
                 />
               </label>
             </div>
@@ -346,12 +379,15 @@ export function StartScreen() {
                 return (
                   <li key={r.root} className="group/item relative">
                     <button onClick={() => openRecent(r)} className="group flex w-full items-center gap-3 py-3 pl-4 pr-12 text-left hover:bg-hover">
-                      <Icon name={isGone ? "alert" : "folder"} size={18} className={isGone ? "text-warn" : "text-muted group-hover:text-brand"} />
+                      <Icon name={isGone ? "alert" : "folder"} size={18} className={isGone ? "text-warn" : "text-muted group-hover:text-fg"} />
                       <span className="min-w-0 flex-1">
-                        <span className={`block font-medium ${isGone ? "text-muted" : ""}`}>{r.name}</span>
+                        <span className={`flex items-center gap-2 font-medium ${isGone ? "text-muted" : ""}`}>
+                          {r.name}{" "}
+                          {openRoots.has(normRoot(r.root)) && <span className="rounded bg-sunken px-1.5 text-xs font-normal text-fg-2">Open</span>}
+                        </span>
                         <span className={`block truncate font-mono text-xs text-muted ${isGone ? "line-through" : ""}`}>{r.root}</span>
                       </span>
-                      {isGone && <span className="shrink-0 rounded bg-warn-soft px-1.5 py-0.5 text-[0.6875rem] font-medium text-warn">Folder not found</span>}
+                      {isGone && <span className="shrink-0 rounded bg-warn-soft px-1.5 py-0.5 text-xs font-medium text-warn">Folder not found</span>}
                     </button>
                     <button
                       aria-label={`Remove ${r.name} from recent projects`}

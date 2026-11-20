@@ -8,7 +8,7 @@ import { useApp } from "./store";
 function Point({ icon, title, children }: { icon: IconName; title: string; children: ReactNode }) {
   return (
     <li className="flex gap-3 py-2.5 text-sm leading-relaxed text-fg-2">
-      <Icon name={icon} size={16} className="mt-[3px] shrink-0 text-brand" />
+      <Icon name={icon} size={16} className="mt-[3px] shrink-0 text-muted" />
       <span>
         <strong className="font-semibold text-fg">{title}</strong> {children}
       </span>
@@ -90,7 +90,7 @@ function Choices({ onSample, onOpen, onAi }: { onSample(): void; onOpen(): void;
 function Banner({ step }: { step: number }) {
   const cols = 14;
   return (
-    <div className="relative h-24 shrink-0 overflow-hidden bg-gradient-to-br from-[#4f46e5] to-[#0d9488]">
+    <div className="relative h-24 shrink-0 overflow-hidden bg-gradient-to-br from-brand to-st-reviewed">
       <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${cols * 40} 112`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
         {Array.from({ length: 3 }, (_, r) =>
           Array.from({ length: cols }, (_, c) => {
@@ -100,7 +100,7 @@ function Banner({ step }: { step: number }) {
             return (
               <rect key={`${r}-${c}`} x={c * 40 + 6} y={r * 34 + 10} width={key ? 22 : 30} height={20} rx={6}
                 fill={missing ? "none" : "#fff"} opacity={missing ? 1 : key ? 0.14 : 0.26}
-                stroke={missing ? "#fca5a5" : undefined} strokeWidth={missing ? 2.5 : undefined} strokeDasharray={missing ? "5 4" : undefined} />
+                stroke={missing ? "var(--c-danger-line)" : undefined} strokeWidth={missing ? 2.5 : undefined} strokeDasharray={missing ? "5 4" : undefined} />
             );
           }),
         )}
