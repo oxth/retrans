@@ -1,12 +1,16 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { isValidLocale } from "../core/session-helpers";
 import type { ProjectSession } from "../core/session";
 import { readFigmaFolder } from "../figma/sync";
+import { parseResults } from "../preview/format";
+import { diffResults, type ResultsDiff } from "../preview/results";
 import { joinPath } from "../platform/fs";
 import { FIGMA_DEFAULT_DIR, isSafeLocalesDir } from "../workspace/meta";
-import { btnPrimary } from "./Dialog";
+import { btnPrimary, btnSecondary } from "./Dialog";
 import { btnRow, fieldBase, fieldCls, Group, Row } from "./settings-ui";
 import { FigmaImportDialog } from "./FigmaImportDialog";
+import { PreviewExportDialog, PreviewResultsDialog } from "./PreviewDialogs";
 import { saveFigma } from "./figma-meta";
 import { useApp, useSessionVersion } from "./store";
 
@@ -22,6 +26,9 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
   const [found, setFound] = useState<string[]>([]);
   const [adding, setAdding] = useState<{ mode: string; code: string } | null>(null);
   const [importing, setImporting] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [results, setResults] = useState<ResultsDiff | null>(null);
+  const [previewNote, setPreviewNote] = useState<{ ok: boolean; text: string } | null>(null);
   const currentDir = figma?.dir ?? FIGMA_DEFAULT_DIR;
 
   useEffect(() => {
@@ -48,6 +55,21 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
     else delete next[mode];
     saveFigma(session, { modes: next });
   };
+
+  async function importResults() {
+    setPreviewNote(null);
+    try {
+      const picked = await open({ multiple: false, directory: false, filters: [{ name: "Retrans results", extensions: ["json"] }] });
+      if (typeof picked !== "string") return;
+      const parsed = parseResults(await fs.readText(picked));
+      if (!parsed.ok) return setPreviewNote({ ok: false, text: parsed.error });
+      const d = diffResults(session, parsed.results);
+      if (!d.ok) return setPreviewNote({ ok: false, text: d.error });
+      setResults(d.diff);
+    } catch (e) {
+      setPreviewNote({ ok: false, text: `Import failed: ${e instanceof Error ? e.message : String(e)}` });
+    }
+  }
 
   return (
     <>
@@ -115,7 +137,30 @@ export function FigmaSettings({ session }: { session: ProjectSession }) {
           <button type="button" className={btnPrimary} onClick={() => setImporting(true)}>Import Figma files…</button>
         </Row>
       </Group>
+      {figma && <Group
+        label="Designer preview"
+        footer={previewNote ? <span role={previewNote.ok ? "status" : "alert"} className={previewNote.ok ? "text-ok" : "text-danger"}>{previewNote.text}</span> : "A designer checks drafts in Figma with the Retrans Preview plugin."}
+      >
+        <Row label="Export preview" hint="Drafts of one language, for the designer to load in Figma.">
+          <button type="button" className={btnSecondary} onClick={() => setPreviewing(true)}>Export preview for a designer…</button>
+        </Row>
+        <Row label="Import results" hint="The designer's Fits / Too long marks.">
+          <button type="button" className={btnSecondary} onClick={() => void importResults()}>Import designer results…</button>
+        </Row>
+      </Group>}
       {importing && <FigmaImportDialog session={session} onClose={() => setImporting(false)} />}
+      {previewing && <PreviewExportDialog session={session} onClose={() => setPreviewing(false)} />}
+      {results && (
+        <PreviewResultsDialog
+          session={session}
+          diff={results}
+          onClose={() => setResults(null)}
+          onApplied={(n) => {
+            setResults(null);
+            setPreviewNote({ ok: true, text: `Added ${n} designer ${n === 1 ? "verdict" : "verdicts"}. Review and save.` });
+          }}
+        />
+      )}
     </>
   );
 }
