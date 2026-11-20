@@ -1,5 +1,5 @@
 /** Key/language management, saving, conflicts. Same jsdom virtualizer stubs as views.test.tsx. */
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { resolve } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -225,6 +225,25 @@ describe("languages", () => {
     await userEvent.click(screen.getByRole("button", { name: "Sort A–Z" }));
     expect(s.state.project.localeOrder).toBeUndefined();
     expect(s.displayLocales()).toEqual(["en", "de", "ja", "th"]);
+  });
+
+  it("a language can be dragged by its grip to a new place", async () => {
+    const s = await open(nested());
+    act(() => s.addLanguage("de"));
+    act(() => s.addLanguage("ja")); // order: en (base), de, ja, th
+    await userEvent.click(screen.getByRole("button", { name: "Languages" }));
+    // jsdom has no layout: each draggable row is 40 px tall, one under the other.
+    const rows = [...document.querySelectorAll<HTMLElement>("[data-lang-row]")];
+    rows.forEach((el, i) => {
+      el.getBoundingClientRect = () => ({ top: i * 40, height: 40, left: 0, width: 600, right: 600, bottom: i * 40 + 40, x: 0, y: i * 40, toJSON() {} }) as DOMRect;
+    });
+    const grip = rows[0].querySelector<HTMLElement>('[title="Drag to reorder"]')!; // de
+    fireEvent.pointerDown(grip, { button: 0, clientY: 20 });
+    fireEvent.pointerMove(window, { clientY: 105 }); // de's middle at 105: past ja (60) and th (100)
+    expect(rows[0].style.transform).toBe("translateY(85px)");
+    fireEvent.pointerUp(window);
+    expect(s.displayLocales()).toEqual(["en", "ja", "th", "de"]);
+    expect(s.state.project.localeOrder).toEqual(["ja", "th", "de"]);
   });
 
   it("adding a next-i18next language shows the copyable snippet", async () => {

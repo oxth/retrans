@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { localesSnippet } from "../formats/next-i18next";
 import type { ProjectSession } from "../core/session";
 import { btnGhost, btnPrimary, Dialog, inputCls, btnSecondary, btnDanger } from "./Dialog";
@@ -28,13 +28,64 @@ export function LanguagesPage({ session, stats }: { session: ProjectSession; sta
   const shown = session.displayLocales();
   const others = shown.filter((l) => l !== baseLocale);
   const custom = !!session.state.project.localeOrder?.length;
+  const place = (l: string, to: number) => {
+    const order = others.filter((x) => x !== l);
+    order.splice(Math.max(0, Math.min(to, order.length)), 0, l);
+    if (order.some((x, k) => x !== others[k])) session.setProjectSetting({ localeOrder: order });
+  };
   const move = (l: string, delta: -1 | 1) => {
-    const order = [...others];
-    const i = order.indexOf(l);
-    const j = i + delta;
-    if (i < 0 || j < 0 || j >= order.length) return;
-    [order[i], order[j]] = [order[j], order[i]];
-    session.setProjectSetting({ localeOrder: order });
+    const i = others.indexOf(l);
+    if (i >= 0 && i + delta >= 0 && i + delta < others.length) place(l, i + delta);
+  };
+
+  // Dragging a row by its grip: it follows the pointer, the rows it passes make room, and it lands where it's
+  // dropped. Pointer events, like the tab bar (the webview's file-drop handling can swallow HTML drag and drop).
+  const [drag, setDrag] = useState<{ l: string; dy: number; from: number; to: number; rects: Array<{ top: number; height: number }> } | null>(null);
+  const dragRef = useRef(drag);
+  const startDrag = (e: React.PointerEvent<HTMLElement>, l: string) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const list = e.currentTarget.closest("ul");
+    if (!list) return;
+    const rects = [...list.querySelectorAll<HTMLElement>("[data-lang-row]")].map((el) => {
+      const r = el.getBoundingClientRect();
+      return { top: r.top, height: r.height };
+    });
+    const from = others.indexOf(l);
+    const startY = e.clientY;
+    dragRef.current = { l, dy: 0, from, to: from, rects };
+    setDrag(dragRef.current);
+    const moveTo = (ev: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const dy = ev.clientY - startY;
+      const me = d.rects[d.from];
+      const middle = me.top + me.height / 2 + dy;
+      const to = d.rects.filter((r, k) => k !== d.from && r.top + r.height / 2 < middle).length;
+      dragRef.current = { ...d, dy, to };
+      setDrag(dragRef.current);
+    };
+    const end = () => {
+      window.removeEventListener("pointermove", moveTo);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      const d = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      if (d && d.to !== d.from) place(d.l, d.to);
+    };
+    window.addEventListener("pointermove", moveTo);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  };
+  /** How far a row is drawn from its place during a drag. */
+  const offset = (k: number): number => {
+    if (!drag || k < 0) return 0;
+    if (k === drag.from) return drag.dy;
+    const room = drag.rects[drag.from].height;
+    if (drag.from < drag.to && k > drag.from && k <= drag.to) return -room;
+    if (drag.from > drag.to && k >= drag.to && k < drag.from) return room;
+    return 0;
   };
 
   const addNs = () => {
@@ -66,12 +117,29 @@ export function LanguagesPage({ session, stats }: { session: ProjectSession; sta
           const s = stats.get(l) ?? { done: 0, total: 0 };
           const at = others.indexOf(l);
           const pct = s.total ? Math.round((s.done / s.total) * 100) : 100;
+          const dy = offset(at);
+          const dragged = drag?.l === l;
           return (
-            <li key={l} className="flex items-center gap-3 px-3 py-2 text-sm">
-              {/* The base is always first; the others move with ↑ / ↓. */}
-              <div className="flex w-12 shrink-0 gap-0.5">
+            <li
+              key={l}
+              {...(l !== baseLocale ? { "data-lang-row": "" } : {})}
+              style={dy ? { transform: `translateY(${dy}px)` } : undefined}
+              className={`relative flex items-center gap-3 bg-surface px-3 py-2 text-sm ${
+                dragged ? "z-10 shadow-pop" : drag ? "transition-transform duration-150 motion-reduce:transition-none" : ""
+              }`}
+            >
+              {/* The base is always first; the others move by dragging the grip, or with ↑ / ↓. */}
+              <div className="flex w-[4.5rem] shrink-0 items-center gap-0.5">
                 {l !== baseLocale && (
                   <>
+                    <span
+                      aria-hidden="true"
+                      title="Drag to reorder"
+                      className={`touch-none rounded p-1 text-faint hover:bg-hover hover:text-fg ${dragged ? "cursor-grabbing" : "cursor-grab"}`}
+                      onPointerDown={(e) => startDrag(e, l)}
+                    >
+                      <Icon name="grip" size={14} />
+                    </span>
                     <button
                       aria-label={`Move ${localeLabel(l)} (${l}) up`}
                       title="Move up"
