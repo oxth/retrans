@@ -33,6 +33,7 @@ export function answerLive(
         .map(({ id, name, session }) => ({
           id,
           name,
+          ...(session.state.project.id ? { projectId: session.state.project.id } : {}),
           baseLocale: session.data.baseLocale,
           locales: session.data.locales,
         })),

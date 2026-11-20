@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Fetch, LinkError, findRetrans, liveApi, pair, sendTarget } from "./live";
+import { type Fetch, LinkError, findRetrans, linkAfterError, liveApi, pickProject, pair, sendResults } from "./live";
 
 const json = (status: number, body: unknown): Response =>
   ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body), json: async () => body }) as Response;
@@ -94,22 +94,63 @@ describe("pair", () => {
   });
 });
 
-describe("sendTarget", () => {
-  it("uses the project picked at Get drafts, not the bundle's own id", () => {
-    expect(sendTarget("tab-7", "tab-9")).toBe("tab-7");
-  });
-  it("falls back to the picker for a file-loaded bundle", () => {
-    expect(sendTarget(undefined, "tab-9")).toBe("tab-9");
-  });
-  it("is null when there is no Retrans project", () => {
-    expect(sendTarget(undefined, "")).toBeNull();
-  });
-  it("posts results to the picked id", async () => {
+describe("sendResults", () => {
+  const base = "http://localhost:47321";
+  const results = { retransPreviewResults: 1 as const, sourceProjectId: "proj-1", locale: "th", checkedAt: "x", results: [] };
+  it("finds the project by its stable id when the saved tab id is stale (Retrans reopened)", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
-    const f = fake({ "http://localhost:47321/v1/results?project=tab-7": () => json(202, {}) }, calls);
-    const results = { retransPreviewResults: 1 as const, sourceProjectId: "uuid-not-a-tab", locale: "th", checkedAt: "x", results: [] };
-    await liveApi(f, "http://localhost:47321", "tok").send(sendTarget("tab-7", "")!, results);
-    expect(calls[0].url).toBe("http://localhost:47321/v1/results?project=tab-7");
+    const f = fake({
+      [`${base}/v1/projects`]: () => json(200, [
+        { id: "tab-other", name: "Other", projectId: "proj-2", baseLocale: "en", locales: ["en", "th"] },
+        { id: "tab-new", name: "Shop", projectId: "proj-1", baseLocale: "en", locales: ["en", "th"] },
+      ]),
+      [`${base}/v1/results?project=tab-new`]: () => json(202, {}),
+    }, calls);
+    await sendResults(liveApi(f, base, "tok"), results, "Shop");
+    expect(calls.map((c) => c.url)).toEqual([`${base}/v1/projects`, `${base}/v1/results?project=tab-new`]);
+    expect(calls[1].init?.method).toBe("POST");
+  });
+  it("asks to open the project when no open project matches, and posts nothing", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const f = fake({ [`${base}/v1/projects`]: () => json(200, [{ id: "tab-old", name: "Shop", baseLocale: "en", locales: ["en", "th"] }]) }, calls);
+    const err = await sendResults(liveApi(f, base, "tok"), results, "Shop").catch((e) => e);
+    expect(err).toBeInstanceOf(LinkError);
+    expect(err.message).toBe("Open Shop in Retrans to send these results.");
+    expect(calls.map((c) => c.url)).toEqual([`${base}/v1/projects`]);
+  });
+  it("says 'that project' when the name is unknown", async () => {
+    const f = fake({ [`${base}/v1/projects`]: () => json(200, []) });
+    const err = await sendResults(liveApi(f, base, "tok"), results).catch((e) => e);
+    expect(err.message).toBe("Open that project in Retrans to send these results.");
+  });
+});
+
+describe("linkAfterError", () => {
+  const link = { base: "http://localhost:47321", paired: true };
+  it("drops the link when Retrans can't be reached or timed out", () => {
+    expect(linkAfterError(link, new LinkError("Can't reach Retrans. Is it open?", 0))).toBeNull();
+  });
+  it("keeps the link for an answer from Retrans or any other error", () => {
+    expect(linkAfterError(link, new LinkError("x", 422))).toBe(link);
+    expect(linkAfterError(link, new LinkError("x", 401))).toBe(link);
+    expect(linkAfterError(link, new Error("x"))).toBe(link);
+  });
+});
+
+describe("pickProject", () => {
+  const list = [
+    { id: "tab-a", name: "A", projectId: "proj-a", baseLocale: "en", locales: ["en", "th"] },
+    { id: "tab-b", name: "B", projectId: "proj-b", baseLocale: "en", locales: ["en", "th"] },
+  ];
+  it("keeps the current pick while it is still open", () => {
+    expect(pickProject(list, "tab-b", "proj-a")).toBe("tab-b");
+  });
+  it("otherwise picks the project the loaded drafts came from", () => {
+    expect(pickProject(list, "tab-gone", "proj-b")).toBe("tab-b");
+  });
+  it("otherwise the first project, or none", () => {
+    expect(pickProject(list, "", undefined)).toBe("tab-a");
+    expect(pickProject([], "tab-a", "proj-a")).toBe("");
   });
 });
 

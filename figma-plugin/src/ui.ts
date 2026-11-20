@@ -1,7 +1,7 @@
 /** Retrans Preview, plugin window: load a preview file, list the strings, record verdicts, save results. */
 import { parseBundle, serializePreview } from "../../src/preview/format";
 import { type PluginState, toResults } from "./logic";
-import { LinkError, findRetrans, liveApi, pair, sendTarget } from "./live";
+import { LinkError, type RetransProject, findRetrans, linkAfterError, liveApi, pair, pickProject, sendResults } from "./live";
 import type { ToCode, ToUi } from "./protocol";
 
 const app = document.getElementById("app")!;
@@ -10,10 +10,9 @@ let selected = 0;
 let error: string | null = null;
 
 // Live link to the Retrans app on this computer.
-type Project = { id: string; name: string; baseLocale: string; locales: string[] };
 let link: { base: string; paired: boolean } | null | "searching" = "searching";
 let token: string | null = null;
-let projects: Project[] = [];
+let projects: RetransProject[] = [];
 let projectId = "";
 let locale = "";
 let includeReviewed = false;
@@ -45,7 +44,7 @@ function rowHtml(r: PluginState["rows"][number]): string {
 
 function liveHtml(): string {
   if (link === "searching") return `<p class="muted">Looking for Retrans…</p>`;
-  if (!link) return `<p class="muted">Open Retrans to connect, or use a file below.</p>`;
+  if (!link) return `<p class="muted">Open Retrans to connect, or use a file below.</p><div class="bar"><button id="retry">Try again</button></div>`;
   if (!token) {
     return `<div class="live"><strong>Connect to Retrans</strong>
       <p class="muted">Enter the 6-digit code shown in Retrans (Settings → Figma).</p>
@@ -56,9 +55,10 @@ function liveHtml(): string {
   return `<div class="live"><p><span class="ok">●</span> Connected to Retrans</p>
     ${p ? `<div class="bar">
       <select id="project" aria-label="Project">${projects.map((x) => `<option value="${esc(x.id)}" ${x.id === projectId ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>
-      <select id="locale" aria-label="Language">${targetLocales().map((l) => `<option value="${esc(l)}" ${l === locale ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
+      <select id="locale" aria-label="Language">${targetLocales().map((l) => `<option value="${esc(l)}" ${l === locale ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+      <button id="refresh" title="Reload the open projects" ${busy ? "disabled" : ""}>Refresh</button></div>
       <label><input type="checkbox" id="reviewed" ${includeReviewed ? "checked" : ""}> Include reviewed</label>
-      <div class="bar"><button class="primary" id="drafts" ${busy || !locale ? "disabled" : ""}>Get drafts</button></div>` : `<p class="muted">No projects are open in Retrans.</p>`}
+      <div class="bar"><button class="primary" id="drafts" ${busy || !locale ? "disabled" : ""}>Get drafts</button></div>` : `<p class="muted">No Figma-linked projects are open in Retrans.</p><div class="bar"><button id="refresh" ${busy ? "disabled" : ""}>Refresh</button></div>`}
     </div>`;
 }
 
@@ -84,10 +84,9 @@ function render(): void {
       <div class="bar">
         <button class="primary" id="save" ${checked ? "" : "disabled"}>Save results</button>
         <button id="copy" ${checked ? "" : "disabled"}>Copy results</button>
-        ${link && link !== "searching" && token ? `<button id="send" ${checked && !busy && sendTarget(state.projectId, projectId) ? "" : "disabled"}>Send to Retrans</button>` : ""}
+        ${link && link !== "searching" && token ? `<button id="send" ${checked && !busy ? "" : "disabled"}>Send to Retrans</button>` : ""}
         <button id="remove">Remove copies</button>
       </div>
-      ${link && link !== "searching" && token && !sendTarget(state.projectId, projectId) ? `<p class="muted">Get drafts from Retrans first, or save results to a file.</p>` : ""}
       ${sent ? `<p class="ok" role="status">Sent. Apply them in Retrans.</p>` : ""}` : `<p class="muted">Export a preview file from Retrans (Settings → Figma → Designer preview), then load it here.</p>`}`;
 }
 
@@ -112,6 +111,7 @@ async function live(run: () => Promise<void>): Promise<void> {
       token = null;
       post({ type: "token", token: null });
     }
+    link = linkAfterError(link, err);
     error = err instanceof Error ? err.message : String(err);
   } finally {
     busy = false;
@@ -121,7 +121,7 @@ async function live(run: () => Promise<void>): Promise<void> {
 
 async function loadProjects(): Promise<void> {
   projects = await api().projects();
-  if (!projectNow()) projectId = projects[0]?.id ?? "";
+  projectId = pickProject(projects, projectId, state.bundle?.sourceProjectId);
   if (!targetLocales().includes(locale)) locale = targetLocales()[0] ?? "";
 }
 
@@ -135,6 +135,8 @@ async function connect(): Promise<void> {
 }
 
 async function start(): Promise<void> {
+  link = "searching";
+  render();
   link = await findRetrans(fetch.bind(window));
   render();
   if (link && token) await live(loadProjects);
@@ -144,15 +146,22 @@ app.addEventListener("click", async (e) => {
   const t = e.target as HTMLElement;
   const row = t.closest<HTMLElement>("[data-key]");
   if (t.id === "pair") await connect();
+  else if (t.id === "retry") {
+    if (!busy) await start();
+  } else if (t.id === "refresh") await live(loadProjects);
   else if (t.id === "drafts") {
     await live(async () => {
+      const picked = projectId;
+      await loadProjects();
+      if (projectId !== picked) throw new Error("That project isn't open in Retrans any more. Pick a project and try again.");
       const bundle = await api().bundle(projectId, locale, includeReviewed);
       sent = false;
       post({ type: "bundle", bundle, fileName: projectNow()?.name ?? projectId, projectId });
     });
   } else if (t.id === "send") {
     await live(async () => {
-      await api().send(sendTarget(state.projectId, projectId)!, toResults(state, new Date()));
+      sent = false;
+      await sendResults(api(), toResults(state, new Date()), state.projectId ? state.fileName ?? undefined : undefined);
       sent = true;
     });
   } else if (t.id === "load") (document.getElementById("file") as HTMLInputElement).click();

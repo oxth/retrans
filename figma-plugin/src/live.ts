@@ -15,6 +15,9 @@ export const PROBE_TIMEOUT_MS = 1500;
 /** A little over the 10 s Retrans itself may wait for its window, so a slow but alive Retrans can still answer. */
 export const CALL_TIMEOUT_MS = 12000;
 
+/** A project open in Retrans: `id` is the tab id, which changes every time Retrans opens the project. */
+export interface RetransProject { id: string; name: string; projectId?: string; baseLocale: string; locales: string[] }
+
 class TimedOut extends Error {}
 
 /** Runs `work` with an abort signal; rejects with TimedOut if it has not finished in `ms`. */
@@ -80,7 +83,7 @@ export function liveApi(fetch: Fetch, base: string, token: string, timeoutMs = C
   const headers = { Authorization: `Bearer ${token}` };
   const q = encodeURIComponent;
   return {
-    async projects(): Promise<Array<{ id: string; name: string; baseLocale: string; locales: string[] }>> {
+    async projects(): Promise<RetransProject[]> {
       return JSON.parse(await call(fetch, `${base}/v1/projects`, { headers }, timeoutMs));
     },
     async bundle(project: string, locale: string, includeReviewed: boolean): Promise<PreviewBundle> {
@@ -110,7 +113,32 @@ export async function pair(fetch: Fetch, base: string, code: string, timeoutMs =
   }
 }
 
-/** The Retrans project to send results to: the one drafts came from, else the picked one; null when there is none. */
-export function sendTarget(draftsProjectId: string | undefined, pickedId: string): string | null {
-  return draftsProjectId || pickedId || null;
+/**
+ * Sends results to the project the drafts came from. Tab ids change when Retrans restarts or
+ * reopens a project, so results go by the stable project id.
+ */
+export async function sendResults(
+  api: { projects(): Promise<RetransProject[]>; send(project: string, results: PreviewResults): Promise<void> },
+  results: PreviewResults,
+  projectName?: string,
+): Promise<void> {
+  const projects = await api.projects();
+  const project = projects.find((p) => p.projectId !== undefined && p.projectId === results.sourceProjectId);
+  if (!project) throw new LinkError(`Open ${projectName || "that project"} in Retrans to send these results.`, 404);
+  await api.send(project.id, results);
+}
+
+/** Drops the link when Retrans can't be reached or timed out; any other error keeps it. */
+export function linkAfterError<L>(link: L, err: unknown): L | null {
+  return err instanceof LinkError && err.status === 0 ? null : link;
+}
+
+/** The project to show: the current pick if still open, else the one the drafts came from, else the first. */
+export function pickProject(projects: RetransProject[], current: string, sourceProjectId: string | undefined): string {
+  if (projects.some((p) => p.id === current)) return current;
+  if (sourceProjectId) {
+    const match = projects.find((p) => p.projectId === sourceProjectId);
+    if (match) return match.id;
+  }
+  return projects[0]?.id ?? "";
 }

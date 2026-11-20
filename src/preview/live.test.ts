@@ -54,7 +54,17 @@ describe("answerLive", () => {
       vi.fn(),
     );
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ id: "t1", name: "fixture", baseLocale: "th", locales: session.data.locales }]);
+    expect(res.body).toEqual([{ id: "t1", name: "fixture", projectId: "t1", baseLocale: "th", locales: session.data.locales }]);
+  });
+
+  it("gives each project its stable project id, apart from the tab id", async () => {
+    const session = await setup();
+    const res = answerLive(
+      [{ id: "tab-A", name: "fixture", session }],
+      { id: 1, kind: "projects", params: {} },
+      vi.fn(),
+    );
+    expect((res.body as Array<{ id: string; projectId?: string }>)[0]).toMatchObject({ id: "tab-A", projectId: "t1" });
   });
 
   it("answers a bundle a designer can read, honouring includeReviewed", async () => {

@@ -38,5 +38,8 @@ These can't run in automated tests. Record the outcome here.
 | Pair with the 6-digit code shown in Retrans (Settings, Figma) | – | – |
 | *Get drafts* loads a project's drafts for the chosen language | – | – |
 | *Send to Retrans* delivers results; Retrans shows them | – | – |
-| Retrans closed: plugin says "Open Retrans to connect" and the file buttons still work | – | – |
+| Retrans closed: plugin says "Open Retrans to connect" and the file buttons still work; *Try again* finds it once open | – | – |
+| *Refresh* lists a project opened in Retrans after the plugin | – | – |
+| Retrans quit and reopened after Get drafts: *Send to Retrans* still reaches the project | – | – |
+| Figma in Chrome (Local Network Access prompt): allowing it lets the plugin find Retrans | – | – |
 | Forget the plugin in Retrans: plugin asks to connect again | – | – |

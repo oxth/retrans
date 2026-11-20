@@ -8,7 +8,10 @@ export interface TextShape { box: Box; autoResize: "NONE" | "HEIGHT" | "WIDTH_AN
 export interface PluginState {
   bundle: PreviewBundle | null;
   fileName: string | null;
-  /** The Retrans project id (from /v1/projects) the drafts were fetched from; absent for a file. */
+  /**
+   * The Retrans tab id (from /v1/projects) the drafts were fetched from; absent for a file.
+   * Tab ids change when Retrans reopens a project, so sending goes by the bundle's sourceProjectId instead.
+   */
   projectId?: string;
   rows: Array<{ key: string; text: string; flag: PreviewFlag; found: boolean; verdict: Verdict | null; note?: string }>;
 }
