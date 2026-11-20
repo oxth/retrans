@@ -4,7 +4,7 @@
  * made (tagged "retransPreview") are ever changed or removed.
  */
 import type { PreviewBundle, PreviewFlag } from "../../src/preview/format";
-import { type Box, copyPlacement, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape } from "./logic";
+import { type Box, copyPlacement, isOverflow, markRestFits, matchesVariable, planCopies, type PluginState, type TextShape } from "./logic";
 import type { ToCode, ToUi } from "./protocol";
 
 const TAG = "retransPreview";
@@ -155,7 +155,7 @@ async function makeCopies(): Promise<void> {
     for (const [k, f] of await fill(copy, bundle)) flags.set(k, worse(flags.get(k) ?? null, f));
     made.push(copy);
   }
-  state = { ...state, rows: state.rows.map((r) => ({ ...r, found: flags.has(r.key), flag: flags.get(r.key) ?? null })) };
+  state = { ...state, copiesMade: made.length, rows: state.rows.map((r) => ({ ...r, found: flags.has(r.key), flag: flags.get(r.key) ?? null })) };
   figma.currentPage.selection = made;
   if (made.length) figma.viewport.scrollAndZoomIntoView(made);
   await save();
@@ -164,7 +164,7 @@ async function makeCopies(): Promise<void> {
 async function removeCopies(): Promise<void> {
   for (const e of existingCopies()) e.node.remove();
   nodesByKey.clear();
-  state = { ...state, rows: state.rows.map((r) => ({ ...r, found: false, flag: null })) };
+  state = { ...state, copiesMade: undefined, rows: state.rows.map((r) => ({ ...r, found: false, flag: null })) };
   await save();
 }
 
@@ -191,6 +191,9 @@ figma.ui.onmessage = async (msg: ToCode) => {
         ...state,
         rows: state.rows.map((r) => (r.key !== msg.key ? r : { ...r, verdict: msg.verdict, ...(msg.note !== undefined ? { note: msg.note } : {}) })),
       };
+      await save();
+    } else if (msg.type === "mark-rest-fits") {
+      state = { ...state, rows: markRestFits(state.rows) };
       await save();
     } else if (msg.type === "focus") await focus(msg.key);
     else if (msg.type === "token") {

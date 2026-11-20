@@ -7,6 +7,7 @@ export type ToCode =
   | { type: "make-copies" }
   | { type: "remove-copies" }
   | { type: "verdict"; key: string; verdict: Verdict | null; note?: string }
+  | { type: "mark-rest-fits" }
   | { type: "focus"; key: string }
   | { type: "token"; token: string | null };
 

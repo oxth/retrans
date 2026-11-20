@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PreviewBundle } from "../../src/preview/format";
-import { type Box, copyPlacement, resultsKey, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
+import { type Box, copyPlacement, currentStep, markRestFits, nothingLinked, progress, resultsKey, isOverflow, matchesVariable, planCopies, type PluginState, type TextShape, toResults } from "./logic";
 
 const box = (width: number, height: number, x = 0, y = 0): Box => ({ x, y, width, height });
 const shape = (autoResize: TextShape["autoResize"], b: Box, needed: Box = b): TextShape => ({ box: b, autoResize, needed });
@@ -105,5 +105,33 @@ describe("resultsKey", () => {
   it("changes when a verdict or a note changes", () => {
     expect(resultsKey({ ...base, rows: [{ ...base.rows[0], verdict: "too-long" }] })).not.toBe(resultsKey(base));
     expect(resultsKey({ ...base, rows: [{ ...base.rows[0], note: "cut" }] })).not.toBe(resultsKey(base));
+  });
+});
+
+describe("the guided steps", () => {
+  const bundle = { retransPreview: 1, sourceProjectId: "p", exportedAt: "x", baseLocale: "en", locale: "de", strings: [] } as PreviewBundle;
+  const row = (key: string, patch: Partial<PluginState["rows"][number]> = {}): PluginState["rows"][number] =>
+    ({ key, text: key, flag: null, found: true, verdict: null, ...patch });
+
+  it("starts at getting drafts, then previewing, then checking", () => {
+    expect(currentStep({ bundle: null, fileName: null, rows: [] })).toBe("drafts");
+    expect(currentStep({ bundle, fileName: "f", rows: [row("a", { found: false })] })).toBe("preview");
+    expect(currentStep({ bundle, fileName: "f", rows: [row("a")], copiesMade: 2 })).toBe("check");
+  });
+
+  it("counts what was found, flagged and checked", () => {
+    const rows = [row("a", { flag: "overflow", verdict: "too-long" }), row("b"), row("c", { verdict: "fits" }), row("d", { found: false })];
+    expect(progress(rows)).toEqual({ total: 4, found: 3, flagged: 1, checked: 2, missing: 1 });
+  });
+
+  it("marks the rest as fits: only found, unflagged strings without a verdict", () => {
+    const rows = [row("a", { flag: "overflow" }), row("b"), row("c", { verdict: "too-long" }), row("d", { found: false })];
+    expect(markRestFits(rows).map((r) => r.verdict)).toEqual([null, "fits", "too-long", null]);
+  });
+
+  it("notices when copies were made but nothing in them is linked to the drafts", () => {
+    expect(nothingLinked({ bundle, fileName: "f", rows: [row("a", { found: false })], copiesMade: 1 })).toBe(true);
+    expect(nothingLinked({ bundle, fileName: "f", rows: [row("a")], copiesMade: 1 })).toBe(false);
+    expect(nothingLinked({ bundle, fileName: "f", rows: [row("a", { found: false })] })).toBe(false);
   });
 });

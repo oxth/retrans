@@ -14,6 +14,37 @@ export interface PluginState {
    */
   projectId?: string;
   rows: Array<{ key: string; text: string; flag: PreviewFlag; found: boolean; verdict: Verdict | null; note?: string }>;
+  /** Frames copied by the last Make preview copies; absent until the first one. */
+  copiesMade?: number;
+}
+
+type Row = PluginState["rows"][number];
+
+/** Where the designer is: getting drafts, previewing frames, or checking the strings. */
+export function currentStep(state: PluginState): "drafts" | "preview" | "check" {
+  if (!state.bundle) return "drafts";
+  return state.copiesMade ? "check" : "preview";
+}
+
+export function progress(rows: Row[]): { total: number; found: number; flagged: number; checked: number; missing: number } {
+  const found = rows.filter((r) => r.found);
+  return {
+    total: rows.length,
+    found: found.length,
+    flagged: found.filter((r) => r.flag).length,
+    checked: rows.filter((r) => r.verdict).length,
+    missing: rows.length - found.length,
+  };
+}
+
+/** "Mark the rest as Fits": strings on the frames, not flagged and not decided yet. */
+export function markRestFits(rows: Row[]): Row[] {
+  return rows.map((r) => (r.found && !r.flag && r.verdict === null ? { ...r, verdict: "fits" } : r));
+}
+
+/** Copies were made, but no text in them is bound to a variable in the drafts. */
+export function nothingLinked(state: PluginState): boolean {
+  return !!state.copiesMade && !state.rows.some((r) => r.found);
 }
 
 const EPS = 0.5;

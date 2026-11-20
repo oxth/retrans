@@ -16,8 +16,21 @@
   .bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
   select { font: inherit; max-width: 100%; }
   .ok { color: var(--figma-color-text-success, #14ae5c); }
-  .live { padding-bottom: 4px; border-bottom: 1px solid var(--figma-color-border); }
   .error { color: var(--figma-color-text-danger); }
+  /* The three steps: done ones get a check, the current one stands out. */
+  .steps { display: flex; gap: 4px; margin: 0 0 12px; padding: 0; list-style: none; }
+  .steps li { flex: 1; padding: 6px 4px; border-radius: 6px; text-align: center; font-size: 11px; color: var(--figma-color-text-secondary); background: var(--figma-color-bg-secondary); }
+  .steps li.now { color: var(--figma-color-text-onbrand); background: var(--figma-color-bg-brand); font-weight: 600; }
+  .steps li.done { color: var(--figma-color-text); }
+  /* Secondary actions read as links so the one main button per step stands out. */
+  button.link { padding: 0; border: 0; background: none; color: var(--figma-color-text-brand); text-decoration: underline; }
+  button.link:disabled { color: var(--figma-color-text-disabled); text-decoration: none; }
+  .loaded { margin: 0 0 8px; }
+  .hint { font-weight: 600; }
+  .summary { font-weight: 600; }
+  .notice { padding: 8px 10px; border-radius: 6px; background: var(--figma-color-bg-warning-tertiary, var(--figma-color-bg-secondary)); }
+  .notice p { margin: 4px 0 0; }
+  .sticky { position: sticky; bottom: 0; padding: 8px 0; margin: 0; background: var(--figma-color-bg); border-top: 1px solid var(--figma-color-border); }
 </style>
 </head>
 <body>
