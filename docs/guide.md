@@ -91,6 +91,17 @@ Before you accept AI drafts, a designer can check they fit the real design. The 
 
 Marks are saved in `.retrans/state.json`, so they reach your team through git like review status. **Remove copies** in the plugin deletes only the copies it made.
 
+#### Live link (same computer)
+
+If Retrans and Figma run on the same computer, the plugin can fetch drafts and send results directly, without files. Files still work, including for designers without Retrans.
+
+1. **Pair once.** In **Settings → Figma**, under **Live link with Figma**, click **Pair a plugin**. Retrans shows a 6-digit code with an **Expires in m:ss** countdown. The code works for 5 minutes and only once; 5 wrong tries cancel it. In the plugin click **Connect to Retrans** and type the code. The switch **Live link with the Figma plugin** is off until you pair. The status line reads **Paired · listening on port 47321**, **Not paired** or **Couldn't start: …**. Pairing is per computer: the plugin remembers it in every Figma file on this computer.
+2. In the plugin, pick a project (only projects linked to Figma open in Retrans) and a language, optionally tick **Include reviewed**, and click **Get drafts**. If Retrans isn't found the plugin says **Open Retrans to connect**; the file buttons still work.
+3. Make preview copies and mark **Fits** / **Too long** as usual, then click **Send to Retrans**.
+4. Retrans comes to the front on that project and shows the usual results summary. Nothing is added until you click **Apply**.
+
+Switch the live link off with the switch. **Forget plugin** (only shown when paired) removes the pairing, and the plugin must pair again. Privacy: Retrans listens only on this computer (`127.0.0.1` / `::1`, ports `47321–47325`), answers only the paired plugin (the key is kept in the system keychain), and only while the switch is on.
+
 ## Keyboard shortcuts
 
 macOS shortcuts are shown; on Windows use Ctrl in place of ⌘.

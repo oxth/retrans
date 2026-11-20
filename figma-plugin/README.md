@@ -6,6 +6,10 @@ Shows Retrans draft translations in copies of real Figma frames, so a designer c
 never changes the original frames or variables. Its only network access is to the Retrans app on
 your own computer (`localhost` ports 47321 to 47325), to get drafts and send results without files.
 
+## How it talks to Retrans
+
+The plugin tries localhost ports 47321 to 47325 with `GET /v1/hello` to find Retrans. It sends a drafts request (project and language), the results you send, and the pairing code when you connect. The token it gets is sent only as a Bearer header to localhost. Nothing leaves your computer. Retrans answers only while its live link switch is on.
+
 ## Build and try it
 
 ```sh
