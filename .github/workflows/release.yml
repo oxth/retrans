@@ -61,12 +61,19 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
+      # The llama.cpp build caches CMake's own install paths: key the cache on the CMake version, so a
+      # runner image that updates CMake starts a fresh cache instead of reusing one pointing at the old one.
+      - name: CMake version (llama.cpp build needs it)
+        id: cmake
+        shell: bash
+        run: |
+          cmake --version
+          echo "version=$(cmake --version | head -1 | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
-
-      - name: CMake version (llama.cpp build needs it)
-        run: cmake --version
+          key: cmake-${{ steps.cmake.outputs.version }}
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
