@@ -1,16 +1,15 @@
 /**
  * Retrans Preview, plugin window. A guided flow in three steps: get drafts (from Retrans or a file),
- * preview frames, then check each string and send the results back.
+ * select a frame (a temporary preview follows the selection), then check each string and send the results.
  */
 import { parseBundle, serializePreview } from "../../src/preview/format";
 import { renderKeepingNote } from "./keep-focus";
-import { currentStep, nothingLinked, type PluginState, progress, resultsKey, toResults } from "./logic";
+import { currentStep, linkNote, nothingLinked, type PluginState, progress, resultsKey, toResults } from "./logic";
 import { LinkError, type RetransProject, draftsTarget, findRetrans, linkAfterError, liveApi, pair, pickProject, sendResults } from "./live";
 import type { ToCode, ToUi } from "./protocol";
 
 const app = document.getElementById("app")!;
 let state: PluginState = { bundle: null, fileName: null, rows: [] };
-let selected = 0;
 let error: string | null = null;
 /** True while the designer is picking new drafts although some are loaded. */
 let choosing = false;
@@ -41,8 +40,10 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 const shortKey = (key: string) => key.slice(key.indexOf("::") + 2);
 const dis = (off: boolean) => (off ? "disabled" : "");
 
-function stepsHtml(step: "drafts" | "preview" | "check"): string {
-  const names = [["drafts", "Get drafts"], ["preview", "Preview frames"], ["check", "Check & send"]] as const;
+type Step = "drafts" | "select" | "check";
+
+function stepsHtml(step: Step): string {
+  const names = [["drafts", "Get drafts"], ["select", "Select a frame"], ["check", "Check & send"]] as const;
   const at = names.findIndex(([id]) => id === step);
   return `<ol class="steps">${names
     .map(([, label], i) => `<li class="${i === at ? "now" : i < at ? "done" : ""}" ${i === at ? 'aria-current="step"' : ""}>${i < at ? "✓" : i + 1} ${label}</li>`)
@@ -62,17 +63,23 @@ function rowHtml(r: PluginState["rows"][number]): string {
   </div>`;
 }
 
+/** Shown at every step while Retrans can't be reached, unless the designer is working from a file. */
+function bannerHtml(): string {
+  const fromFile = useFile || (!!state.bundle && !state.projectId);
+  if (link !== null || fromFile) return "";
+  return `<div class="banner" role="status"><strong>Can't reach Retrans.</strong> Open it and turn on Settings → Figma plugin → Live link.
+    <div class="bar"><button id="retry" ${dis(busy)}>Try again</button><button id="use-file">Use a preview file</button></div></div>`;
+}
+
+const fileInput = `<input type="file" id="file" accept=".json" hidden>`;
+
 /** Step 1: drafts come from Retrans when it's connected, else from a preview file. */
 function draftsHtml(): string {
   const fileRoute = `<div class="bar"><button class="primary" id="load">Load preview file…</button></div>
-    <input type="file" id="file" accept=".json" hidden>
     <p class="muted">In Retrans: Settings → Figma → Export preview for a designer…</p>`;
-  const tip = `<p class="muted">Tip: select the frames first and they're previewed right away.</p>`;
   if (link === "searching") return `<p class="muted">Looking for Retrans…</p>`;
   if (useFile || !link) {
-    return `${fileRoute}
-      ${!link ? `<p class="muted">Retrans isn't open, or its live link is off. <button class="link" id="retry">Try again</button></p>` : `<p><button class="link" id="use-live">Get drafts from Retrans instead</button></p>`}
-      ${selected ? "" : tip}`;
+    return `${fileRoute}${link ? `<p><button class="link" id="use-live">Get drafts from Retrans instead</button></p>` : ""}`;
   }
   if (!token) {
     return `<p><strong>Connect to Retrans</strong></p>
@@ -94,61 +101,65 @@ function draftsHtml(): string {
       <button id="refresh" title="Reload the open projects" ${dis(busy)}>Refresh</button>
     </div>
     <label><input type="checkbox" id="reviewed" ${includeReviewed ? "checked" : ""}> Include reviewed</label>
-    <div class="bar"><button class="primary" id="drafts" ${dis(busy || !locale)}>${selected ? `Get drafts and preview ${plural(selected, "frame", "frames")}` : "Get drafts"}</button></div>
-    ${selected ? "" : tip}
+    <div class="bar"><button class="primary" id="drafts" ${dis(busy || !locale)}>Get drafts</button></div>
     <p><button class="link" id="use-file">Use a preview file instead</button></p>`;
 }
 
+/** The loaded drafts, with a quick way to switch language (Retrans) or file. */
 function loadedHtml(): string {
   const b = state.bundle!;
-  return `<p class="loaded"><strong>${esc(state.fileName ?? "")}</strong> · ${esc(b.locale)} · ${plural(b.strings.length, "string", "strings")}
-    <button class="link" id="change">Change</button></p>`;
+  const fromRetrans = connected() && !!state.projectId && projects.some((p) => p.id === state.projectId);
+  const langs = fromRetrans ? projects.find((p) => p.id === state.projectId)!.locales.filter((l) => l !== b.baseLocale) : [];
+  const language = fromRetrans && langs.length > 1
+    ? `<select id="draft-locale" aria-label="Language" ${dis(busy)}>${langs.map((l) => `<option value="${esc(l)}" ${l === b.locale ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`
+    : `<span>${esc(b.locale)}</span>`;
+  return `<div class="loaded"><strong>${esc(state.fileName ?? "")}</strong> · ${language} · ${plural(b.strings.length, "string", "strings")}
+    ${fromRetrans ? "" : `<button class="link" id="load">Load another file</button>`}
+    <button class="link" id="change">Change</button></div>`;
 }
 
-/** Step 2: pick the frames. */
-function previewHtml(): string {
+/** Step 2: select a frame; the preview follows the selection. */
+function selectHtml(): string {
   return `${loadedHtml()}
-    ${selected
-      ? `<div class="bar"><button class="primary" id="make">Preview ${plural(selected, "frame", "frames")}</button></div>`
-      : `<p class="hint">Select the frames to preview on the canvas.</p><div class="bar"><button class="primary" disabled>Preview frames</button></div>`}
-    <p class="muted">The drafts go into copies next to your frames. The originals are never changed.</p>`;
+    <p class="hint">Select a frame to preview.</p>
+    <p class="muted">A temporary copy appears next to it with the drafts in place. It moves when you select another frame and goes away when you close the plugin. Your frames are never changed.</p>`;
 }
 
-/** Step 3: check every string, then send or save. */
+/** Step 3: check the previewed frame's strings, then send or save. */
 function checkHtml(): string {
-  if (nothingLinked(state)) {
-    return `${loadedHtml()}
-      <div class="notice"><strong>Nothing in these frames is linked to the drafts.</strong>
-        <p>Retrans Preview only changes text bound to Figma variables, and only variables Retrans knows (the ones you imported into Retrans). Bind the text layers to those variables, or select other frames.</p></div>
-      <div class="bar"><button class="primary" id="make" ${dis(!selected)}>${selected ? `Preview ${plural(selected, "frame", "frames")}` : "Select other frames"}</button>
-      <button id="remove">Remove copies</button></div>`;
-  }
+  const note = state.preview ? linkNote(state.preview) : null;
+  const head = `${loadedHtml()}
+    <p class="previewing">Previewing <strong>${esc(state.preview!.frameName)}</strong></p>
+    ${note ? `<div class="info">${esc(note)}${nothingLinked(state) ? " Select another frame, or link the text in Figma first." : ""}</div>` : ""}`;
+  if (nothingLinked(state)) return head;
   const p = progress(state.rows);
   const rows = state.rows.filter((r) => r.found).sort((a, c) => Number(!!c.flag) - Number(!!a.flag));
   const rest = state.rows.some((r) => r.found && !r.flag && r.verdict === null);
+  const checked = state.rows.filter((r) => r.verdict).length;
   const live = connected();
-  return `${loadedHtml()}
-    <p class="summary">${p.flagged ? `<span class="warn">⚠ ${p.flagged} may overflow</span> · ` : ""}${p.checked} of ${p.found} checked</p>
+  return `${head}
+    <p class="summary">${p.flagged ? `<span class="warn">⚠ ${p.flagged} may overflow</span> · ` : ""}${checked} of ${p.total} checked</p>
     ${rest ? `<div class="bar"><button id="rest">Mark the rest as Fits</button></div>` : ""}
     ${rows.map(rowHtml).join("")}
-    ${p.missing ? `<p class="muted">${plural(p.missing, "string isn't", "strings aren't")} on these frames.</p>` : ""}
     <div class="bar sticky">
-      ${live ? `<button class="primary" id="send" ${dis(!p.checked || busy)}>Send to Retrans</button>` : ""}
-      <button ${live ? "" : 'class="primary"'} id="save" ${dis(!p.checked)}>Save results</button>
-      <button id="copy" ${dis(!p.checked)}>Copy results</button>
+      ${live ? `<button class="primary" id="send" ${dis(!checked || busy)}>Send to Retrans</button>` : ""}
+      <button ${live ? "" : 'class="primary"'} id="save" ${dis(!checked)}>Save results</button>
+      <button id="copy" ${dis(!checked)}>Copy results</button>
     </div>
     ${sentKey === resultsKey(state) ? `<p class="ok" role="status">Sent. Apply them in Retrans.</p>` : ""}
     ${copiedKey === resultsKey(state) ? `<p class="ok" role="status">Copied. Paste it into a file named ${esc(resultsName())} and import it in Retrans with Import designer results….</p>` : ""}
-    <p class="muted"><button class="link" id="make" ${dis(!selected)}>Preview ${selected ? plural(selected, "other frame", "other frames") : "other frames"}</button> · <button class="link" id="remove">Remove copies</button></p>`;
+    <p class="muted">Select another frame to check it too; your marks are kept.</p>`;
 }
 
 function render(): void {
-  const step = choosing ? "drafts" : currentStep(state);
-  const body = step === "drafts" ? draftsHtml() : step === "preview" ? previewHtml() : checkHtml();
+  const step: Step = choosing ? "drafts" : currentStep(state);
+  const body = step === "drafts" ? draftsHtml() : step === "select" ? selectHtml() : checkHtml();
   renderKeepingNote(app, `
     ${stepsHtml(step)}
+    ${bannerHtml()}
     ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
     ${body}
+    ${fileInput}
     ${choosing && state.bundle ? `<p><button class="link" id="keep">Keep the current drafts</button></p>` : ""}`);
 }
 
@@ -204,13 +215,22 @@ async function start(): Promise<void> {
   if (link && token) await live(loadProjects);
 }
 
-/** Loads drafts and, when frames are selected, previews them in the same click. */
+/** Loads drafts; the plugin side previews the selected (or already previewed) frame with them. */
 function useDrafts(msg: ToCode & { type: "bundle" }): void {
   choosing = false;
   useFile = false;
   sentKey = copiedKey = null;
   post(msg);
-  if (selected) post({ type: "make-copies" });
+}
+
+/** Fetches `lang` drafts for a Retrans project and loads them. */
+async function fetchDrafts(project: string, lang: string): Promise<void> {
+  await live(async () => {
+    projects = await api().projects();
+    const target = draftsTarget(projects, project, lang);
+    const bundle = await api().bundle(target.project.id, target.locale, includeReviewed);
+    useDrafts({ type: "bundle", bundle, fileName: target.project.name, projectId: target.project.id });
+  });
 }
 
 app.addEventListener("click", async (e) => {
@@ -255,8 +275,6 @@ app.addEventListener("click", async (e) => {
       sentKey = resultsKey(state);
     });
   } else if (t.id === "load") (document.getElementById("file") as HTMLInputElement).click();
-  else if (t.id === "make") post({ type: "make-copies" });
-  else if (t.id === "remove") post({ type: "remove-copies" });
   else if (t.id === "rest") post({ type: "mark-rest-fits" });
   else if (t.id === "save") {
     const a = document.createElement("a");
@@ -300,6 +318,7 @@ app.addEventListener("change", async (e) => {
     locale = targetLocales()[0] ?? "";
     render();
   } else if (t.id === "locale") locale = t.value;
+  else if (t.id === "draft-locale" && state.projectId) await fetchDrafts(state.projectId, t.value);
   else if (t.id === "reviewed") includeReviewed = t.checked;
   else if (t.id === "file") {
     const f = t.files?.[0];
@@ -324,7 +343,6 @@ window.onmessage = (e: MessageEvent<{ pluginMessage: ToUi }>) => {
     state = msg.state;
     token = msg.token;
     if (!hadToken && token && link && link !== "searching" && !projects.length) void live(loadProjects);
-    selected = msg.selectedFrames;
     error = null;
   }
   render();
